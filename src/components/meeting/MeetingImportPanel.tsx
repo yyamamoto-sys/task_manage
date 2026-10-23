@@ -6,7 +6,7 @@
 // ユーザーが各提案をレビュー・編集してから一括登録する。
 // ラボ機能例外ルール適用：PJ・タスク・メンバー情報をAIに渡す。
 
-import { useState, useRef, useMemo, useCallback } from "react";
+import { useState, useRef, useMemo, useCallback, useEffect } from "react";
 import { useAppStore, selectScopedTasks, selectScopedProjects, selectScopedMembers } from "../../stores/appStore";
 import type { Member, Task } from "../../lib/localData/types";
 import { active } from "../../lib/localData/localStore";
@@ -17,8 +17,13 @@ import {
   type MeetingAnalysis,
 } from "../../lib/ai/meetingExtractor";
 import {
-  applyMeetingDrafts, buildStatusDrafts, buildTaskDrafts, type StatusDraft, type TaskDraft,
+  applyMeetingDrafts, buildStatusDrafts, buildTaskDrafts, describeApplyShortfall, type StatusDraft, type TaskDraft,
 } from "../../lib/ai/meetingDrafts";
+import {
+  hasReviewContent, takeRestorableMeetingDraft, useMeetingImportDraftStore,
+} from "../../stores/meetingImportDraftStore";
+import { useUnsavedEditor } from "../../hooks/useUnsavedEditor";
+import { confirmDialog } from "../../lib/dialog";
 import type { FileAttachment } from "../../lib/ai/invokeAI";
 import { extractDocxText, isDocxFile } from "../../lib/docxText";
 import { extractHtmlText, isHtmlFile } from "../../lib/htmlText";
@@ -87,14 +92,16 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false, targe
     [allMembers],
   );
 
-  const [step, setStep] = useState<Step>("input");
+  // 確認画面の下書きはパネルの外のストアに持つ（v3.184・M84）。タブ切替でこのパネルがアンマウントされても、戻ったら復元する
+  const [restored] = useState(() => takeRestorableMeetingDraft(currentUser.id));
+  const [step, setStep] = useState<Step>(restored ? "review" : "input");
   const [rawText, setRawText] = useState("");
-  const [pendingNewProjName, setPendingNewProjName] = useState("");
-  const [pendingNewProjColor, setPendingNewProjColor] = useState("#6366f1");
+  const [pendingNewProjName, setPendingNewProjName] = useState(restored?.newProjName ?? "");
+  const [pendingNewProjColor, setPendingNewProjColor] = useState(restored?.newProjColor ?? "#6366f1");
   const [error, setError] = useState<string | null>(null);
-  const [analysis, setAnalysis] = useState<MeetingAnalysis | null>(null);
-  const [taskDrafts, setTaskDrafts] = useState<TaskDraft[]>([]);
-  const [statusDrafts, setStatusDrafts] = useState<StatusDraft[]>([]);
+  const [analysis, setAnalysis] = useState<MeetingAnalysis | null>(restored?.analysis ?? null);
+  const [taskDrafts, setTaskDrafts] = useState<TaskDraft[]>(restored?.taskDrafts ?? []);
+  const [statusDrafts, setStatusDrafts] = useState<StatusDraft[]>(restored?.statusDrafts ?? []);
   const [applyResults, setApplyResults] = useState<{ created: number; updated: number; skipped: number } | null>(null);
   const [saveProgress, setSaveProgress] = useState<{ current: number; total: number; label: string }>({
     current: 0, total: 1, label: "",
@@ -192,10 +199,22 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false, targe
         attachment: pdfAttachment,
       });
 
+      // 対象PJを1つに絞っているときは、PJのヒントが無い新規タスクの初期値をそのPJにする（M85）
+      const nextTasks = buildTaskDrafts(result.new_tasks, members, projects, currentUser.id, targetPjId);
+      const nextStatus = buildStatusDrafts(result.status_updates, new Set(tasks.map(t => t.id)));
       setAnalysis(result);
-      setTaskDrafts(buildTaskDrafts(result.new_tasks, members, projects, currentUser.id));
-      setStatusDrafts(buildStatusDrafts(result.status_updates, new Set(tasks.map(t => t.id))));
+      setTaskDrafts(nextTasks);
+      setStatusDrafts(nextStatus);
       createdProjectIdRef.current = null;
+      // 解析中にタブを切り替えてパネルが消えていても、AI課金済みの結果を失わない
+      if (hasReviewContent(nextTasks, nextStatus)) {
+        useMeetingImportDraftStore.getState().saveDraft({
+          userId: currentUser.id, analysis: result, taskDrafts: nextTasks, statusDrafts: nextStatus,
+          newProjName: "", newProjColor: "#6366f1", createdProjectId: null,
+        });
+      } else {
+        useMeetingImportDraftStore.getState().clearDraft();
+      }
 
       setStep("review");
     } catch (e) {
@@ -204,19 +223,39 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false, targe
     } finally {
       analyzingRef.current = false;
     }
-  }, [rawText, pdfAttachment, projects, tasks, members, everyMember, currentUser.id]);
+  }, [rawText, pdfAttachment, projects, tasks, members, everyMember, currentUser.id, targetPjId]);
 
   // ===== 適用 =====
 
   // 前回の登録で作成済みの新規PJ。途中で失敗して再登録しても、同じPJを二重に作らない
-  const createdProjectIdRef = useRef<string | null>(null);
+  const createdProjectIdRef = useRef<string | null>(restored?.createdProjectId ?? null);
   const applyingRef = useRef(false);
+
+  // 確認画面にいる間は下書きをストアへ写す（編集のたびに追従）。項目が無ければ保持しない
+  useEffect(() => {
+    if (step !== "review" || !analysis) return;
+    if (!hasReviewContent(taskDrafts, statusDrafts)) {
+      useMeetingImportDraftStore.getState().clearDraft();
+      return;
+    }
+    useMeetingImportDraftStore.getState().saveDraft({
+      userId: currentUser.id, analysis, taskDrafts, statusDrafts,
+      newProjName: pendingNewProjName, newProjColor: pendingNewProjColor,
+      createdProjectId: createdProjectIdRef.current,
+    });
+  }, [step, analysis, taskDrafts, statusDrafts, pendingNewProjName, pendingNewProjColor, currentUser.id]);
+
+  // タブ切替ではストアから復元できるが、ログアウト・再読み込み・部署切替などはメモリごと消える。
+  // その経路では未保存編集レジストリ（Section 46）の確認を出す。登録中（保存の最中）も対象
+  useUnsavedEditor((step === "review" && hasReviewContent(taskDrafts, statusDrafts)) || step === "applying");
 
   const handleApply = useCallback(async () => {
     if (applyingRef.current) return;
     applyingRef.current = true;
     setStep("applying");
     setError(null);
+    // 登録中にパネルが消えても、保存済みの下書きが復元されて二重登録にならないよう、いったん外す
+    useMeetingImportDraftStore.getState().clearDraft();
 
     try {
       const outcome = await applyMeetingDrafts(
@@ -235,26 +274,37 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false, targe
       createdProjectIdRef.current = outcome.createdProjectId;
 
       if (outcome.error) {
-        // 保存できた分は画面から外す（残したまま再登録すると同じタスクが二重に作られる）
+        // 保存できた分は画面から外す（残したまま再登録すると同じタスクが二重に作られる）。
+        // 失敗した分と、連続失敗で手を付けていない分は残し、再試行の対象にする
         const savedTasks = new Set(outcome.savedTaskTempIds);
         const gone = new Set([...outcome.savedStatusTempIds, ...outcome.skippedStatusTempIds]);
         setTaskDrafts(prev => prev.filter(d => !savedTasks.has(d.tempId)));
         setStatusDrafts(prev => prev.filter(d => !gone.has(d.tempId)));
-        const done = outcome.created + outcome.updated;
-        const note = done > 0
-          ? `（登録済みの分：タスク${outcome.created}件・更新${outcome.updated}件は画面から外しました。残りだけをもう一度登録できます）`
-          : "";
-        setError(`${formatErrorForUser("登録に失敗しました", outcome.error)}${note}`);
+        const shortfall = describeApplyShortfall(outcome);
+        setError(`${formatErrorForUser("登録に失敗しました", outcome.error)}${shortfall ? `。${shortfall}` : ""}`);
         setStep("review");
+        // 登録中にパネルが消えていても、残りを後から開いて再試行できるよう、ストアへも書く
+        if (analysis) {
+          const keptTasks = taskDrafts.filter(d => !savedTasks.has(d.tempId));
+          const keptStatus = statusDrafts.filter(d => !gone.has(d.tempId));
+          if (hasReviewContent(keptTasks, keptStatus)) {
+            useMeetingImportDraftStore.getState().saveDraft({
+              userId: currentUser.id, analysis, taskDrafts: keptTasks, statusDrafts: keptStatus,
+              newProjName: pendingNewProjName, newProjColor: pendingNewProjColor,
+              createdProjectId: outcome.createdProjectId,
+            });
+          }
+        }
         return;
       }
 
+      useMeetingImportDraftStore.getState().clearDraft();
       setApplyResults({ created: outcome.created, updated: outcome.updated, skipped: outcome.skipped });
       setStep("done");
     } finally {
       applyingRef.current = false;
     }
-  }, [taskDrafts, statusDrafts, allTasks, currentUser, saveTask, saveProject, pendingNewProjName, pendingNewProjColor]);
+  }, [taskDrafts, statusDrafts, analysis, allTasks, currentUser, saveTask, saveProject, pendingNewProjName, pendingNewProjColor]);
 
   const handleReset = () => {
     setStep("input");
@@ -267,6 +317,18 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false, targe
     setStatusDrafts([]);
     setApplyResults(null);
     createdProjectIdRef.current = null;
+    useMeetingImportDraftStore.getState().clearDraft();
+  };
+
+  // 確認画面の「やり直す」は、AI課金済みの内容を捨てる操作なので、取り込み済みの項目があるときだけ確認する
+  const requestReset = async () => {
+    if (hasReviewContent(taskDrafts, statusDrafts)) {
+      const ok = await confirmDialog("確認画面の内容は破棄されます。最初からやり直しますか？", {
+        tone: "danger", confirmLabel: "破棄してやり直す",
+      });
+      if (!ok) return;
+    }
+    handleReset();
   };
 
   const checkedTaskCount = taskDrafts.filter(d => d.checked && d.name.trim()).length;
@@ -286,7 +348,7 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false, targe
           <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)", flex: 1 }}>
             {step === "review" ? "内容を確認して登録してください" : ""}
           </span>
-          <button onClick={handleReset} style={{ fontSize: "11px", padding: "3px 10px", background: "transparent", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-sm)", color: "var(--color-text-secondary)", cursor: "pointer" }}>
+          <button onClick={() => void requestReset()} style={{ fontSize: "11px", padding: "3px 10px", background: "transparent", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-sm)", color: "var(--color-text-secondary)", cursor: "pointer" }}>
             やり直す
           </button>
         </div>
@@ -335,6 +397,8 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false, targe
             onApply={handleApply}
             onNewProjNameChange={setPendingNewProjName}
             onNewProjColorChange={setPendingNewProjColor}
+            initialNewProjName={pendingNewProjName}
+            initialNewProjColor={pendingNewProjColor}
           />
         )}
         {step === "applying" && (
@@ -433,7 +497,7 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false, targe
             </div>
           </div>
           {step === "review" && (
-            <button onClick={handleReset} style={{ fontSize: "12px", padding: "5px 12px", background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.35)", borderRadius: "var(--radius-sm)", color: "#fff", cursor: "pointer" }}>やり直す</button>
+            <button onClick={() => void requestReset()} style={{ fontSize: "12px", padding: "5px 12px", background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.35)", borderRadius: "var(--radius-sm)", color: "#fff", cursor: "pointer" }}>やり直す</button>
           )}
           <button onClick={onClose} style={{ background: "rgba(255,255,255,0.15)", border: "none", cursor: "pointer", fontSize: "18px", color: "#fff", padding: "4px 8px", lineHeight: 1, borderRadius: "var(--radius-sm)" }}>✕</button>
         </div>
@@ -570,7 +634,7 @@ function ReviewStep({
   analysis, taskDrafts, setTaskDrafts, statusDrafts, setStatusDrafts,
   members, projects, tasks,
   error, checkedTaskCount, checkedStatusCount, onApply,
-  onNewProjNameChange, onNewProjColorChange,
+  onNewProjNameChange, onNewProjColorChange, initialNewProjName, initialNewProjColor,
 }: {
   analysis: MeetingAnalysis;
   taskDrafts: TaskDraft[]; setTaskDrafts: (d: TaskDraft[]) => void;
@@ -584,6 +648,8 @@ function ReviewStep({
   onApply: () => void;
   onNewProjNameChange: (name: string) => void;
   onNewProjColorChange: (color: string) => void;
+  initialNewProjName: string;
+  initialNewProjColor: string;
 }) {
   const updateTask = (tempId: string, patch: Partial<TaskDraft>) =>
     setTaskDrafts(taskDrafts.map(d => d.tempId === tempId ? { ...d, ...patch } : d));
@@ -620,6 +686,9 @@ function ReviewStep({
             onApplyBulk={applyBulkProject}
             onNewProjNameChange={onNewProjNameChange}
             onNewProjColorChange={onNewProjColorChange}
+            initialNewProjName={initialNewProjName}
+            initialNewProjColor={initialNewProjColor}
+            initialBulkProjId={taskDrafts.some(d => d.project_id === "__new__") ? "__new__" : ""}
           />
           <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginTop: "10px" }}>
             {taskDrafts.map(draft => (
@@ -713,15 +782,19 @@ const PROJ_COLORS = [
   { hex: "#64748b", label: "グレー" },
 ];
 
-function BulkProjectBar({ projects, onApplyBulk, onNewProjNameChange, onNewProjColorChange }: {
+function BulkProjectBar({ projects, onApplyBulk, onNewProjNameChange, onNewProjColorChange, initialNewProjName, initialNewProjColor, initialBulkProjId }: {
   projects: { id: string; name: string }[];
   onApplyBulk: (projectId: string) => void;
   onNewProjNameChange: (name: string) => void;
   onNewProjColorChange: (color: string) => void;
+  /** 復元・再表示のとき、親が持っている新規PJ名・色と表示を一致させる（見えない名前でPJが作られないように） */
+  initialNewProjName: string;
+  initialNewProjColor: string;
+  initialBulkProjId: string;
 }) {
-  const [bulkProjId, setBulkProjId] = useState("");
-  const [newName, setNewName] = useState("");
-  const [newColor, setNewColor] = useState("#6366f1");
+  const [bulkProjId, setBulkProjId] = useState(initialBulkProjId);
+  const [newName, setNewName] = useState(initialNewProjName);
+  const [newColor, setNewColor] = useState(initialNewProjColor);
 
   const isNew = bulkProjId === "__new__";
   const canApply = !!bulkProjId && (!isNew || newName.trim().length > 0);

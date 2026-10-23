@@ -31,3 +31,18 @@
 ### v3.183 の追記：読み込み中は添付済みの「✕」を押せない（M81）
 
 読み込み完了時の `onChange` は開始時点の一覧に追加分を足した配列で上書きするため、読み込み中に外したチップが戻っていた。「外す」ボタンは `disabled={disabled || loading}`。見え方が変わるのは読み込み中の数秒だけ。`consultationTargetChange.test.ts` が検査する。
+
+---
+
+### v3.184 の追記：資料インプット（会議読み込み）の確認画面の保持・登録の続行・PJの初期値（M84・M85・M87）
+
+AI相談パネルの「資料インプット」タブ（`components/meeting/MeetingImportPanel.tsx`）に関する変更。添付ではないが、同じパネルの節として s75 に記録する。
+
+- **M84 確認画面の下書きはパネルの外に持つ**：`stores/meetingImportDraftStore.ts`（in-memory の zustand。`consultSessionStore` と同じ流儀＝永続化しない・コンポーネントは購読せず `getState()` で読む）。パネルは起動時に `takeRestorableMeetingDraft(currentUser.id)` で復元する（別ユーザーの下書きは破棄）。確認画面（review）にいる間は編集に追従してストアへ写す。項目が1つも無ければ保持しない（`hasReviewContent`）。
+  - 解析中にタブを切り替えてパネルが消えても結果を失わないよう、`handleAnalyze` の成功時にもストアへ書く。登録開始時にストアを空にし（登録中に消えると保存済みの下書きが復元されて二重登録になるため）、失敗時は残りだけを書き戻す。
+  - 保持できない経路（ログアウト・再読み込み・部署切替）は `useUnsavedEditor`（Section 46）で守る。dirty は「確認画面で項目がある」または「登録中」。**副作用**：確認画面を開いたまま画面（ビュー）を切り替える操作でも、`guardedNavigate` の確認（「保存していない変更があります」）が出る。パネルは画面切替で消えないため本来は不要な確認だが、`confirmDiscardUnsavedEdits` は遷移の種類を区別しない（Section 46 の文言の方針）。
+  - 「やり直す」は取り込み済みの項目があるときだけ確認する（`requestReset`）。
+  - 復元・再表示のとき `BulkProjectBar` の新規PJ名・色・選択を親が持つ値で初期化する（以前から、登録失敗で確認画面に戻ると入力欄が空に戻り、見えない名前でPJが作られえた）。
+- **M85**：`buildTaskDrafts(..., defaultProjectId)`。対象PJを1つに絞って読み込んだとき、PJのヒントが無い新規タスクの初期値をそのPJにする。ヒントがあって一致したものはヒント優先、ヒントがあって不一致のものは従来どおり空。
+- **M87**：`applyMeetingDrafts` は項目ごとに続行し、連続3件（`MAX_CONSECUTIVE_SAVE_FAILURES`）失敗したら残りを中止する。保存済み・見つからなかった更新だけを画面から外し、失敗分・未処理分は残す。新規PJが作れなかったときは、そのPJ向けのタスクを「PJ未設定」で保存せず失敗として残す。案内文は `describeApplyShortfall`。
+- テスト：`lib/ai/__tests__/meetingDrafts.test.ts`（修正前のコードで赤を確認）。DB 変更なし・MIN_CLIENT_VERSION は上げない。

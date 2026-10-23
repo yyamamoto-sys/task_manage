@@ -40,3 +40,15 @@ ToDo分解（`todoDecomposeClient`）・OKR系（`okrKrAnalysisClient` 等）・
 - **`extractMeetingData`**：`parseMeetingResponse` を通し、`stop_reason==="max_tokens"` は構文エラーではなく「2回に分けて」の案内（Section 6-1b）。`validateAnalysis` は開始日が期日より後の組の開始日を空にする。
 - **文字数**：読み込み時に30,000字で切らない（安全上限は100万字）。入力欄の字数と超過警告は `parseTranscript` 後の長さで数える。AIへ渡すのは整形後の先頭30,000字。
 - **機械チェック**：`consultationTargetChange.test.ts`・`meetingDrafts.test.ts`。
+
+---
+
+### v3.184 の追記：PJ別AI分析（PJカルテ・全PJポートフォリオ）の点検（巡回62回目・E）
+
+送る範囲は変えていない（全PJ分析は `isAiTargetProject`・PJ単体は利用者が1PJを明示して実行する設計のまま。`aiTargetCoverage.test.ts` の登録どおり）。変えたのは結果の扱い。
+
+- **PJ単体（`ProjectKarte.tsx`）**：実行中をPJのidで持つ（`runningPjIds`）。結果を画面へ出すのは今も同じPJを開いているときだけ（保存は行う）。二重起動は `runningRef` で止める。保存の失敗・保存後の再取得の失敗でAI課金済みの結果を捨てず、画面に出して注意を添える。過去の分析の取得失敗は画面に出す。
+- **全PJ（`DashboardView.tsx`）**：結果は実行したときの範囲（分析対象PJのidの集合＝`analysisScopeKey`）と今の範囲が同じときだけ見せる（`resultForScope`）。分析中に範囲が変わったら結果を出さない。二重起動は `allAnalysisRunningRef` で止める。
+- **返答の仕上げ（`lib/ai/analysisRun.ts` の `finalizeAnalysisText`）**：空の返答は共有保存せずエラー。`stop_reason` が `max_tokens` の途中切れには注記を付ける（マークダウンの文章なので破棄しない）。両クライアントが通す。
+- 残した課題：PJ単体のタスク一覧に上限が無い（M88）、全PJ分析の結果は保存されない（M89）。docs/REFACTORING.md 参照。
+- テスト：`lib/ai/__tests__/projectAnalysisRun.test.ts`（修正前のコードで赤を確認）。

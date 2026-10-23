@@ -15,6 +15,7 @@
 
 import { invokeAI, type AIMessageInput } from "./invokeAI";
 import { sanitizeComment } from "./sanitize";
+import { finalizeAnalysisText } from "./analysisRun";
 
 export interface ProjectAnalysisInput {
   project: {
@@ -133,5 +134,5 @@ function buildUserMessage(input: ProjectAnalysisInput): string {
 export async function analyzeProject(input: ProjectAnalysisInput): Promise<string> {
   const messages: AIMessageInput[] = [{ role: "user", content: buildUserMessage(input) }];
   const res = await invokeAI(SYSTEM_PROMPT, messages, 1800, "project-analysis");
-  return res.content[0].text;
+  return finalizeAnalysisText(res.content[0]?.text, res.stop_reason);
 }

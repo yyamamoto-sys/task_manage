@@ -227,8 +227,17 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
   // ===== AI分析（Supabase で全員共有・最新2件） =====
   const [analyses, setAnalyses] = useState<ProjectAnalysisRecord[]>([]);
   const [showAnalysis, setShowAnalysis] = useState(false);
-  const [analyzing, setAnalyzing] = useState(false);
+  // 実行中のPJ。ProjectKarte はPJを切り替えても再マウントされないため、真偽値1つだと別PJの「分析中」が残り、
+  // 完了した別PJの結果が今のPJの一覧を上書きする（v3.184）。結果を画面へ出すのは、今も同じPJを開いているときだけ
+  const [runningPjIds, setRunningPjIds] = useState<string[]>([]);
+  const analyzing = runningPjIds.includes(project.id);
+  const runningRef = useRef<Set<string>>(new Set());
+  const currentPjIdRef = useRef(project.id);
+  currentPjIdRef.current = project.id;
   const [analysisError, setAnalysisError] = useState<string | null>(null);
+  // 分析はできたが共有用の保存に失敗したときの注意（結果は画面に出す。閉じると消える）
+  const [saveWarning, setSaveWarning] = useState<string | null>(null);
+  const [analysesLoadFailed, setAnalysesLoadFailed] = useState(false);
   const [viewIndex, setViewIndex] = useState(0); // 0=最新, 1=前回
 
   // PJが変わったら最新2件を取り直す（取得失敗はカルテ表示を止めない）
@@ -239,6 +248,8 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
   useEffect(() => {
     let cancelled = false;
     setAnalysisError(null);
+    setSaveWarning(null);
+    setAnalysesLoadFailed(false);
     setViewIndex(0);
     if (isGuestMode()) {
       setAnalyses(getGuestProjectAnalyses(project.id));
@@ -248,14 +259,20 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
       .then(rows => { if (!cancelled) setAnalyses(rows); })
       .catch((e: unknown) => {
         console.warn("PJ分析の取得に失敗（カルテ表示は継続）:", e);
-        if (!cancelled) setAnalyses([]);
+        if (!cancelled) { setAnalyses([]); setAnalysesLoadFailed(true); }
       });
     return () => { cancelled = true; };
   }, [project.id]);
 
   const runAnalysis = useCallback(async () => {
-    setAnalyzing(true);
+    const pid = project.id;
+    // 連打・「更新」と「再分析」の重なりで2回課金しない
+    if (runningRef.current.has(pid)) return;
+    runningRef.current.add(pid);
+    setRunningPjIds(prev => [...prev, pid]);
+    const isCurrent = () => currentPjIdRef.current === pid;
     setAnalysisError(null);
+    setSaveWarning(null);
     setShowAnalysis(true);
     try {
       const text = await analyzeProject({
@@ -289,18 +306,43 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
       // しまっていた（v3.77で修正）。ゲストのときはguestProjectAnalysisStore（このブラウザの
       // メモリ）に保持し、必ず結果を表示する。
       if (isGuestMode()) {
-        addGuestProjectAnalysis(project.id, text, currentUser.id);
-        setAnalyses(getGuestProjectAnalyses(project.id));
+        addGuestProjectAnalysis(pid, text, currentUser.id);
+        if (isCurrent()) { setAnalyses(getGuestProjectAnalyses(pid)); setViewIndex(0); }
       } else {
-        await insertProjectAnalysis(project.id, text, currentUser.id);
-        const rows = await fetchProjectAnalyses(project.id);
-        setAnalyses(rows);
+        // 保存・再取得の失敗でAI課金済みの結果を捨てない（保存できなかったら画面だけに出す）。
+        // 実行中に別のPJへ移っていたら、結果は保存だけして今のPJの画面には出さない
+        let saved: ProjectAnalysisRecord | null = null;
+        let saveErr: unknown = null;
+        try {
+          saved = await insertProjectAnalysis(pid, text, currentUser.id);
+        } catch (e) {
+          saveErr = e;
+        }
+        if (isCurrent()) {
+          const rec: ProjectAnalysisRecord = saved ?? {
+            id: `unsaved-${Date.now()}`, project_id: pid, content: text,
+            created_by: currentUser.id, created_at: new Date().toISOString(),
+          };
+          if (saved) {
+            try {
+              const rows = await fetchProjectAnalyses(pid);
+              if (isCurrent()) setAnalyses(rows);
+            } catch (e) {
+              console.warn("PJ分析の再取得に失敗（保存済みの結果を画面に出す）:", e);
+              if (isCurrent()) setAnalyses(prev => [rec, ...prev.filter(r => r.id !== rec.id)].slice(0, 2));
+            }
+          } else {
+            setAnalyses(prev => [rec, ...prev].slice(0, 2));
+            setSaveWarning(`${formatErrorForUser("分析結果をほかのメンバーと共有する保存に失敗しました", saveErr)}。この画面を閉じると結果は消えるため、必要なら先にコピーしてください。`);
+          }
+          if (isCurrent()) setViewIndex(0);
+        }
       }
-      setViewIndex(0);
     } catch (e) {
-      setAnalysisError(formatErrorForUser("AI分析に失敗しました", e));
+      if (isCurrent()) setAnalysisError(formatErrorForUser("AI分析に失敗しました", e));
     } finally {
-      setAnalyzing(false);
+      runningRef.current.delete(pid);
+      setRunningPjIds(prev => prev.filter(id => id !== pid));
     }
   }, [project, owners, pjTasks, milestones, pjAllMembers, memberById, today, currentUser.id]);
 
@@ -491,6 +533,11 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
           </button>
           {/* ゲスト（サンプル閲覧）のAI利用回数の明示（v3.31）。ゲスト以外はnullを返す */}
           <GuestAiQuotaNotice variant="inline" />
+          {analysesLoadFailed && !latest && !analyzing && (
+            <span style={{ fontSize: "11px", color: "var(--color-text-warning)" }}>
+              過去のAI分析を読み込めませんでした（再分析すると新しく作成されます）
+            </span>
+          )}
           {latest && !analyzing && (
             <button
               onClick={() => { setViewIndex(0); setShowAnalysis(true); }}
@@ -678,6 +725,7 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
           onSelectIndex={setViewIndex}
           whoOf={whoOf}
           error={analysisError}
+          warning={saveWarning}
           onClose={() => setShowAnalysis(false)}
           onRerun={runAnalysis}
         />
@@ -722,7 +770,7 @@ function Muted({ children }: { children: React.ReactNode }) {
 // ===== AI分析モーダル =====
 
 function AnalysisModal({
-  projectName, analyzing, analyses, viewIndex, onSelectIndex, whoOf, error, onClose, onRerun,
+  projectName, analyzing, analyses, viewIndex, onSelectIndex, whoOf, error, warning, onClose, onRerun,
 }: {
   projectName: string;
   analyzing: boolean;
@@ -731,6 +779,7 @@ function AnalysisModal({
   onSelectIndex: (i: number) => void;
   whoOf: (rec: ProjectAnalysisRecord) => string;
   error: string | null;
+  warning: string | null;
   onClose: () => void;
   onRerun: () => void;
 }) {
@@ -791,6 +840,9 @@ function AnalysisModal({
           {analyzing && <AIProgressLoader phases={ANALYSIS_PHASES} expectedMs={18000} />}
           {!analyzing && error && (
             <div style={{ fontSize: "13px", color: "var(--color-text-danger)", background: "var(--color-bg-danger)", padding: "12px 14px", borderRadius: "var(--radius-md)" }}>{error}</div>
+          )}
+          {!analyzing && warning && (
+            <div style={{ fontSize: "12px", color: "var(--color-text-warning)", background: "var(--color-bg-warning)", border: "1px solid var(--color-border-warning)", padding: "10px 12px", borderRadius: "var(--radius-md)", marginBottom: "12px" }}>{warning}</div>
           )}
           {!analyzing && !error && current && <MarkdownLite text={current.content} />}
           {!analyzing && !error && !current && <div style={{ fontSize: "13px", color: "var(--color-text-tertiary)" }}>分析結果がありません。「再分析」で作成してください。</div>}

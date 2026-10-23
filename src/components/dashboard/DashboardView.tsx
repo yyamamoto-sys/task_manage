@@ -14,7 +14,7 @@
 // 「そのKRに紐づくTF→PJ→タスクの完了率の平均」で計算する。
 // 手動入力方式はPhase 5以降で検討。
 
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useAppStore, selectScopedTasks, selectScopedMembers } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { isGuestMember } from "../../lib/guestMode";
@@ -38,6 +38,7 @@ import { HelpButton } from "../guide/HelpButton";
 import { isAssignedTo, getAssigneeIds, suppressOverdue, isActiveTaskStatus, isCompletedForProgress } from "../../lib/taskMeta";
 import { OnboardingHome } from "./OnboardingHome";
 import { analyzeAllProjects, type AllProjectsPjSummary } from "../../lib/ai/allProjectsAnalysisClient";
+import { analysisScopeKey, resultForScope } from "../../lib/ai/analysisRun";
 import { isAiTargetProject } from "../../lib/ai/aiTarget";
 import { ProjectTargetSelect } from "../common/ProjectTargetSelect";
 import { AIProgressLoader } from "../common/AIProgressLoader";
@@ -87,9 +88,12 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
   // ===== 全PJ AI分析 =====
   const [showAllAnalysis, setShowAllAnalysis] = useState(false);
   const [allAnalyzing, setAllAnalyzing] = useState(false);
-  const [allAnalysisResult, setAllAnalysisResult] = useState<string | null>(null);
+  const [rawAllAnalysisResult, setAllAnalysisResult] = useState<string | null>(null);
+  // 結果を出したときの範囲（分析対象PJの集合）。表示部署を切り替えたあとに前の部署の分析を見せない（v3.184）
+  const [allAnalysisKey, setAllAnalysisKey] = useState<string | null>(null);
   const [allAnalysisError, setAllAnalysisError] = useState<string | null>(null);
   const [allAnalysisCopied, setAllAnalysisCopied] = useState(false);
+  const allAnalysisRunningRef = useRef(false);
 
   const [selectedPjIds, setSelectedPjIds] = useState<string[]>([]);
   const [activeKrId, setActiveKrId] = useState<string | null>(null);
@@ -333,13 +337,28 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
     [tfs, todos, allTasks]
   );
 
+  // 全PJ分析の対象（アーカイブ・削除済みを除くアクティブPJ）と、その範囲の識別子
+  const aiActivePjs = useMemo(
+    () => projects.filter(pj => isAiTargetProject(pj) && pj.status === "active"),
+    [projects],
+  );
+  const aiScopeKey = useMemo(() => analysisScopeKey(aiActivePjs.map(pj => pj.id)), [aiActivePjs]);
+  const aiScopeKeyRef = useRef(aiScopeKey);
+  aiScopeKeyRef.current = aiScopeKey;
+  const allAnalysisResult = resultForScope(rawAllAnalysisResult, allAnalysisKey, aiScopeKey);
+  useEffect(() => { setAllAnalysisError(null); }, [aiScopeKey]);
+
   const runAllProjectsAnalysis = useCallback(async () => {
+    // 連打・ボタンの重なりで2回課金しない
+    if (allAnalysisRunningRef.current) return;
+    allAnalysisRunningRef.current = true;
     setAllAnalyzing(true);
     setAllAnalysisError(null);
     setAllAnalysisResult(null);
     setShowAllAnalysis(true);
     try {
-      const activePjs = projects.filter(pj => isAiTargetProject(pj) && pj.status === "active");
+      const activePjs = aiActivePjs;
+      const runKey = analysisScopeKey(activePjs.map(pj => pj.id));
       const pjSummaries: AllProjectsPjSummary[] = activePjs.map(pj => {
         const pjTasks = allTasks.filter(t => t.project_id === pj.id && !isParentTask(t, allTasks));
         const pjMs = milestones
@@ -387,13 +406,20 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
         members_short_names: members.map(m => m.short_name),
         today: todayS,
       });
+      if (aiScopeKeyRef.current !== runKey) {
+        // 分析中に表示部署が切り替わった。前の範囲の結果を今の画面に出さない
+        setAllAnalysisError("分析中に表示するプロジェクトの範囲が変わったため、結果は表示しません。もう一度「再分析」してください。");
+        return;
+      }
       setAllAnalysisResult(result);
+      setAllAnalysisKey(runKey);
     } catch (e) {
       setAllAnalysisError(formatErrorForUser("AI分析に失敗しました", e));
     } finally {
+      allAnalysisRunningRef.current = false;
       setAllAnalyzing(false);
     }
-  }, [projects, allTasks, milestones, members, allMembers, todayS, stagnantDays]);
+  }, [aiActivePjs, allTasks, milestones, members, allMembers, todayS, stagnantDays]);
 
   // 対象PJのプルダウン（単一選択）。null＝すべてのPJ。KRクリックで複数PJに絞られている間は表示専用の選択肢になる
   const selectTargetPj = (id: string | null) => {
@@ -576,7 +602,7 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
                 <div style={{ fontSize: "13px", fontWeight: 700, color: "#fff" }}>AI分析：全プロジェクト ポートフォリオ</div>
                 {!allAnalyzing && allAnalysisResult && (
                   <div style={{ fontSize: "10px", color: "rgba(255,255,255,0.85)", marginTop: "1px" }}>
-                    {projects.filter(p => p.status === "active").length}件のアクティブPJを横断分析
+                    {aiActivePjs.length}件のアクティブPJを横断分析
                   </div>
                 )}
               </div>

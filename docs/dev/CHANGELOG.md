@@ -8500,3 +8500,13 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * 二重起動：handleAnalyze・handleApply に処理中フラグ（Ctrl+Enter の連打などでの二重課金・二重登録を防ぐ）。
 # * AI使用量：invokeAI が全呼び出しの使用量を記録するため、会議読み込みに記録漏れは無い（AI相談側は別経路の apiClient だったため v3.182 で onUsage を足した）。変更なし。
 # * テスト：consultationTargetChange.test.ts・meetingDrafts.test.ts（修正前のコードで赤を確認）。DB 変更なし・MIN_CLIENT_VERSION は上げない。
+
+# v3.184（2026-10-23）：M84・M85・M87 の解決＋巡回62回目＝E PJ別AI分析の点検（docs/REFACTORING.md「62回目の巡回」・M88・M89）
+#
+# * M84：資料インプットの確認画面の下書き（AI解析の結果＋人が編集した内容）を stores/meetingImportDraftStore.ts（in-memory の zustand・永続化しない・購読しない）へ保持。MeetingImportPanel は起動時に takeRestorableMeetingDraft(currentUser.id) で復元し（別ユーザーの下書きは破棄）、確認画面にいる間は編集に追従してストアへ写す。解析中にパネルが消えても結果を失わないよう handleAnalyze もストアへ書く。登録中は二重登録を避けるためストアを空にし、失敗したら残りだけをストアへ書き戻す。ログアウト・再読み込み・部署切替などメモリごと消える経路は useUnsavedEditor（確認画面・登録中を dirty）で confirmDiscardUnsavedEdits の確認を出す。「やり直す」は取り込み済みの項目があるときだけ確認する。復元時に BulkProjectBar の新規PJ名・色・選択を親の値と一致させる（見えない名前でPJが作られない）。
+# * M85：buildTaskDrafts に defaultProjectId を追加。対象PJを1つに絞って読み込んだとき、PJのヒントが無い新規タスクの初期値をそのPJにする（候補に無いIDは使わない。ヒントがあって一致したものはヒント優先。ヒントがあって不一致のものは従来どおり空）。
+# * M87：applyMeetingDrafts を項目ごとの try/catch にして続行。連続3件（MAX_CONSECUTIVE_SAVE_FAILURES）失敗したら通信断とみなして残りを中止（手を付けていない件数を unprocessed で返す）。成功が挟まればカウントを戻す。新規PJが作れなかったら、そのPJ向けのタスクは「PJ未設定」で保存せず失敗として残す。保存済み・見つからなかった更新だけを画面から外し、失敗分・未処理分は残して再試行の対象にする。案内文は describeApplyShortfall（「N件は保存できませんでした／残りM件は未処理です」＋登録済みの分の件数）。
+# * E PJ別AI分析（ProjectKarte）：ProjectKarte はPJ切替で再マウントされないのに analyzing が真偽値1つで、実行中にPJを切り替えると別PJの「分析中」が残り、完了した前のPJの分析結果が今のPJの一覧を上書きしていた。実行中をPJのidで持ち（runningPjIds）、結果を画面へ出すのは今も同じPJを開いているときだけ（保存は行う）。二重起動（連打・「更新」と「再分析」の重なり）は runningRef で止める。
+# * E：保存（insertProjectAnalysis）が失敗するとAI課金済みの結果が消え「AI分析に失敗しました」になっていた。結果を画面に出し、「ほかのメンバーと共有する保存に失敗しました。閉じると消えるのでコピーを」の注意を添える。保存後の再取得が失敗したときも保存済みの結果を画面に出す。過去の分析の取得失敗は画面に出す（従来は握りつぶして空表示→再分析＝再課金を誘っていた）。
+# * E：lib/ai/analysisRun.ts を新設。finalizeAnalysisText＝空の返答は共有保存せずエラー・stop_reason が max_tokens の途中切れには注記を付ける（projectAnalysisClient・allProjectsAnalysisClient が通す。content が空のときの TypeError も解消）。analysisScopeKey／resultForScope＝全PJ分析の結果は、実行したときの範囲（分析対象PJのidの集合）と今の範囲が同じときだけ見せる。DashboardView は二重起動を allAnalysisRunningRef で止め、表示部署を切り替えたあとに前の部署の分析結果を出さず、分析中に範囲が変わったら結果を出さない。件数表示は分析対象と同じ集合。
+# * テスト：meetingDrafts.test.ts（M84・M85・M87・配線。修正前のコードで赤を確認）・projectAnalysisRun.test.ts（修正前のコードで赤を確認）。DB 変更なし・MIN_CLIENT_VERSION は上げない。

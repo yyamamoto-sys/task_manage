@@ -9,6 +9,7 @@
 // intent: "all-projects-analysis"
 
 import { invokeAI, type AIMessageInput } from "./invokeAI";
+import { finalizeAnalysisText } from "./analysisRun";
 
 export interface AllProjectsPjSummary {
   name: string;
@@ -112,5 +113,5 @@ function buildUserMessage(input: AllProjectsAnalysisInput): string {
 export async function analyzeAllProjects(input: AllProjectsAnalysisInput): Promise<string> {
   const messages: AIMessageInput[] = [{ role: "user", content: buildUserMessage(input) }];
   const res = await invokeAI(SYSTEM_PROMPT, messages, 2200, "all-projects-analysis");
-  return res.content[0].text;
+  return finalizeAnalysisText(res.content[0]?.text, res.stop_reason);
 }

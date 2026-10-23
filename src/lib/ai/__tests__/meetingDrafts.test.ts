@@ -7,9 +7,12 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Project, Task } from "../../localData/types";
 import {
-  applyMeetingDrafts, buildStatusDrafts, buildTaskDrafts, resolveDraftAssignee,
+  applyMeetingDrafts, buildStatusDrafts, buildTaskDrafts, describeApplyShortfall, resolveDraftAssignee,
   type StatusDraft, type TaskDraft,
 } from "../meetingDrafts";
+import {
+  takeRestorableMeetingDraft, useMeetingImportDraftStore, type MeetingReviewDraft,
+} from "../../../stores/meetingImportDraftStore";
 import {
   parseMeetingResponse, TRUNCATED_MEETING_MESSAGE, validateAnalysis, type MeetingStatusUpdate, type MeetingTask,
 } from "../meetingExtractor";
@@ -50,6 +53,25 @@ describe("新規タスクの下書き", () => {
     expect(d.map(x => x.tempId)).toEqual(["task-0", "task-1"]);
     expect(d[0]).toMatchObject({ checked: true, project_id: "p1", due_date: "2026-10-30", start_date: "", assignee_member_id: "m2" });
     expect(d[1].project_id).toBe("");
+  });
+});
+
+describe("対象PJを1つに絞ったときの新規タスクのPJ（M85）", () => {
+  const projects = [{ id: "p1", name: "統合営業PJ" }, { id: "p2", name: "AAS" }];
+  it("PJのヒントが無いタスクは、絞ったPJを初期値にする", () => {
+    const d = buildTaskDrafts([mt()], members, [projects[0]], "m2", "p1");
+    expect(d[0].project_id).toBe("p1");
+  });
+  it("ヒントが一致するタスクは、ヒントのPJが優先される", () => {
+    const d = buildTaskDrafts([mt({ project_hint: "AAS" })], members, projects, "m2", "p1");
+    expect(d[0].project_id).toBe("p2");
+  });
+  it("絞っていない（null）ときは従来どおり空", () => {
+    expect(buildTaskDrafts([mt()], members, projects, "m2", null)[0].project_id).toBe("");
+    expect(buildTaskDrafts([mt()], members, projects, "m2")[0].project_id).toBe("");
+  });
+  it("絞ったPJが候補に無ければ使わない", () => {
+    expect(buildTaskDrafts([mt()], members, projects, "m2", "ghost")[0].project_id).toBe("");
   });
 });
 
@@ -103,24 +125,93 @@ describe("applyMeetingDrafts：途中失敗のときの保存済み分", () => {
     expect(savedTasks.map(t => t.name)).toEqual(["a", "b", "t1"]);
   });
 
-  it("3件目で失敗しても、保存できた2件の下書きIDを返し、以降は保存しない", async () => {
+  it("3件目で失敗しても止めず、失敗した1件だけを失敗として返す（M87）", async () => {
     const { deps, savedTasks } = makeDeps({ failTaskNamed: "c" });
     const r = await applyMeetingDrafts({ ...base, taskDrafts: [td("a"), td("b"), td("c"), td("d")], statusDrafts: [] }, deps);
     expect(r.error).toBeInstanceOf(Error);
-    expect(r.savedTaskTempIds).toEqual(["a", "b"]);
-    expect(r.created).toBe(2);
-    expect(savedTasks.map(t => t.name)).toEqual(["a", "b"]);
+    expect(r.savedTaskTempIds).toEqual(["a", "b", "d"]);
+    expect(r.failedTaskTempIds).toEqual(["c"]);
+    expect(r.created).toBe(3);
+    expect(r.aborted).toBe(false);
+    expect(r.unprocessed).toBe(0);
+    expect(savedTasks.map(t => t.name)).toEqual(["a", "b", "d"]);
   });
 
-  it("残りだけで再実行すると二重にならない", async () => {
+  it("失敗した分だけで再実行すると二重にならない", async () => {
     const first = makeDeps({ failTaskNamed: "c" });
     const drafts = [td("a"), td("b"), td("c"), td("d")];
     const r1 = await applyMeetingDrafts({ ...base, taskDrafts: drafts, statusDrafts: [] }, first.deps);
     const remaining = drafts.filter(d => !r1.savedTaskTempIds.includes(d.tempId));
+    expect(remaining.map(d => d.tempId)).toEqual(["c"]);
     const second = makeDeps();
     const r2 = await applyMeetingDrafts({ ...base, taskDrafts: remaining, statusDrafts: [] }, second.deps);
     expect([...first.savedTasks, ...second.savedTasks].map(t => t.name).sort()).toEqual(["a", "b", "c", "d"]);
     expect(r2.error).toBeNull();
+  });
+
+  it("連続3件失敗したら残りを中止し、手を付けていない件数を返す（保存は呼ばない）", async () => {
+    let calls = 0;
+    const deps = {
+      saveTask: vi.fn(async () => { calls += 1; throw new Error("Failed to fetch"); }),
+      saveProject: vi.fn(async () => {}),
+      findTask: () => undefined,
+      newId: () => "id",
+      now: () => "2026-10-23T00:00:00.000Z",
+    };
+    const drafts = ["a", "b", "c", "d", "e"].map(n => td(n));
+    const r = await applyMeetingDrafts({ ...base, taskDrafts: drafts, statusDrafts: [sd("s1", "t1")] }, deps);
+    expect(calls).toBe(3);
+    expect(r.aborted).toBe(true);
+    expect(r.failedTaskTempIds).toEqual(["a", "b", "c"]);
+    expect(r.unprocessed).toBe(3);
+    expect(r.created + r.updated).toBe(0);
+  });
+
+  it("失敗の間に成功が挟まれば、連続とは数えない", async () => {
+    const failing = new Set(["a", "c", "e"]);
+    const deps = {
+      saveTask: vi.fn(async (t: Task) => { if (failing.has(t.name)) throw new Error("x"); }),
+      saveProject: vi.fn(async () => {}),
+      findTask: () => undefined,
+      newId: () => "id",
+      now: () => "2026-10-23T00:00:00.000Z",
+    };
+    const r = await applyMeetingDrafts(
+      { ...base, taskDrafts: ["a", "b", "c", "d", "e", "f"].map(n => td(n)), statusDrafts: [] }, deps);
+    expect(r.aborted).toBe(false);
+    expect(r.failedTaskTempIds).toEqual(["a", "c", "e"]);
+    expect(r.savedTaskTempIds).toEqual(["b", "d", "f"]);
+  });
+
+  it("新規PJが作れなかったら、そのPJ向けのタスクは「PJ未設定」で保存せず失敗として残す", async () => {
+    const savedTasks: Task[] = [];
+    const deps = {
+      saveTask: vi.fn(async (t: Task) => { savedTasks.push(t); }),
+      saveProject: vi.fn(async () => { throw new Error("project failed"); }),
+      findTask: () => undefined,
+      newId: () => "id",
+      now: () => "2026-10-23T00:00:00.000Z",
+    };
+    const r = await applyMeetingDrafts(
+      { ...base, taskDrafts: [td("a", { project_id: "__new__" }), td("b")], statusDrafts: [] }, deps);
+    expect(r.failedTaskTempIds).toEqual(["a"]);
+    expect(r.savedTaskTempIds).toEqual(["b"]);
+    expect(savedTasks.map(t => t.name)).toEqual(["b"]);
+    expect(r.createdProjectId).toBeNull();
+  });
+
+  it("更新の保存が失敗しても続行し、失敗の下書きIDを返す", async () => {
+    const deps = {
+      saveTask: vi.fn(async (t: Task) => { if (t.id === "t1") throw new Error("gate"); }),
+      saveProject: vi.fn(async () => {}),
+      findTask: (id: string) => fakeTask(id),
+      newId: () => "id",
+      now: () => "2026-10-23T00:00:00.000Z",
+    };
+    const r = await applyMeetingDrafts({ ...base, taskDrafts: [], statusDrafts: [sd("s1", "t1"), sd("s2", "t2")] }, deps);
+    expect(r.failedStatusTempIds).toEqual(["s1"]);
+    expect(r.savedStatusTempIds).toEqual(["s2"]);
+    expect(r.updated).toBe(1);
   });
 
   it("新規PJは1回だけ作り、失敗後の再実行では作成済みのIDを使う", async () => {
@@ -216,5 +307,67 @@ describe("資料インプットの画面配線", () => {
   it("抽出は stop_reason を見る関数を通す", () => {
     expect(extractor).toContain("parseMeetingResponse(res.content[0]?.text");
     expect(extractor).toContain('stopReason === "max_tokens"');
+  });
+});
+
+describe("登録できなかったときの案内文（M87）", () => {
+  const o = { created: 0, updated: 0, failedTaskTempIds: [] as string[], failedStatusTempIds: [] as string[], unprocessed: 0, aborted: false };
+  it("失敗も未処理も無ければ空", () => {
+    expect(describeApplyShortfall({ ...o, created: 3 })).toBe("");
+  });
+  it("連続失敗では「N件は保存できませんでした／残りM件は未処理です」を出す", () => {
+    const msg = describeApplyShortfall({ ...o, created: 2, failedTaskTempIds: ["a", "b", "c"], unprocessed: 4, aborted: true });
+    expect(msg).toContain("3件は保存できませんでした");
+    expect(msg).toContain("残り4件は未処理です");
+    expect(msg).toContain("タスク2件");
+  });
+  it("未処理が無ければ「残り」は出さない", () => {
+    const msg = describeApplyShortfall({ ...o, failedTaskTempIds: ["a"] });
+    expect(msg).toContain("1件は保存できませんでした");
+    expect(msg).not.toContain("未処理");
+  });
+});
+
+describe("確認画面の下書きをパネルの外に保持する（M84）", () => {
+  const draft = (userId: string): MeetingReviewDraft => ({
+    userId,
+    analysis: { summary: "s", new_tasks: [], status_updates: [], decisions: [], risks: [] },
+    taskDrafts: [td("a")], statusDrafts: [], newProjName: "", newProjColor: "#6366f1", createdProjectId: null,
+  });
+  it("同じユーザーなら復元できる（タブを切り替えて戻っても失われない）", () => {
+    useMeetingImportDraftStore.getState().saveDraft(draft("u1"));
+    expect(takeRestorableMeetingDraft("u1")?.taskDrafts.map(d => d.tempId)).toEqual(["a"]);
+    expect(takeRestorableMeetingDraft("u1")).not.toBeNull();
+  });
+  it("別のユーザーの下書きは復元せず、破棄する", () => {
+    useMeetingImportDraftStore.getState().saveDraft(draft("u1"));
+    expect(takeRestorableMeetingDraft("u2")).toBeNull();
+    expect(useMeetingImportDraftStore.getState().draft).toBeNull();
+  });
+  it("破棄したら復元されない", () => {
+    useMeetingImportDraftStore.getState().saveDraft(draft("u1"));
+    useMeetingImportDraftStore.getState().clearDraft();
+    expect(takeRestorableMeetingDraft("u1")).toBeNull();
+  });
+});
+
+describe("資料インプットの画面配線（v3.184）", () => {
+  it("確認画面の下書きはストアから復元し、編集に追従して写す", () => {
+    expect(panel).toContain("takeRestorableMeetingDraft(currentUser.id)");
+    expect(panel).toMatch(/useState<Step>\(restored \? "review" : "input"\)/);
+    expect(panel).toMatch(/useMeetingImportDraftStore\.getState\(\)\.saveDraft\(/);
+  });
+  it("未保存編集レジストリに登録し、確認画面・登録中をdirtyにする", () => {
+    expect(panel).toMatch(/useUnsavedEditor\(\(step === "review" && hasReviewContent\(taskDrafts, statusDrafts\)\) \|\| step === "applying"\)/);
+  });
+  it("「やり直す」は確認を通す", () => {
+    expect(panel).not.toMatch(/<button onClick=\{handleReset\}/);
+    expect(panel).toContain("void requestReset()");
+  });
+  it("絞った対象PJを新規タスクの初期値として渡す", () => {
+    expect(panel).toMatch(/buildTaskDrafts\(result\.new_tasks, members, projects, currentUser\.id, targetPjId\)/);
+  });
+  it("登録の失敗の案内は describeApplyShortfall を通す", () => {
+    expect(panel).toContain("describeApplyShortfall(outcome)");
   });
 });
