@@ -130,3 +130,12 @@ Chrome のタスクマネージャー（Shift+Esc）でこのタブのメモリ�
 ### v3.180：個人OKRも復帰時の全件再取得の対象に（M65）
 
 個人OKRのストアは「自分」タブを開いたとき初めて読み込まれる（Section 19）ため、`App.tsx`は直接importできない。`lib/personalOkr/resyncRegistry.ts`に窓口を置き、ストアが読み込まれたときに`resyncAll`を登録する。`App.tsx`のresyncランナー（切断→復帰・10分以上非表示からの復帰・30秒の最短間隔）が`load()`と同時に`requestPersonalOkrResync()`を呼ぶので、問い合わせが増えるのは既存の復帰時だけ。`resyncAll`は`krsLoaded`等のフラグを戻さず（スケルトンが点滅しない）、KR一覧・月（1クエリ）・開いているKRの週/メモ/紐づけ・全体タブだけを取り直す。他のKRは詳細の読み込み済み印を外して次に開いたとき取り直す。ゲスト・未読み込みなら何もしない。
+
+---
+
+### v3.181：差分取得の起点を「購読を解除した時刻」に（M68・M69）
+
+- `App.tsx` は購読を解除した時刻（effect の cleanup・停止）を `createUnsubscribeClock`（`lib/supabase/resync.ts`）に残す。次の購読の最初の SUBSCRIBED で `catchUpRemoteChanges(その時刻)`（内部で既存の2分を引く）。**realtime-silent の張り直し（M68）は、セッション最初の load まで遡って全行を取り直さなくなった。**一度も解除していなければ引数なし＝従来どおり初回 load の開始時刻。
+- **停止（非表示10分）からの再開（M69）も、購読の SUBSCRIBED で小さな差分取得を1本足す**（起点＝停止した時刻）。全件 `load` が各表を読み終えてから購読が有効になるまでの窓を埋める。失敗したら `resync()`（30秒の最短間隔で、再開時の全件 load と二重には走らない）。
+- 限界：junction 表の「解除」（DELETE）は差分取得で拾えない（従来どおり）。
+- 配線は `catchUpSince.test.ts`（修正前のコードで赤を確認）。

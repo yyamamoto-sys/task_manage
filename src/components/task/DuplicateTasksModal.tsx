@@ -46,6 +46,7 @@ import { buildInheritedDependencies } from "../../lib/project/taskInheritance";
 import { showToast } from "../common/Toast";
 import { alertDialog } from "../../lib/dialog";
 import { formatErrorForUser } from "../../lib/errorMessage";
+import { countHiddenTargets, hiddenIncludedNote } from "../../lib/task/hiddenSelection";
 
 interface Props {
   /** 複製対象として選択されたタスク（呼び出し側でselectedIdsから解決済み） */
@@ -56,6 +57,8 @@ interface Props {
   onClose: () => void;
   /** 複製成功時（1件以上成功した場合）に呼ぶ。選択解除等の後処理用 */
   onDuplicated: () => void;
+  /** 今画面に見えているタスクid。選択のうち見えていないものの件数を明示する（M77・M80）。省略時は注記なし */
+  visibleTaskIds?: readonly string[];
 }
 
 interface AnchorCandidate {
@@ -93,13 +96,17 @@ const noteBoxStyle: React.CSSProperties = {
   padding: "8px 10px",
 };
 
-export function DuplicateTasksModal({ selectedTasks, allTasks, currentUser, onClose, onDuplicated }: Props) {
+export function DuplicateTasksModal({ selectedTasks, allTasks, currentUser, onClose, onDuplicated, visibleTaskIds }: Props) {
   const milestones = useAppStore(s => s.milestones);
   const [nameFind, setNameFind] = useState("");
   const [nameReplace, setNameReplace] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const selectedIdSet = useMemo(() => new Set(selectedTasks.map(t => t.id)), [selectedTasks]);
+  const hiddenCount = useMemo(
+    () => countHiddenTargets(selectedTasks.map(t => t.id), visibleTaskIds),
+    [selectedTasks, visibleTaskIds],
+  );
 
   // 選択範囲をまたぐ親子関係の明示（利用者が驚かないための注記。判断はコード先頭コメント参照）
   const excludedParentCount = useMemo(
@@ -254,8 +261,9 @@ export function DuplicateTasksModal({ selectedTasks, allTasks, currentUser, onCl
                 </div>
               ))}
             </div>
-            {(excludedParentCount > 0 || excludedChildrenCount > 0) && (
+            {(excludedParentCount > 0 || excludedChildrenCount > 0 || hiddenCount > 0) && (
               <div style={{ marginTop: "8px", ...noteBoxStyle }}>
+                {hiddenCount > 0 && <div>・{hiddenIncludedNote(hiddenCount)}</div>}
                 {excludedParentCount > 0 && (
                   <div>・親タスクが選択されていないタスクが{excludedParentCount}件あります。複製後は親を持たない独立したタスクになります。</div>
                 )}

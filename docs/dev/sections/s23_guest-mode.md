@@ -89,3 +89,9 @@ Phase 1（`src/lib/guestMode.ts`）で作った「ゲスト」は、実際には
 - **バナーとリセット**：ゲストバナー（計画モード）は「編集した内容はこのブラウザでのみ有効です。再読み込みすると元に戻ります。」に変更（です・ます調）。バナー内に「↺ サンプルを初期状態に戻す」ボタンを追加：`confirmDialog()`（`window.confirm`ではない）で確認後、`loadDemoDataset()`を再実行して`appStore.loadDemoData()`に注入する（デモデータのidは固定なので、開いたままのモーダル等が壊れることはない）。OKRモード「自分」タブのゲストデータ（`personalOkrUiStore`）は今回の対象外のため、ボタンは`appMode==="plan"`のときだけ表示する。
 
 ---
+
+---
+
+### v3.181：`channel`／`removeChannel` も choke point で止める（M73）
+
+`supabase/client.ts` の Proxy は `from`・`rpc`・`functions.invoke`・`storage.from` に加えて `channel`・`removeChannel` も `assertGuestBlocked()` で止める。ゲストでは `blockedChannel()`（`on`／`subscribe`／`unsubscribe`／`send` は自分を返し、`subscribe` のコールバックは呼ばない＝SUBSCRIBED は永久に来ない）と `Promise.resolve("ok")` を返し、実クライアントにチャンネル・WebSocket を作らない。呼び出し元（`realtime.ts`・`notificationRealtime.ts`）はゲストでは元々動かない設計だが、分岐が崩れたときの二重防御になる。`client.test.ts` に「ゲストで `channel()` を呼んでも `getChannels()` が増えない」を追加（修正前のコードで赤を確認）。

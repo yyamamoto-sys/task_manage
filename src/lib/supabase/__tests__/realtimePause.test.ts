@@ -99,8 +99,8 @@ describe("配線（ソース走査）", () => {
   it("App.tsx は停止の合図を起動し、停止で購読を外し、再開で張り直して全件再取得する", () => {
     expect(app).toMatch(/useEffect\(\(\) => installHiddenPause\(\), \[\]\)/);
     expect(app).toMatch(/onRealtimePauseChange\(paused => \{/);
-    expect(app).toMatch(/if \(paused\) \{\s*off\?\.\(\);\s*off = null;\s*setRealtimeChannelState\("paused"\);/);
-    expect(app).toMatch(/setRealtimeChannelState\("resuming"\);\s*gate\.onVisible\(\);\s*start\(true\);\s*resync\(\);/);
+    expect(app).toMatch(/if \(paused\) \{\s*if \(off\) \{ off\(\); clock\.markUnsubscribed\(\); \}\s*off = null;\s*setRealtimeChannelState\("paused"\);/);
+    expect(app).toMatch(/setRealtimeChannelState\("resuming"\);\s*gate\.onVisible\(\);\s*start\(\);\s*resync\(\);/);
   });
 
   it("停止中の復帰は onVisibility 側で全件再取得を重ねない", () => {
@@ -108,7 +108,7 @@ describe("配線（ソース走査）", () => {
   });
 
   it("停止中に effect が作り直されても購読を張らない", () => {
-    expect(app).toMatch(/if \(isRealtimePaused\(\)\) setRealtimeChannelState\("paused"\);\s*else start\(false\);/);
+    expect(app).toMatch(/if \(isRealtimePaused\(\)\) setRealtimeChannelState\("paused"\);\s*else start\(\);/);
   });
 
   it("ベルも停止の合図で購読を外し、再開で張り直す", () => {

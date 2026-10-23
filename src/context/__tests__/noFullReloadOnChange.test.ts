@@ -38,8 +38,8 @@ describe("App.tsx の realtime 購読", () => {
     expect(src).toMatch(/setRemoteResyncRequester\(null\)/);
   });
   it("最初の SUBSCRIBED で差分取得（catchUpRemoteChanges）し、失敗したら全件再取得に切り替える", () => {
-    // v3.171：停止（10分以上の非表示）からの再開は全件再取得が埋めるので、差分取得は重ねない
-    expect(src).toMatch(/onFirstSubscribed: resumed \? undefined : \(\) => \{ void catchUpRemoteChanges\(\)\.catch\(\(\) => resync\(\)\); \}/);
+    // v3.181（M68・M69）：停止からの再開・張り直しも差分取得する。起点は購読を解除した時刻（無ければ引数なし）
+    expect(src).toMatch(/onFirstSubscribed: \(\) => \{ void catchUpRemoteChanges\(since \?\? undefined\)\.catch\(\(\) => resync\(\)\); \}/);
   });
   it("購読 effect の依存に loading を入れない（load のたびに張り直さない）", () => {
     expect(src).toMatch(/\[realtimeReady, applyRemoteChange, load, realtimeEpoch]/);

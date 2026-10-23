@@ -44,6 +44,19 @@ describe("ゲストモード時のSupabase遮断（choke point：assertGuestBloc
     expect(error).toBeTruthy();
   });
 
+  it("channel() はゲストなら空のチャンネルを返し、実クライアントにチャンネルを作らない（M73）", async () => {
+    setGuestMode(true);
+    const before = supabase.getChannels().length;
+    let called = 0;
+    const ch = supabase.channel("guest-probe")
+      .on("postgres_changes", { event: "*", schema: "public", table: "tasks" }, () => {})
+      .subscribe(() => { called++; });
+    expect(ch).toBeTruthy();
+    await expect(supabase.removeChannel(ch)).resolves.toBe("ok");
+    expect(called).toBe(0);
+    expect(supabase.getChannels().length).toBe(before);
+  });
+
   it("rpc() はブロックされる", async () => {
     setGuestMode(true);
     const { data, error } = await supabase.rpc("is_system_bootstrapped");

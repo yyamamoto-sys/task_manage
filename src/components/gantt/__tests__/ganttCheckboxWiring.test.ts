@@ -45,7 +45,7 @@ describe("ガントのチェックボックス", () => {
 describe("ガントの一括操作バー", () => {
   const view = read("components/gantt/GanttView.tsx");
   it("共有の BulkActionBar と useBulkTaskActions を使い、選択 state を渡す", () => {
-    expect(view).toMatch(/useBulkTaskActions\(allTasks, members, selectedTaskIds, currentUser\.id, clearTaskSelection\)/);
+    expect(view).toMatch(/useBulkTaskActions\(allTasks, members, selectedTaskIds, currentUser\.id, clearTaskSelection, visibleIdsRef\)/);
     expect(view).toMatch(/<BulkActionBar\b/);
     expect(view).toMatch(/actions=\{bulkActions\}/);
     expect(view).toMatch(/orderedTaskIds=\{visibleOrderedTaskIds\}/);

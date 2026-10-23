@@ -10,10 +10,10 @@
 //   （CLAUDE.md Section 46。登録は unsavedEditorRegistry）。
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import type { Task } from "../../lib/localData/types";
+import type { ProjectSection, Task } from "../../lib/localData/types";
 import { registerUnsavedEditor, unregisterUnsavedEditor } from "../../lib/editing/unsavedEditorRegistry";
 import {
-  createInlineSubmitter, emptyDraft, isDraftDirty, type GroupAddSpec, type InlineDraft,
+  createInlineSubmitter, emptyDraft, isDraftDirty, reassignOrphanDrafts, type GroupAddSpec, type InlineDraft,
 } from "../../lib/list/inlineAdd";
 import { showToast } from "../common/Toast";
 
@@ -25,9 +25,11 @@ interface Params {
   allTasks: Task[];
   filteredTasks: Task[];
   saveTask: (task: Task) => Promise<void>;
+  /** PJ内のグループ（削除済みを含む全件）。削除されたグループ宛ての下書きを未分類へ付け替える判定に使う */
+  projectSections: ProjectSection[];
 }
 
-export function useListInlineAdd({ userId, scopedTasks, allTasks, filteredTasks, saveTask }: Params) {
+export function useListInlineAdd({ userId, scopedTasks, allTasks, filteredTasks, saveTask, projectSections }: Params) {
   const [drafts, setDrafts] = useState<Record<string, InlineDraft>>({});
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [focusReq, setFocusReq] = useState<{ key: string; nonce: number } | null>(null);
@@ -97,6 +99,17 @@ export function useListInlineAdd({ userId, scopedTasks, allTasks, filteredTasks,
       showToast("追加しました（今の絞り込みでは表示されません）", "info");
     }
   }, [allTasks, filteredTasks]);
+
+  // グループが削除された（realtime 等で確定した）下書きは未分類へ付け替えて残す（M75）。
+  // 行が戻ってこないまま「未保存の編集あり」として残り、画面遷移や自動更新を止め続けるのを防ぐ
+  useEffect(() => {
+    const result = reassignOrphanDrafts(draftsRef.current, projectSections);
+    if (!result.changed) return;
+    setDrafts(result.drafts);
+    for (const name of result.droppedNames) {
+      showToast(`グループが削除されたため、追加中の「${name}」は保存せず閉じました（移動先に別の入力があります）`, "info");
+    }
+  }, [projectSections, drafts]);
 
   const editorId = useId();
   const dirtyRef = useRef(false);

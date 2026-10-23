@@ -24,6 +24,7 @@ import type {
 import { todayStr, addDaysFromToday, diffDaysFromToday, formatMD } from "../../lib/date";
 import { calcProgressPct } from "../../lib/stats";
 import { isParentTask } from "../../lib/taskHierarchy";
+import { computeKpiInProgressCount, computeKpiWeekCompletion } from "../../lib/dashboardKpi";
 import { tfsForKr } from "../../lib/okr/tfQuarter";
 import { KEYS, active } from "../../lib/localData/localStore";
 import { InlineEditAssignee } from "../common/InlineEditAssignee";
@@ -34,7 +35,7 @@ import { computeDueForecast } from "../../lib/computeDueForecast";
 import { VelocityChart } from "./VelocityChart";
 import { computeWeeklyVelocity } from "../../lib/computeWeeklyVelocity";
 import { HelpButton } from "../guide/HelpButton";
-import { isAssignedTo, getAssigneeIds, suppressOverdue, isActiveTaskStatus, isPausedOrCancelledStatus, isCompletedForProgress } from "../../lib/taskMeta";
+import { isAssignedTo, getAssigneeIds, suppressOverdue, isActiveTaskStatus, isCompletedForProgress } from "../../lib/taskMeta";
 import { OnboardingHome } from "./OnboardingHome";
 import { analyzeAllProjects, type AllProjectsPjSummary } from "../../lib/ai/allProjectsAnalysisClient";
 import { isAiTargetProject } from "../../lib/ai/aiTarget";
@@ -208,19 +209,16 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
     [alertTasks, todayS]
   );
   const kpiTodayCount = alertTasks.length - kpiOverdueCount;
-  const kpiInProgressCount = useMemo(
-    () => filteredTasks.filter(t => t.status === "in_progress").length,
-    [filteredTasks]
-  );
-  // 今週の完了率：今週締切のタスク（完了済みも含む）のうち完了済みの割合。
+  // 進行中・今週の完了率は期限超過・PJ進捗と同じ葉タスク基準（子を持つ親は数えない。M79）。
   // 中止・保留は「今週やる予定の仕事」の分母からも外す（達成率を不当に下げないため）
-  const kpiWeekCompletion = useMemo(() => {
-    const weekDue = filteredTasks.filter(t =>
-      t.due_date && t.due_date >= todayS && t.due_date <= weekLater && !isPausedOrCancelledStatus(t.status)
-    );
-    const done = weekDue.filter(t => t.status === "done").length;
-    return { done, total: weekDue.length, pct: calcProgressPct(done, weekDue.length) };
-  }, [filteredTasks, todayS, weekLater]);
+  const kpiInProgressCount = useMemo(
+    () => computeKpiInProgressCount(filteredTasks, allTasks),
+    [filteredTasks, allTasks]
+  );
+  const kpiWeekCompletion = useMemo(
+    () => computeKpiWeekCompletion(filteredTasks, allTasks, todayS, weekLater),
+    [filteredTasks, allTasks, todayS, weekLater]
+  );
 
   // 滞留タスク（進行中のまま N 日以上 updated_at が動いていない）
   // alertTasks と同じ理由で、子タスクを持つ親タスク自体は一覧から除外する

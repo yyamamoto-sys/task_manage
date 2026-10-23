@@ -31,3 +31,9 @@ Section 42（v3.85）で`CustomSelect.tsx`／`ProjectRowMenu.tsx`／`MentionText
 2. **トリガーに追従する小さいポップオーバー（ドロップダウン・候補パネル・メニュー）を新設・改修するときは、座標計算・スクロール追従・`maxHeight`の決め方を個別ファイルにコピペしないこと。** 必ず`src/hooks/useFloatingPanel.ts`を使う。今回の不具合は「4箇所が同じコードをコピペで持っていたため、1箇所だけの直し忘れ・付け忘れが長期間気づかれなかった」ことがそのまま原因であり、集約自体が再発防止の本体（Section 42と同じ教訓の再発）。
 
 ---
+
+---
+
+### 追記（v3.181・2026-10-23）：`CustomSelect` を開いている間の Esc はパネルだけを閉じる（M70）
+
+`CustomSelect` は開いている間だけ `window` の capture 段階で Esc を受け、`lib/overlayEscape.ts` の `closeOnEscapeAndStop`（閉じる＋`preventDefault`＋`stopImmediatePropagation`）で止める。モーダル側は `document` の keydown（バブリング）で Esc を待つため、後から開いたドロップダウンが同じ `document` に付けても先に並ぶモーダルを止められなかった。capture にしたことで全モーダル共通で「1回目の Esc はドロップダウンだけ閉じる」。IME 変換中の Esc は触らない。`useConfirmClose` の `role="listbox"` 判定は他のオーバーレイ用の安全網として残す（矛盾しない）。`overlayEscape.test.ts`。

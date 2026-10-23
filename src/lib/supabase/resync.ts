@@ -83,3 +83,18 @@ export function createResyncRunner(
   };
   return runner;
 }
+
+/**
+ * 購読を最後に解除した時刻の記録（Section 76／M68・M69）。張り直し・停止からの再開のとき、
+ * 取りこぼしの差分取得の起点を「解除した時刻」にする（セッション最初の load 開始まで遡らない）。
+ * 一度も解除していなければ null＝従来どおり初回 load の開始時刻（catchUpRemoteChanges の既定）を使う。
+ * 余裕（時計のずれ分）は catchUpRemoteChanges 側で引く。
+ */
+export function createUnsubscribeClock(now: () => number = () => Date.now()) {
+  let at: number | null = null;
+  return {
+    markUnsubscribed(): void { at = now(); },
+    /** catchUpRemoteChanges の起点（ms）。null なら呼び出し側は引数を渡さない */
+    since(): number | null { return at; },
+  };
+}

@@ -166,8 +166,11 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
     });
   }, [visibleTasks]);
 
+  // 一括操作の対象のうち、今は見えていないカード（完了を隠す・保留中止の非表示で隠れた列など）を確認で明示する（M80）
+  const visibleIdsRef = useRef<readonly string[]>(orderedTaskIds);
+  visibleIdsRef.current = orderedTaskIds;
   const { bulkUpdateStatus, bulkUpdatePriority, bulkUpdateAssignee, bulkDelete, bulkMoveToProject, bulkShift } = useBulkTaskActions(
-    tasks, members, selectedIds, currentUser.id, clearSelection,
+    tasks, members, selectedIds, currentUser.id, clearSelection, visibleIdsRef,
   );
 
   const handleStatusChange = useCallback((taskId: string, newStatus: Task["status"]) => {
@@ -666,6 +669,7 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
           currentUser={currentUser}
           onClose={() => setShowDuplicateModal(false)}
           onDuplicated={clearSelection}
+          visibleTaskIds={orderedTaskIds}
         />
       )}
       </div>

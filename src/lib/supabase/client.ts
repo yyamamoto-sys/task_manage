@@ -102,8 +102,31 @@ function blockedStorageBucket(): unknown {
   };
 }
 
+/**
+ * Realtime のチャンネル相当の空実装（M73）。ゲストでは WebSocket に一切つなぐ経路を作らない。
+ * 呼び出し元（realtime.ts・notificationRealtime.ts）は on/subscribe をチェーンで呼ぶだけなので、
+ * 全部 this を返し、subscribe のコールバックは呼ばない（SUBSCRIBED は永久に来ない）。
+ */
+function blockedChannel(): unknown {
+  const ch: Record<string, unknown> = {};
+  for (const m of ["on", "subscribe", "unsubscribe", "send", "track", "untrack"]) ch[m] = () => ch;
+  return ch;
+}
+
 export const supabase = new Proxy(rawClient, {
   get(target, prop, receiver) {
+    if (prop === "channel") {
+      return (topic: string, opts?: unknown) => {
+        if (assertGuestBlocked()) return blockedChannel();
+        return (target.channel as (t: string, o?: unknown) => unknown)(topic, opts);
+      };
+    }
+    if (prop === "removeChannel") {
+      return (channel: unknown) => {
+        if (assertGuestBlocked()) return Promise.resolve("ok");
+        return (target.removeChannel as (c: unknown) => unknown)(channel);
+      };
+    }
     if (prop === "from") {
       return (table: string) => {
         if (assertGuestBlocked()) return blockedQuery();

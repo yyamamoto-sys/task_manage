@@ -110,3 +110,12 @@ Undoする代わりに同じ内容へ直接編集し直せば全く同じ結果�
 実際に分かったばかり**であり、DB側で絞れるものはDB側で絞る。
 
 ---
+
+---
+
+### v3.181：一括操作・まとめてドラッグの「元に戻す」の失敗を握る（M74・M78）
+
+- `lib/task/settleSaves.ts`：`settleUndoSaves`（`Promise.allSettled` で待ち、失敗があれば「N件は元に戻せませんでした」を1回だけ。個々の失敗は `saveTask` 側のトースト）・`settleSingleSave`（単発の保存の拒否だけ握る）。`useBulkTaskActions` の元に戻す5箇所（ステータス・優先度・担当者・削除の復元・PJ移動）と `useTaskDragReorder.handleMultiTaskDrop` が使う。
+- `GanttView` のバーのドラッグ確定（リサイズ・単体移動・範囲作成）の `saveTask` は `settleSingleSave` 経由。**未処理の Promise 拒否を残さない＝`client_error_logs` に残らない。**
+- Undo の成功表示は従来どおり「押した瞬間」に出る（保存の完了を待って出し直すことはしない）。
+- `settleSaves.test.ts`・`settleSavesWiring.test.ts`（修正前のコードで赤を確認）。

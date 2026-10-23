@@ -5,8 +5,12 @@
 // グループの属性（PJ・担当者・状態・タグ・ToDo）を初期値にし、作った直後にそのグループへ
 // 表示される値にする。保存は prepareNewTask（QuickAddTaskModal と共通）＋ saveTask。
 
-import type { Task } from "../localData/types";
+import type { ProjectSection, Task } from "../localData/types";
+import { UNSECTIONED_KEY } from "../section/sections";
 import { prepareNewTask, validateTaskDateRange } from "../task/newTask";
+
+/** 下書きのキー `<まとめ方>:<見出し>§<グループID>` の区切り（ListView の bk と同じ） */
+export const SECTION_KEY_SEPARATOR = "§";
 
 /** グループに入る条件。ListView の groups の各要素が持つ。 */
 export interface GroupAddSpec {
@@ -137,4 +141,47 @@ export function nextTabTarget(current: AddSlot, shift: boolean): AddSlot | null 
   const i = TAB_ORDER.indexOf(current);
   const next = TAB_ORDER[i + (shift ? -1 : 1)];
   return next ?? null;
+}
+
+export interface OrphanDraftResult {
+  drafts: Record<string, InlineDraft>;
+  /** 付け替え先に既に別の入力があり、残せなかった下書きの名前（利用者へ知らせる） */
+  droppedNames: string[];
+  changed: boolean;
+}
+
+/**
+ * 削除されたグループ宛ての下書きを「未分類」へ付け替える（M75・Section 77）。
+ * 下書きのキーは `<まとめ方>:<見出し>§<グループID>`。グループが削除された（is_deleted、または一覧から消えた）のに
+ * 行が戻ってこないと、名前入りの下書きが見えないまま未保存扱いで残り続ける。
+ * 付け替え先は、そのPJにまだグループがあれば「未分類」ブロック（`§__unsectioned__`）、無ければグループ無しの行（接頭辞だけ）。
+ * 空の下書きは付け替えず捨てる（未保存扱いにならないため）。付け替え先に名前入りの下書きが既にあれば、そちらを優先し
+ * 捨てる側の名前を droppedNames で返す。
+ */
+export function reassignOrphanDrafts(
+  drafts: Record<string, InlineDraft>,
+  sections: ProjectSection[],
+): OrphanDraftResult {
+  const live = new Set(sections.filter(s => !s.is_deleted).map(s => s.id));
+  const byId = new Map(sections.map(s => [s.id, s]));
+  const next: Record<string, InlineDraft> = { ...drafts };
+  const droppedNames: string[] = [];
+  let changed = false;
+  for (const [key, draft] of Object.entries(drafts)) {
+    const i = key.indexOf(SECTION_KEY_SEPARATOR);
+    if (i < 0) continue;
+    const sectionId = key.slice(i + 1);
+    if (sectionId === UNSECTIONED_KEY || live.has(sectionId)) continue;
+    const prefix = key.slice(0, i);
+    const projectId = byId.get(sectionId)?.project_id;
+    const projectHasSections = projectId ? sections.some(s => s.project_id === projectId && !s.is_deleted) : true;
+    const targetKey = projectHasSections ? `${prefix}${SECTION_KEY_SEPARATOR}${UNSECTIONED_KEY}` : prefix;
+    delete next[key];
+    changed = true;
+    if (!isDraftDirty(draft)) continue;
+    const existing = next[targetKey];
+    if (existing && isDraftDirty(existing)) { droppedNames.push(draft.name.trim()); continue; }
+    next[targetKey] = draft;
+  }
+  return { drafts: changed ? next : drafts, droppedNames, changed };
 }

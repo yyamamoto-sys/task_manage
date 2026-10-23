@@ -8463,3 +8463,14 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * M66：conflictRefresh.ts（resolveSaveConflict・PersonalOkrConflictError）。saveKr／saveMonth／saveWeek／saveMemo／savePeriodReview は ConflictError で該当行だけ取り直し（personalOkrStore.fetchPersonalOkrRowById）て state を最新にし、案内文のエラーを投げる。書きかけの欄は syncEditedValue（M60）が守る。上書きを選ぶUIは作らない。
 # * M67：ensureWeekTasksLoaded が boolean を返し、PersonalKrPanel.handleOpenLinker は読めなければ週リンクのモーダルを開かず理由と「再試行」を出す。
 # * テスト：personalOkrJudgementFixes.test.ts・personalOkrUiStoreJudgementFixes.test.ts・personalOkrJudgementWiring.test.ts（修正前コードで赤を確認）。noFullReloadOnChange.test.ts の resync 検査を requestPersonalOkrResync 込みに更新。DB 変更なし・MIN_CLIENT_VERSION は上げない。
+# v3.181（2026-10-23）：判断待ち8件の解決（docs/REFACTORING.md M68〜M70・M73〜M75・M77〜M80）
+#
+# * M74・M78：lib/task/settleSaves.ts（settleUndoSaves／settleSingleSave）。useBulkTaskActions の「元に戻す」5箇所・useTaskDragReorder.handleMultiTaskDrop の「元に戻す」は Promise.allSettled で待ち、失敗があれば「N件は元に戻せませんでした」を1回だけ出す（個々の失敗は saveTask 側のトースト）。GanttView のバーのリサイズ・単体移動・範囲作成の mouseup は settleSingleSave で拒否を握る（未処理の Promise 拒否・client_error_logs への記録を残さない）。
+# * M68：lib/supabase/resync.ts の createUnsubscribeClock。App.tsx は購読を解除した時刻（cleanup・停止）を ref に残し、次の購読の最初の SUBSCRIBED で catchUpRemoteChanges(その時刻)（既存の2分の余裕込み）。一度も解除していなければ従来どおり引数なし（初回 load の開始時刻）。
+# * M69：停止からの再開（start(true)）でも onFirstSubscribed で差分取得（起点＝停止した時刻）。失敗時は resync()（30秒の最短間隔で、再開時の全件 load と二重に走らない）。
+# * M73：supabase/client.ts の Proxy に channel／removeChannel を追加。ゲストでは blockedChannel()（on／subscribe 等は自分を返し、SUBSCRIBED は来ない）と Promise.resolve("ok") を返し、実クライアントにチャンネルを作らない。型は Proxy のため変わらない。
+# * M75：lib/list/inlineAdd.ts の reassignOrphanDrafts。useListInlineAdd が projectSections を受け取り、削除された（is_deleted または記録なし）グループ宛ての名前入り下書きを「未分類」ブロック（PJにグループが残らなければグループ無しの行）へ付け替える。移動先に名前入りの下書きが既にあれば、そちらを残して捨てた名前をトーストで知らせる。空の下書きは捨てる。
+# * M77・M80：lib/task/hiddenSelection.ts（countHiddenTargets／confirmHiddenIncluded／withHiddenNote）。useBulkTaskActions の第6引数 visibleIdsRef（ガント＝visibleOrderedTaskIds・リスト＝visibleOrderedTaskIdsRef・カンバン＝orderedTaskIds）と選択の差を数え、見えない選択を含む一括操作はステータス・優先度・担当者・日程ずらしで実行前の確認（「うち、今は表示されていない N 件も含みます」）、削除・PJ移動は既存の確認文に追記、複製は DuplicateTasksModal の注記（visibleTaskIds）。0件なら従来どおり確認なし。リスト・カンバンはフィルタで見えなくなった選択を従来どおり選択から外す（今回の対象は折りたたみ・完了を隠す・保留中止の非表示で隠れたもの。ガントは選択が残るためフィルタ分も対象）。
+# * M79：lib/dashboardKpi.ts。KPI「進行中」「今週の完了率」を、期限超過・PJ進捗と同じ葉タスク基準（子を持つ親は数えない。親判定は絞り込み前の全タスク）に揃えた。KPIタイルに説明文（ツールチップ）は無かったので文言の修正は無し。
+# * M70：lib/overlayEscape.ts の closeOnEscapeAndStop。CustomSelect の Esc は window の capture 段階で受けて stopImmediatePropagation（開いている間だけ登録）。document の keydown（バブリング）で Esc を待つモーダル全部に効く。useConfirmClose の role="listbox" 判定は他のオーバーレイ用の安全網として残す（矛盾しない：CustomSelect 経由では先に止まりモーダルに届かない）。
+# * テスト：settleSaves.test.ts・settleSavesWiring.test.ts・catchUpSince.test.ts・client.test.ts（channel）・inlineAddOrphan.test.ts・hiddenSelection.test.ts・dashboardKpi.test.ts・overlayEscape.test.ts（修正前のコードで赤を確認）。DB 変更なし・MIN_CLIENT_VERSION は上げない。M57・M76 は記録のまま（M76 は次にマイグレーションを出すときに相乗り）。

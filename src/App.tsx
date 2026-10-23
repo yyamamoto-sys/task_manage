@@ -33,7 +33,7 @@ import {
   setEchoRecoveryRequesters, requestEchoSlowRecovery, requestEchoStuckRecovery,
 } from "./stores/appStore";
 import { subscribeToRealtime } from "./lib/supabase/realtime";
-import { createHiddenReturnGate, createResyncRunner } from "./lib/supabase/resync";
+import { createHiddenReturnGate, createResyncRunner, createUnsubscribeClock } from "./lib/supabase/resync";
 import { requestPersonalOkrResync } from "./lib/personalOkr/resyncRegistry";
 import { startHealthMonitor, readHeapBytes } from "./lib/diagnostics/healthMonitor";
 import { startClickHistory } from "./lib/feedback/clickHistory";
@@ -607,6 +607,8 @@ function AuthenticatedApp({
   const load = useAppStore(s => s.load);
   // realtime-silent の自己回復（60秒届かない）でチャンネルを張り直すための世代。増やすと購読の effect が作り直される
   const [realtimeEpoch, setRealtimeEpoch] = useState(0);
+  // 購読を最後に解除した時刻。effect が作り直されても残すため ref に持つ（差分取得の起点。M68・M69）
+  const unsubscribeClockRef = useRef(createUnsubscribeClock());
   useEffect(() => {
     if (!realtimeReady) return;
     // 取りこぼしを埋める全件再取得は「切断からの復帰」「10分以上非表示からの復帰」のときだけ（Section 76）。
@@ -628,20 +630,23 @@ function AuthenticatedApp({
     });
     // 購読の開始・停止。長く（10分以上）非表示のタブは停止し、前面に戻ったら張り直す（v3.171・Section 76 Disk IO 対策）
     let off: (() => void) | null = null;
-    const start = (resumed: boolean) => {
+    const clock = unsubscribeClockRef.current;
+    const start = () => {
+      // 起点は「直前に購読を解除した時刻」。張り直し（M68）は全期間の差分を取り直さず、停止からの再開（M69）は
+      // 全件 load と購読有効の間の窓を埋める。一度も解除していなければ従来どおり初回 load の開始時刻（引数なし）。
+      // 失敗したら全件再取得（resync は最短間隔で間引かれ、再開時の全件 load と二重には走らない）
+      const since = clock.since();
       off = subscribeToRealtime(applyRemoteChange, {
         onResync: resync,
-        // 初回 load の開始から購読有効までの取りこぼしは、小さな差分取得で埋める（失敗したら全件再取得）。
-        // 停止からの再開は下の全件再取得（resync）が埋めるので、差分取得は重ねない
-        onFirstSubscribed: resumed ? undefined : () => { void catchUpRemoteChanges().catch(() => resync()); },
+        onFirstSubscribed: () => { void catchUpRemoteChanges(since ?? undefined).catch(() => resync()); },
       });
     };
     const gate = createHiddenReturnGate();
     if (isRealtimePaused()) setRealtimeChannelState("paused");
-    else start(false);
+    else start();
     const offPause = onRealtimePauseChange(paused => {
       if (paused) {
-        off?.();
+        if (off) { off(); clock.markUnsubscribed(); }
         off = null;
         setRealtimeChannelState("paused");
         return;
@@ -649,7 +654,7 @@ function AuthenticatedApp({
       // 「停止中」と「再開直後の接続待ち」の間は自分の保存のエコー見張りを動かさない（realtimeEchoWatch）
       setRealtimeChannelState("resuming");
       gate.onVisible();
-      start(true);
+      start();
       resync();
     });
     const onVisibility = () => {
@@ -666,7 +671,7 @@ function AuthenticatedApp({
       echoCatchUp.cancel();
       setRemoteResyncRequester(null);
       setEchoRecoveryRequesters(null);
-      off?.();
+      if (off) { off(); clock.markUnsubscribed(); }
     };
   }, [realtimeReady, applyRemoteChange, load, realtimeEpoch]);
 

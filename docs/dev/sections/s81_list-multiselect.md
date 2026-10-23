@@ -43,3 +43,12 @@
 - 配線は `ganttCheckboxWiring.test.ts`（コメント除去のソース走査・わざと壊して赤を確認）、バー共有は `bulkOpsWiring.test.ts`。左右の行が揃ったままか・Shift＋クリックの実操作は実機確認が要る。
 
 ---
+
+---
+
+### 追記（v3.181・2026-10-23）：見えていない選択を含む一括操作の確認（M77・M80）／ダッシュボードKPI（M79）
+
+- `useBulkTaskActions` の第6引数 `visibleIdsRef`（ガント＝`visibleOrderedTaskIds`・リスト＝`visibleOrderedTaskIdsRef`・カンバン＝`orderedTaskIds`）と選択の差を `lib/task/hiddenSelection.ts` で数える。**見えない選択を含むときだけ**、ステータス・優先度・担当者・日程ずらしは実行前の確認（`うち、今は表示されていない N 件も含みます`）を出し、削除・PJ移動は既存の確認文に追記、複製は `DuplicateTasksModal` の注記（`visibleTaskIds`）。0件なら従来どおり確認なし。
+- 対象は変えていない（見えない選択も従来どおり対象）。リスト・カンバンはフィルタ・PJ切替で見えなくなった選択を従来どおり選択から外す。確認が効くのは折りたたみ（リスト・ガント）・カンバンの「完了を隠す」「保留・中止を表示しない」・ガントのフィルタ。
+- ダッシュボードのKPI「進行中」「今週の完了率」は `lib/dashboardKpi.ts`（葉タスク基準＝子を持つ親は数えない。期限超過・PJ進捗と同じ）。
+- `hiddenSelection.test.ts`・`dashboardKpi.test.ts`。

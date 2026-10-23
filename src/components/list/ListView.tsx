@@ -355,7 +355,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
 
   // 一括ステータス変更・一括優先度変更・一括担当者変更・一括削除（カンバンビューと共有・useBulkTaskActions）
   const { bulkUpdateStatus, bulkUpdatePriority, bulkUpdateAssignee, bulkDelete, bulkMoveToProject, bulkShift } = useBulkTaskActions(
-    allTasks, members, selectedIds, currentUser.id, clearSelection,
+    allTasks, members, selectedIds, currentUser.id, clearSelection, visibleOrderedTaskIdsRef,
   );
 
   // タスクをドロップ先タスクの行の「どこ」に落としたかで挙動を分ける（before/after=並び替え・
@@ -518,7 +518,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
   // ===== その場追加（各グループ末尾の「＋ タスクを追加」行。PC表のみ。CLAUDE.md Section 77）=====
   const inlineAddEnabled = !isMobile && canGuestEdit(isGuestMember(currentUser), "task");
   const inlineAdd = useListInlineAdd({
-    userId: currentUser.id, scopedTasks: rawTasks, allTasks, filteredTasks, saveTask,
+    userId: currentUser.id, scopedTasks: rawTasks, allTasks, filteredTasks, saveTask, projectSections,
   });
 
   // ===== 親子ツリーの行構築 =====
@@ -1245,6 +1245,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
           currentUser={currentUser}
           onClose={() => setShowDuplicateModal(false)}
           onDuplicated={clearSelection}
+          visibleTaskIds={visibleOrderedTaskIds}
         />
       )}
     </div>

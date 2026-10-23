@@ -73,6 +73,7 @@ import { SectionMenu, MOVE_ONLY_SECTION_MENU_ACTIONS, type SectionMenuAction } f
 import { computeDropZoneFromRatio, computeInsertAfterOrder } from "../../lib/dragReorder";
 import { withBellReserve } from "../../lib/layout/topRightBell";
 import { useSnapshotProvider } from "../../hooks/useSnapshotProvider";
+import { settleSingleSave } from "../../lib/task/settleSaves";
 
 const headerBtnStyle: React.CSSProperties = {
   padding: "4px 10px", fontSize: "11px",
@@ -558,7 +559,10 @@ export function GanttView({
     sharedProjectId(allTasks.filter(t => selectedTaskIds.has(t.id))), [], selectedTaskIds.size > 0,
   );
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
-  const bulkActions = useBulkTaskActions(allTasks, members, selectedTaskIds, currentUser.id, clearTaskSelection);
+  // 選択のうち今は見えていないタスク（折りたたみ・絞り込み等）を一括操作の確認で明示する（M77）
+  const visibleIdsRef = useRef<readonly string[]>(visibleOrderedTaskIds);
+  visibleIdsRef.current = visibleOrderedTaskIds;
+  const bulkActions = useBulkTaskActions(allTasks, members, selectedTaskIds, currentUser.id, clearTaskSelection, visibleIdsRef);
   // 左列のチェックボックス：Shift＝表示順（ganttRows 由来）で範囲選択／通常＝親子連動トグル＋アンカー更新（リストと同じ純関数）
   const handleCheckboxClick = useCallback((e: React.MouseEvent, taskId: string) => {
     e.stopPropagation();
@@ -1131,9 +1135,9 @@ export function GanttView({
           let newDate = toDateStr(addDays(orig, deltaDays));
           if (edge === "start") {
             if (clampAgainst) newDate = clampStartDate(newDate, clampAgainst);
-            await saveTask({ ...task, start_date: newDate });
+            await settleSingleSave(saveTask({ ...task, start_date: newDate }));
           } else {
-            await saveTask({ ...task, due_date: newDate });
+            await settleSingleSave(saveTask({ ...task, due_date: newDate }));
           }
         }
       }
@@ -1252,11 +1256,11 @@ export function GanttView({
       if (Object.keys(shift).length === 0) return;
       const task = allTasks.find(t => t.id === taskId);
       if (!task) return;
-      await saveTask({
+      await settleSingleSave(saveTask({
         ...task,
         ...(shift.start !== undefined ? { start_date: shift.start } : {}),
         ...(shift.due !== undefined ? { due_date: shift.due } : {}),
-      });
+      }));
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
@@ -1561,7 +1565,7 @@ export function GanttView({
       const range = computeDragCreateRange(anchorDate, currentDate);
       const task = allTasks.find(t => t.id === taskId);
       if (!task) return;
-      await saveTask({ ...task, start_date: range.start, due_date: range.due });
+      await settleSingleSave(saveTask({ ...task, start_date: range.start, due_date: range.due }));
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
@@ -2917,6 +2921,7 @@ export function GanttView({
           currentUser={currentUser}
           onClose={() => setShowDuplicateModal(false)}
           onDuplicated={clearTaskSelection}
+          visibleTaskIds={visibleOrderedTaskIds}
         />
       )}
 

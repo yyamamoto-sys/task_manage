@@ -23,6 +23,7 @@ import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useT } from "../../hooks/useT";
 import { useFloatingPanel } from "../../hooks/useFloatingPanel";
+import { closeOnEscapeAndStop } from "../../lib/overlayEscape";
 
 // 【2026-08-26】固定の maxHeight(260px) をやめ、トリガーの上下で実際に使える余白から
 // 算出する（useFloatingPanel）。拡大率・フォント設定で実物とズレる固定値の見積もりは
@@ -112,12 +113,13 @@ export function CustomSelect({
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
-  // Escape キーで閉じる
+  // Escape キーで閉じる。window の capture 段階で受けて止める＝開いている間の Esc はパネルだけを閉じ、
+  // 背後のモーダル（document の keydown で Esc を待つ）には届かない（M70・lib/overlayEscape.ts）
   useEffect(() => {
     if (!open) return;
-    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
+    const handler = (e: KeyboardEvent) => { closeOnEscapeAndStop(e, () => setOpen(false)); };
+    window.addEventListener("keydown", handler, true);
+    return () => window.removeEventListener("keydown", handler, true);
   }, [open]);
 
   // 開いたら検索クエリをリセットし、検索ボックスにフォーカス

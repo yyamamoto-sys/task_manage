@@ -20,6 +20,7 @@ import { computeSiblingReorderIds, type DropZone } from "../lib/dragReorder";
 import { computeMultiReorder, type MultiDropPosition } from "../lib/task/multiReorder";
 import { showToast } from "../components/common/Toast";
 import { formatErrorForUser } from "../lib/errorMessage";
+import { settleUndoSaves } from "../lib/task/settleSaves";
 
 export function useTaskDragReorder(
   allTasks: Task[],
@@ -158,10 +159,10 @@ export function useTaskDragReorder(
         isUndo: true,
         onClick: () => {
           const tasksNow = useAppStore.getState().tasks;
-          result.patches.forEach(({ id, prev }) => {
+          void settleUndoSaves(result.patches.map(({ id, prev }) => {
             const t = tasksNow.find(x => x.id === id);
-            if (t) saveTask({ ...t, ...prev, updated_by: currentUserId });
-          });
+            return t ? saveTask({ ...t, ...prev, updated_by: currentUserId }) : Promise.resolve();
+          }));
         },
       });
     } catch (err) {
