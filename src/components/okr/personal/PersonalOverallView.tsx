@@ -22,6 +22,7 @@
 // 遅延読み込みする（KR単体パネルと同様、必要になった時点で読む設計）。
 
 import { useEffect, useMemo } from "react";
+import type { PeriodReviewsErrorKind } from "../../../lib/personalOkr/periodReviewsLoadError";
 import type { Member, PersonalKr, PersonalKrMonth, PersonalKrWeek, PersonalKrWeekTask, PersonalPeriodReview, Quarter, Task, TaskDependency } from "../../../lib/localData/types";
 import { quarterMonthSlots, monthToDateStr, classifyMonth, isMonthEditable, isQuarterEditable } from "../../../lib/personalOkr/quarterMonths";
 import { computeMonthWeekSegments } from "../../../lib/date/monthWeeks";
@@ -47,13 +48,16 @@ interface Props {
   weeksByKr: Record<string, PersonalKrWeek[]>;
   weekTasksByWeek: Record<string, PersonalKrWeekTask[]>;
   ensureKrDetailLoaded: (krId: string) => Promise<void>;
-  ensureWeekTasksLoaded: (weekId: string) => Promise<void>;
+  ensureWeekTasksLoaded: (weekId: string) => Promise<unknown>;
   tasks: Task[];
   taskDependencies: TaskDependency[];
   periodReviews: PersonalPeriodReview[];
   periodReviewsLoaded: boolean;
   periodReviewsLoading: boolean;
   periodReviewsError: string | null;
+  /** M61：未適用（テーブル・列が無い）か、それ以外の失敗か */
+  periodReviewsErrorKind: PeriodReviewsErrorKind | null;
+  reloadPeriodReviews: () => Promise<void>;
   loadPeriodReviews: () => Promise<void>;
   savePeriodReview: (review: PersonalPeriodReview, expectedUpdatedAt?: string) => Promise<void>;
   /** 実施記録（actual_activities列）の利用可否（仕様書§W2・2026-08-27・v3.105） */
@@ -63,7 +67,7 @@ interface Props {
 export function PersonalOverallView({
   currentUser, fiscalYear, quarter, monthIndex, krs, monthsByKr, weeksByKr, weekTasksByWeek,
   ensureKrDetailLoaded, ensureWeekTasksLoaded, tasks, taskDependencies,
-  periodReviews, periodReviewsLoaded, periodReviewsLoading, periodReviewsError,
+  periodReviews, periodReviewsLoaded, periodReviewsLoading, periodReviewsError, periodReviewsErrorKind, reloadPeriodReviews,
   loadPeriodReviews, savePeriodReview, actualActivitiesAvailable,
 }: Props) {
   const today = useMemo(() => new Date(), []);
@@ -244,7 +248,17 @@ export function PersonalOverallView({
   if (periodReviewsError) {
     return (
       <div style={{ padding: "40px 20px", textAlign: "center", color: "var(--color-text-tertiary)", fontSize: "13px", background: "var(--color-bg-secondary)", border: "1px solid var(--color-border-primary)", borderTop: "none", borderRadius: "0 0 var(--radius-md) var(--radius-md)" }}>
-        この機能はデータベースへの適用がまだです（管理者に連絡してください）。
+        {periodReviewsErrorKind === "other" ? (
+          <>
+            <div style={{ color: "var(--color-text-danger)", marginBottom: "10px" }}>{periodReviewsError}</div>
+            <button
+              onClick={() => void reloadPeriodReviews()}
+              style={{ fontFamily: "inherit", fontSize: "12px", padding: "6px 14px", background: "transparent", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-sm)", color: "var(--color-text-secondary)", cursor: "pointer" }}
+            >再読み込み</button>
+          </>
+        ) : (
+          <>この機能はデータベースへの適用がまだです（管理者に連絡してください）。</>
+        )}
       </div>
     );
   }

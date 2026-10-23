@@ -29,6 +29,8 @@ import { showToast } from "../../common/Toast";
 import { GuestAiQuotaNotice } from "../../common/GuestAiQuotaNotice";
 import { confirmDialog } from "../../../lib/dialog";
 import { useConfirmClose } from "../../../hooks/useConfirmClose";
+import { hasUnappliedDraftText } from "../../../lib/personalOkr/draftCloseGuard";
+import { buildNumericEvalWarning } from "../../../lib/personalOkr/draftNumericEvalCheck";
 
 interface Props {
   /** 例："8月" または "2026年度 3Q" */
@@ -57,10 +59,15 @@ export function PersonalOkrPeriodReviewDraftModal({
   const [text, setText] = useState("");
   // M53：生成直後・本文欄へ反映した時点の本文。これと違えば「編集したまま未反映」とみなす
   const [baselineText, setBaselineText] = useState("");
+  // M62：本文欄へ反映した時点の本文（まだ反映していなければnull）
+  const [appliedText, setAppliedText] = useState<string | null>(null);
 
   const hasDraft = !!result;
+  // M56：数値評価の混入を警告する（自動では消さない）
+  const numericWarning = hasDraft ? buildNumericEvalWarning([text]) : null;
   const requestClose = useConfirmClose({
-    dirty: hasDraft && text !== baselineText,
+    // M62：編集した場合に加え、生成直後で未編集・未反映の下書き（AI課金済み）も確認する
+    dirty: (hasDraft && text !== baselineText) || hasUnappliedDraftText(hasDraft, text, appliedText),
     message: "編集した下書きは本文欄に反映されていません。閉じますか？",
     onClose,
   });
@@ -90,6 +97,7 @@ export function PersonalOkrPeriodReviewDraftModal({
     }
     onApply(text);
     setBaselineText(text);
+    setAppliedText(text);
     showToast(`${periodLabel}の全体の振り返り本文に反映しました（保存するには「振り返りを保存」を押してください）`);
   };
 
@@ -162,6 +170,7 @@ export function PersonalOkrPeriodReviewDraftModal({
                 <div style={{ fontSize: "10.5px", color: "var(--color-text-tertiary)", marginTop: "6px" }}>
                   自己評価%・GM評価%の数値は含まれていません（人が決めてください）。
                 </div>
+                {numericWarning && <div style={{ fontSize: "11px", color: "var(--color-text-danger)", background: "var(--color-bg-danger, var(--color-bg-secondary))", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-sm)", padding: "6px 10px", marginTop: "6px", lineHeight: 1.6 }}>{numericWarning}</div>}
               </>
             ) : (
               <div style={{ padding: "12px 14px", borderRadius: "var(--radius-md)", background: "var(--color-bg-secondary)", border: "1px dashed var(--color-border-secondary)", fontSize: "11.5px", color: "var(--color-text-tertiary)", fontStyle: "italic" }}>

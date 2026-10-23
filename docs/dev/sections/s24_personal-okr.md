@@ -466,3 +466,23 @@ v3.101のマイグレーション（未適用のまま）に2件の欠陥があ�
 - **マイグレーション不要**（DB変更なし）。
 
 ---
+
+---
+
+### v3.180（2026-10-23）：判断待ち12件の解決（M54〜M59・M61〜M67。docs/REFACTORING.md）
+
+方針は統括判断＋山本さん承認で決定済み。DB変更なし・`MIN_CLIENT_VERSION`は上げない。
+
+- **M54**：`PersonalOkrView`が`PersonalOkrAiPanel`に`key={KR id:月}`を付ける。KRタブ・月の切替で会話履歴が作り直される（応答待ちの途中で切り替えても古い応答は混ざらない）。
+- **M58**：`usePersonalOkrAiConsultation.submit`は失敗時に`rollbackLastUserTurn`（`sessionManager.ts`）でuserターンを巻き戻し`false`を返す。パネルは待つ間に新しく打った文が無ければ入力欄へ元の文を戻す。
+- **M59**：`personalOkrAiContext.ts`の`clipForAi`。KRの6本文欄・計画4欄・実施記録は欄ごと1500字、全体は8000字（`planDraftContext`と同値）。切った欄には「…（以下省略）」を付ける。総量超過時はメモ→末尾の順に削る。
+- **M55**：`persistGenerated.ts`。`runOutlookAnalysis`／`runReviewDraft`はAI成功後のINSERTが失敗しても結果をstateへ載せ、`outlookUnsavedKeys`／`reviewDraftUnsavedKeys`とエラー文を併記する。`retrySaveOutlook`／`retrySaveReviewDraft`はAIを呼び直さずINSERTだけやり直す（`AheadBlock`・`PersonalOkrReviewDraftModal`に「保存し直す」）。
+- **M56**：`draftNumericEvalCheck.ts`（`[自己評価：…]`・評価語の近くの`◯%`・`バンド◯`）。3つの下書きモーダルが警告を出す。自動では消さない。検査は評価語の近くの数値に限る（本文の「売上10%増」等は拾わない）。
+- **M62**：`draftCloseGuard.ts`。`PersonalOkrReviewDraftModal`／`PersonalOkrPeriodReviewDraftModal`／`PersonalOkrPlanDraftModal`は「下書きがあり未反映」でも閉じる確認を出す（反映した時点の内容を覚え、以後の編集もdirty）。
+- **M61**：`periodReviewsLoadError.ts`で未適用（42P01・42703・PGRST204/205＋`personal_period_reviews`の言及）とそれ以外を分ける。未適用以外は`formatErrorForUser`の文言＋「再読み込み」（`reloadPeriodReviews`）。
+- **M63・M64**：`importApplyPlan.ts`は既存KR・既存月に対応づけたとき空欄（null）の項目に既存値を使う（月側の項目も同じ扱い）。`lockDisplayOrderStart`で新規KRの`display_order`開始値を初回実行時に固定する。
+- **M65**：`resyncRegistry.ts`＋`personalOkrUiStore.resyncAll`。`App.tsx`のresyncランナー（切断復帰・10分以上非表示からの復帰・30秒の最短間隔）が`requestPersonalOkrResync()`も呼ぶ。KR一覧・月（読み込み済みのKR分を1クエリ）・開いているKRの週/メモ/紐づけ・全体タブを静かに取り直す（`krsLoaded`等のフラグは戻さない＝スケルトンの点滅が出ない）。他のKRは詳細の読み込み済み印を外し、開いたときに取り直す。ストアが未読み込み・ゲストなら何もしない。
+- **M66**：`conflictRefresh.ts`。保存系5アクション（`saveKr`／`saveMonth`／`saveWeek`／`saveMemo`／`savePeriodReview`）は`ConflictError`で該当行だけ`fetchPersonalOkrRowById`で取り直してstateを最新にし、「他の人がこの内容を更新しました。最新の内容を読み込みました（あなたの入力は残しています）。」のエラーを投げる（`ConflictError`の派生）。書きかけの欄はM60の`syncEditedValue`が守る。上書きを選ぶUIは作らない。
+- **M67**：`ensureWeekTasksLoaded`は読めたかをbooleanで返す。`PersonalKrPanel.handleOpenLinker`は読めなければモーダルを開かず理由と「再試行」を出す。
+- **テスト**：`personalOkrJudgementFixes.test.ts`・`personalOkrUiStoreJudgementFixes.test.ts`・`personalOkrJudgementWiring.test.ts`（修正前コードで赤を確認。M56・M62の純関数は新設のため配線テストで赤）。
+- **実機でしか分からないこと**：復帰時の再取得で入力中の欄が消えないか／別タブとの競合後に再保存が通るか／AIパネルの切替で会話が消えて困らないか。

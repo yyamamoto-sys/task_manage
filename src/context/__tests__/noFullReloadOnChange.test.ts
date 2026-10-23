@@ -29,7 +29,8 @@ describe("App.tsx の realtime 購読", () => {
   const src = code("src/App.tsx");
   it("onChange は applyRemoteChange のみ。load() は onResync（復帰）経由だけ", () => {
     expect(src).toMatch(/subscribeToRealtime\(applyRemoteChange, \{\s*onResync: resync,/);
-    expect(src).toMatch(/createResyncRunner\(\(\) => \{ void load\(\); \}\)/);
+    // v3.180（M65）：同じ間引き（resync）に個人OKRの再取得も相乗りする
+    expect(src).toMatch(/createResyncRunner\(\(\) => \{ void load\(\); requestPersonalOkrResync\(\); \}\)/);
   });
   it("間引いた再取得の要求先（setRemoteResyncRequester）を差し込み、アンマウントで後追いタイマーの解除と要求先の解除をする", () => {
     expect(src).toMatch(/setRemoteResyncRequester\(resync\)/);

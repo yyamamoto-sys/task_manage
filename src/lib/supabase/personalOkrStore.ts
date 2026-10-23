@@ -298,3 +298,15 @@ export async function upsertPersonalPeriodReview(
 ): Promise<string> {
   return await saveWithLock("personal_period_reviews", review, expectedUpdatedAt);
 }
+
+// ===== 競合後の1行取り直し（M66） =====
+
+export type PersonalOkrRowTable =
+  | "personal_krs" | "personal_kr_months" | "personal_kr_weeks" | "personal_kr_memos" | "personal_period_reviews";
+
+/** 保存で ConflictError が起きた行だけを取り直す（論理削除済みも返す。呼び出し側が is_deleted を見る） */
+export async function fetchPersonalOkrRowById<T>(table: PersonalOkrRowTable, id: string): Promise<T | null> {
+  const { data, error } = await supabase.from(table).select("*").eq("id", id).maybeSingle();
+  if (error) throw error;
+  return (data as T | null) ?? null;
+}

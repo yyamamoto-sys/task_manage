@@ -67,3 +67,14 @@ export function truncateOldTurns(
     tokenWarning: false,
   };
 }
+
+/**
+ * 末尾がuserターンならそれを取り除く（M58：AI呼び出し失敗時にユーザーのターンを巻き戻す）。
+ * 末尾がuserでなければ何もしない（assistantの返答済みターンは消さない）。
+ */
+export function rollbackLastUserTurn(session: ConsultationSession): ConsultationSession {
+  const last = session.turns[session.turns.length - 1];
+  if (!last || last.role !== "user") return session;
+  const turns = session.turns.slice(0, -1);
+  return { turns, tokenWarning: turns.length > MAX_TURNS_WARNING };
+}

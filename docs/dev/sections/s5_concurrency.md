@@ -109,3 +109,9 @@ schema.sql には `trg_*_updated_at` という BEFORE UPDATE トリガーが貼�
 トリガー上書き後の実値を返すこと等）。
 
 ---
+
+---
+
+### v3.180：個人OKRの保存競合（M66）
+
+個人OKRの保存系（`personalOkrUiStore`の`saveKr`／`saveMonth`／`saveWeek`／`saveMemo`／`savePeriodReview`）で`ConflictError`が起きたら、該当行だけ取り直してstateを最新にする（`lib/personalOkr/conflictRefresh.ts`）。画面の`updated_at`が古いまま再保存が同じ競合になり続ける状態を抜けられる。**上書きを選ぶUIは作らない**（再保存は最新の`updated_at`が基準になるので、利用者が最新を見たうえで保存し直す）。書きかけの欄は`syncEditedValue`（Section 24・M60）が守る。詳細＝`docs/dev/sections/s24_personal-okr.md`のv3.180。

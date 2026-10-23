@@ -107,7 +107,8 @@ interface Props {
   todos: ToDo[];
   taskDependencies: TaskDependency[];
   weekTasksByWeek: Record<string, PersonalKrWeekTask[]>;
-  ensureWeekTasksLoaded: (weekId: string) => Promise<void>;
+  /** M67：falseなら紐づけ一覧を読み込めなかった（undefined・voidは「読めた」扱い） */
+  ensureWeekTasksLoaded: (weekId: string) => Promise<boolean | void>;
   onSaveMonth: (month: PersonalKrMonth, expectedUpdatedAt?: string) => Promise<void>;
   onSaveWeek: (week: PersonalKrWeek, expectedUpdatedAt?: string) => Promise<void>;
   onSaveMemo: (memo: PersonalKrMemo, expectedUpdatedAt?: string) => Promise<void>;
@@ -123,6 +124,9 @@ interface Props {
   outlookByKrMonth: Record<string, PersonalKrOutlook | null>;
   outlookAnalyzingKeys: Set<string>;
   outlookErrorByKey: Record<string, string | null>;
+  /** AI解析は成功したがDB保存に失敗した結果のキー（M55） */
+  outlookUnsavedKeys: Set<string>;
+  onRetrySaveOutlook: (personalKrId: string, month: string) => Promise<void>;
   /** 保存済みの解析結果をDBから1回だけ読む（自動・ゼロトークン）。AI呼び出し自体は行わない */
   ensureOutlookLoaded: (personalKrId: string, month: string) => Promise<void>;
   onRunOutlookAnalysis: (params: {
@@ -136,6 +140,9 @@ interface Props {
   reviewDraftByKrMonth: Record<string, PersonalKrReviewDraft | null>;
   reviewDraftAnalyzingKeys: Set<string>;
   reviewDraftErrorByKey: Record<string, string | null>;
+  /** 生成は成功したがDB保存に失敗した下書きのキー（M55） */
+  reviewDraftUnsavedKeys: Set<string>;
+  onRetrySaveReviewDraft: (personalKrId: string, month: string) => Promise<void>;
   /** 保存済みの下書きをDBから1回だけ読む（自動・ゼロトークン） */
   ensureReviewDraftLoaded: (personalKrId: string, month: string) => Promise<void>;
   onRunReviewDraft: (params: {
@@ -153,9 +160,9 @@ export function PersonalKrPanel({
   weekTasksByWeek, ensureWeekTasksLoaded,
   onSaveMonth, onSaveWeek, onSaveMemo, onLinkWeekTask, onUnlinkWeekTask, onEditKr,
   readOnly = false,
-  outlookByKrMonth, outlookAnalyzingKeys, outlookErrorByKey, ensureOutlookLoaded, onRunOutlookAnalysis,
+  outlookByKrMonth, outlookAnalyzingKeys, outlookErrorByKey, outlookUnsavedKeys, onRetrySaveOutlook, ensureOutlookLoaded, onRunOutlookAnalysis,
   onAiContext, onOpenAiPanel,
-  reviewDraftByKrMonth, reviewDraftAnalyzingKeys, reviewDraftErrorByKey,
+  reviewDraftByKrMonth, reviewDraftAnalyzingKeys, reviewDraftErrorByKey, reviewDraftUnsavedKeys, onRetrySaveReviewDraft,
   ensureReviewDraftLoaded, onRunReviewDraft,
   actualActivitiesAvailable,
 }: Props) {
@@ -524,6 +531,7 @@ export function PersonalKrPanel({
   const outlookRow = outlookByKrMonth[outlookKeyStr];
   const outlookAnalyzing = outlookAnalyzingKeys.has(outlookKeyStr);
   const outlookError = outlookErrorByKey[outlookKeyStr] ?? null;
+  const outlookUnsaved = outlookUnsavedKeys.has(outlookKeyStr);
 
   // 🔴 AI呼び出し自体はここでは発火しない（v3.55・山本さんの決定。KR切替のたびにAI呼び出しが
   // 走り実用に耐えなかったため）。保存済みの解析結果（personal_kr_outlooks）の読み込みだけを
@@ -550,6 +558,7 @@ export function PersonalKrPanel({
   const reviewDraftRow = reviewDraftByKrMonth[reviewDraftKeyStr];
   const reviewDraftAnalyzing = reviewDraftAnalyzingKeys.has(reviewDraftKeyStr);
   const reviewDraftError = reviewDraftErrorByKey[reviewDraftKeyStr] ?? null;
+  const reviewDraftUnsaved = reviewDraftUnsavedKeys.has(reviewDraftKeyStr);
 
   const handleEnsureReviewDraftLoaded = useCallback(() => {
     if (readOnly) return; // 🔴🔴 サンプルKRのidは実DBに存在しないため問い合わせない
@@ -625,15 +634,23 @@ export function PersonalKrPanel({
 
   const [linker, setLinker] = useState<LinkerTarget | null>(null);
   const [weekActionError, setWeekActionError] = useState<string | null>(null);
+  const [weekActionRetry, setWeekActionRetry] = useState<(() => void) | null>(null);
   // 🔴 KR切替時にkeyremountが無くなったため、開いていた週リンクモーダル・エラー表示が
   // 前のKRのものとして残らないよう明示的に閉じる。
-  useEffect(() => { setLinker(null); setWeekActionError(null); setReviewDraftModalOpen(false); }, [kr.id]);
+  useEffect(() => { setLinker(null); setWeekActionError(null); setWeekActionRetry(null); setReviewDraftModalOpen(false); }, [kr.id]);
 
   const handleOpenLinker = async (card: { weekIndex: number; weekStartStr: string; weekEndStr: string; existing: PersonalKrWeek | null }, label: string) => {
     setWeekActionError(null);
+    setWeekActionRetry(null);
     try {
       const week = await ensureWeek(card.weekIndex, card.weekStartStr, card.weekEndStr);
-      await ensureWeekTasksLoaded(week.id);
+      // 🔴 M67：紐づけ一覧を読めなかったときはモーダルを開かない（一覧が空に見えて、実際はある紐づけを
+      // 無いものと誤認するため）。理由と再試行を出す
+      if ((await ensureWeekTasksLoaded(week.id)) === false) {
+        setWeekActionError(`${label}の紐づけ一覧を読み込めませんでした。通信状況を確認して、もう一度お試しください。`);
+        setWeekActionRetry(() => () => { void handleOpenLinker(card, label); });
+        return;
+      }
       setLinker({ weekIndex: card.weekIndex, weekStartStr: card.weekStartStr, weekEndStr: card.weekEndStr, week, label });
     } catch (e) {
       setWeekActionError(formatErrorForUser("週の準備に失敗しました", e));
@@ -687,6 +704,8 @@ export function PersonalKrPanel({
           draftRow={reviewDraftRow}
           analyzing={reviewDraftAnalyzing}
           error={reviewDraftError}
+          unsaved={reviewDraftUnsaved}
+          onRetrySave={() => void onRetrySaveReviewDraft(kr.id, monthStr)}
           onEnsureLoaded={handleEnsureReviewDraftLoaded}
           onGenerate={handleGenerateReviewDraft}
           onSaveEdit={handleSaveReviewText}
@@ -856,7 +875,17 @@ export function PersonalKrPanel({
             <p style={{ fontSize: "10.5px", color: "var(--color-text-tertiary)", margin: "-5px 0 8px" }}>
               週ごとの目標状態と自己評価は任意です。使う場合のみ記入してください。
             </p>
-            {weekActionError && <div style={{ fontSize: "12px", color: "var(--color-text-danger)", marginBottom: "8px" }}>{weekActionError}</div>}
+            {weekActionError && (
+              <div style={{ fontSize: "12px", color: "var(--color-text-danger)", marginBottom: "8px", display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                <span>{weekActionError}</span>
+                {weekActionRetry && (
+                  <button
+                    onClick={weekActionRetry}
+                    style={{ fontFamily: "inherit", fontSize: "11px", padding: "3px 10px", background: "transparent", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-sm)", color: "var(--color-text-secondary)", cursor: "pointer" }}
+                  >再試行</button>
+                )}
+              </div>
+            )}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "8px" }}>
               {weekCards.map(card => {
                 const linkedTasks = linkedTasksByWeekIndex[card.weekIndex] ?? [];
@@ -905,6 +934,8 @@ export function PersonalKrPanel({
               outlookRow={outlookRow}
               analyzing={outlookAnalyzing}
               outlookError={outlookError}
+              outlookUnsaved={outlookUnsaved}
+              onRetrySave={() => void onRetrySaveOutlook(kr.id, monthStr)}
               canReanalyze={!readOnly && !!okrAiContext}
               onReanalyze={handleRunOutlook}
             />

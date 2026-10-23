@@ -124,3 +124,9 @@ Chrome のタスクマネージャー（Shift+Esc）でこのタブのメモリ�
 - テスト：`components/kanban/__tests__/kanbanKeysAndDrop.test.ts`（修正前は赤）。DB 変更なし・MIN_CLIENT_VERSION は上げない。
 
 ---
+
+---
+
+### v3.180：個人OKRも復帰時の全件再取得の対象に（M65）
+
+個人OKRのストアは「自分」タブを開いたとき初めて読み込まれる（Section 19）ため、`App.tsx`は直接importできない。`lib/personalOkr/resyncRegistry.ts`に窓口を置き、ストアが読み込まれたときに`resyncAll`を登録する。`App.tsx`のresyncランナー（切断→復帰・10分以上非表示からの復帰・30秒の最短間隔）が`load()`と同時に`requestPersonalOkrResync()`を呼ぶので、問い合わせが増えるのは既存の復帰時だけ。`resyncAll`は`krsLoaded`等のフラグを戻さず（スケルトンが点滅しない）、KR一覧・月（1クエリ）・開いているKRの週/メモ/紐づけ・全体タブだけを取り直す。他のKRは詳細の読み込み済み印を外して次に開いたとき取り直す。ゲスト・未読み込みなら何もしない。

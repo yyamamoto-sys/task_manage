@@ -34,6 +34,8 @@ import { showToast } from "../../common/Toast";
 import { GuestAiQuotaNotice } from "../../common/GuestAiQuotaNotice";
 import { confirmDialog } from "../../../lib/dialog";
 import { useConfirmClose } from "../../../hooks/useConfirmClose";
+import { hasUnappliedDraftFields } from "../../../lib/personalOkr/draftCloseGuard";
+import { buildNumericEvalWarning } from "../../../lib/personalOkr/draftNumericEvalCheck";
 
 export type { PlanDraftFields };
 
@@ -72,6 +74,8 @@ const FIELD_DEFS: { key: keyof PlanDraftFields; label: string }[] = [
   { key: "risks", label: "リスクと依存関係" },
 ];
 
+const FIELD_KEYS = FIELD_DEFS.map(f => f.key);
+
 const EMPTY_FIELDS: PlanDraftFields = { positioning: "", activities: "", targetAndEvidence: "", risks: "" };
 
 export function PersonalOkrPlanDraftModal({
@@ -85,14 +89,19 @@ export function PersonalOkrPlanDraftModal({
   // M53（52回目）：「閉じる」確認用の基準。生成直後の4欄と、計画欄へ反映した時点の4欄。
   // 生成しただけで触っていない下書きは確認なしで閉じる（M62＝仕様判断待ち）。
   const [baseline, setBaseline] = useState<PlanDraftFields>(EMPTY_FIELDS);
-  const dirty = FIELD_DEFS.some(f => fields[f.key] !== baseline[f.key]);
+  // M62：計画欄へ反映した時点の4欄（まだ反映していなければnull）
+  const [appliedFields, setAppliedFields] = useState<PlanDraftFields | null>(null);
+  const hasDraft = !!result;
+  const dirty = FIELD_DEFS.some(f => fields[f.key] !== baseline[f.key])
+    // M62：生成直後で未編集・未反映の下書き（AI課金済み）も確認する
+    || hasUnappliedDraftFields(hasDraft, fields, appliedFields, FIELD_KEYS);
+  // M56：数値評価（実績%等）の混入を警告する。自動では消さない
+  const numericWarning = hasDraft ? buildNumericEvalWarning(FIELD_KEYS.map(k => fields[k])) : null;
   const requestClose = useConfirmClose({
     dirty,
     message: "編集した下書きは計画欄に反映されていません。閉じますか？",
     onClose,
   });
-
-  const hasDraft = !!result;
 
   const handleGenerate = async () => {
     setGenerating(true);
@@ -126,6 +135,7 @@ export function PersonalOkrPlanDraftModal({
     }
     onApply(fields);
     setBaseline(fields);
+    setAppliedFields(fields);
     showToast(`${targetMonthLabel}の計画欄に反映しました（保存するには「${targetMonthLabel}の計画を保存」を押してください）`);
   };
 
@@ -234,6 +244,7 @@ export function PersonalOkrPlanDraftModal({
                     />
                   </div>
                 ))}
+                {numericWarning && <div style={{ fontSize: "11px", color: "var(--color-text-danger)", background: "var(--color-bg-danger, var(--color-bg-secondary))", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-sm)", padding: "6px 10px", marginTop: "6px", lineHeight: 1.6 }}>{numericWarning}</div>}
               </div>
             ) : (
               <div style={{ padding: "12px 14px", borderRadius: "var(--radius-md)", background: "var(--color-bg-secondary)", border: "1px dashed var(--color-border-secondary)", fontSize: "11.5px", color: "var(--color-text-tertiary)", fontStyle: "italic" }}>

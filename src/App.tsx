@@ -34,6 +34,7 @@ import {
 } from "./stores/appStore";
 import { subscribeToRealtime } from "./lib/supabase/realtime";
 import { createHiddenReturnGate, createResyncRunner } from "./lib/supabase/resync";
+import { requestPersonalOkrResync } from "./lib/personalOkr/resyncRegistry";
 import { startHealthMonitor, readHeapBytes } from "./lib/diagnostics/healthMonitor";
 import { startClickHistory } from "./lib/feedback/clickHistory";
 import { countLoadsWithin, getLoadTotal } from "./lib/diagnostics/loadCounter";
@@ -610,7 +611,7 @@ function AuthenticatedApp({
     if (!realtimeReady) return;
     // 取りこぼしを埋める全件再取得は「切断からの復帰」「10分以上非表示からの復帰」のときだけ（Section 76）。
     // 通常の変更は applyRemoteChange の差分だけで反映する
-    const resync = createResyncRunner(() => { void load(); });
+    const resync = createResyncRunner(() => { void load(); requestPersonalOkrResync(); });
     // 見える範囲が変わりうる差分（Section 76）も、間引いた全件再取得に相乗りする
     setRemoteResyncRequester(resync);
     // 自分の保存のエコーが10秒届かないとき：差分取得を1回（全件 load はしない＝Disk IO 対策。30秒の最短間隔つき）。

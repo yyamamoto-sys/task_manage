@@ -49,7 +49,8 @@ export interface ImportKrDraftInput {
   keyResultId: string | null;
   taskForceId: string | null;
   label: string;
-  weightPct: number;
+  /** null＝確認画面で空欄。既存KRに対応づけたときは既存値を保つ（M63）。新規KRなら0 */
+  weightPct: number | null;
   category: string | null;
   activity: string | null;
   strengthRole: string | null;
@@ -101,13 +102,15 @@ export function buildImportApplyPlan(params: BuildImportApplyPlanParams): Import
       key_result_id: d.krKind === "group_kr" ? d.keyResultId : null,
       task_force_id: d.krKind === "group_kr" ? d.taskForceId : null,
       label: d.label,
-      weight_pct: d.weightPct,
-      category: d.category,
-      activity: d.activity,
-      strength_role: d.strengthRole,
-      weakness_role: d.weaknessRole,
-      criteria: d.criteria,
-      supplement: d.supplement,
+      // 🔴 M63：既存KRに対応づけたとき、確認画面で空欄の項目は既存値を保つ。月次振返りPDFのように
+      // KR側の項目を持たない資料を対応づけても、ウェイトが0になる・活動や達成基準が消えることを防ぐ
+      weight_pct: d.weightPct ?? existingKr?.weight_pct ?? 0,
+      category: d.category ?? existingKr?.category ?? null,
+      activity: d.activity ?? existingKr?.activity ?? null,
+      strength_role: d.strengthRole ?? existingKr?.strength_role ?? null,
+      weakness_role: d.weaknessRole ?? existingKr?.weakness_role ?? null,
+      criteria: d.criteria ?? existingKr?.criteria ?? null,
+      supplement: d.supplement ?? existingKr?.supplement ?? null,
       display_order: existingKr ? existingKr.display_order : params.nextDisplayOrderStart + newOrderOffset++,
       imported_at: params.nowIso,
       source_label: params.sourceLabel,
@@ -127,20 +130,21 @@ export function buildImportApplyPlan(params: BuildImportApplyPlanParams): Import
         personal_kr_id: krId,
         month: monthToDateStr(slot.monthStart),
         month_index: m.monthIndex,
-        positioning: m.positioning,
-        activities: m.activities,
-        target_and_evidence: m.targetAndEvidence,
-        risks: m.risks,
-        band_target: m.bandTarget,
+        // 既存の月に対応づけるときは月側の項目も同じ扱い（空欄は既存値を保つ。M63）
+        positioning: m.positioning ?? existingMonth?.positioning ?? null,
+        activities: m.activities ?? existingMonth?.activities ?? null,
+        target_and_evidence: m.targetAndEvidence ?? existingMonth?.target_and_evidence ?? null,
+        risks: m.risks ?? existingMonth?.risks ?? null,
+        band_target: m.bandTarget ?? existingMonth?.band_target ?? null,
         // 人が既に決めたband_overrideは取込で上書き・消去しない（既存値をそのまま保持する）
         band_override: existingMonth?.band_override ?? null,
         band_override_by: existingMonth?.band_override_by ?? null,
         band_override_at: existingMonth?.band_override_at ?? null,
-        weight_override_pct: m.weightOverridePct,
-        review_text: m.reviewText,
-        self_eval_pct: m.selfEvalPct,
-        gm_eval_pct: m.gmEvalPct,
-        gm_comment: m.gmComment,
+        weight_override_pct: m.weightOverridePct ?? existingMonth?.weight_override_pct ?? null,
+        review_text: m.reviewText ?? existingMonth?.review_text ?? null,
+        self_eval_pct: m.selfEvalPct ?? existingMonth?.self_eval_pct ?? null,
+        gm_eval_pct: m.gmEvalPct ?? existingMonth?.gm_eval_pct ?? null,
+        gm_comment: m.gmComment ?? existingMonth?.gm_comment ?? null,
         imported_at: params.nowIso,
         source_label: params.sourceLabel,
         is_deleted: false,
@@ -163,4 +167,20 @@ export function buildImportApplyPlan(params: BuildImportApplyPlanParams): Import
  */
 export function unloadedKrIds(targetIds: readonly string[], loadedIds: ReadonlySet<string>): string[] {
   return targetIds.filter(id => !loadedIds.has(id));
+}
+
+export interface DisplayOrderStartLock {
+  key: string;
+  value: number;
+}
+
+/**
+ * 新規KRの display_order の開始値を、登録の初回実行時に固定する（M64）。
+ * 登録が途中で失敗して再実行すると、保存済みの新規KRが「既存KR件数」に加わって開始値が増え、
+ * 保存済みKRの並びが後ろへずれる。同じ key（年度・四半期）の間は最初の値を使い続ける。
+ */
+export function lockDisplayOrderStart(
+  lock: DisplayOrderStartLock | null, key: string, currentExistingCount: number,
+): DisplayOrderStartLock {
+  return lock && lock.key === key ? lock : { key, value: currentExistingCount };
 }

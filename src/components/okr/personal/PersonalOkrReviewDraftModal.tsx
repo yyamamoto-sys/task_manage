@@ -29,6 +29,8 @@ import { isGenerationMaterialEmpty } from "../../../lib/personalOkr/reviewMateri
 import { readStoredReviewDraftPayload } from "../../../lib/ai/personalOkrReviewDraftExtractor";
 import { modalOverlayStyle, modalBoxStyle, MODAL_BODY_STYLE, MODAL_FOOTER_STYLE } from "../../common/modalStyles";
 import { formatErrorForUser } from "../../../lib/errorMessage";
+import { hasUnappliedDraftText } from "../../../lib/personalOkr/draftCloseGuard";
+import { buildNumericEvalWarning } from "../../../lib/personalOkr/draftNumericEvalCheck";
 import { showToast } from "../../common/Toast";
 import { GuestAiQuotaNotice } from "../../common/GuestAiQuotaNotice";
 import { confirmDialog } from "../../../lib/dialog";
@@ -48,6 +50,9 @@ interface Props {
   draftRow: PersonalKrReviewDraft | null | undefined;
   analyzing: boolean;
   error: string | null;
+  /** 生成は成功したがDB保存に失敗し、下書きが画面にしか無い（M55） */
+  unsaved: boolean;
+  onRetrySave: () => void;
   onEnsureLoaded: () => void;
   onGenerate: (force: boolean) => void;
   /** 🔴 月のreview_textへ保存する（personal_kr_review_drafts.edited_textへは書かない） */
@@ -61,7 +66,7 @@ const labelStyle: React.CSSProperties = {
 };
 
 export function PersonalOkrReviewDraftModal({
-  krLabel, monthLabel, material, hasPlanContent, memoCount, monthReviewText, draftRow, analyzing, error,
+  krLabel, monthLabel, material, hasPlanContent, memoCount, monthReviewText, draftRow, analyzing, error, unsaved, onRetrySave,
   onEnsureLoaded, onGenerate, onSaveEdit, onClose,
 }: Props) {
   useEffect(() => { onEnsureLoaded(); }, [onEnsureLoaded]);
@@ -103,8 +108,11 @@ export function PersonalOkrReviewDraftModal({
   // 🔴 dirtyの基準は「実際に保存済みの月のreview_text」。旧draftRow.edited_text等の救済値が
   // 表示されているだけで review_text 自体は未保存、というケースでも保存ボタンを押せるようにする。
   const dirty = editedText !== (monthReviewText ?? "");
+  // M56：数値評価（自己評価%・バンド等）の混入を警告する。自動では消さない
+  const numericWarning = buildNumericEvalWarning([editedText]);
   const requestClose = useConfirmClose({
-    dirty: editedText !== baselineText,
+    // M62：編集した場合に加え、下書きがあり月の振り返り本文へ未反映（＝まだ保存していない）でも確認する
+    dirty: editedText !== baselineText || hasUnappliedDraftText(hasDraft, editedText, monthReviewText),
     busy: saving,
     message: "編集した下書きは保存されていません。閉じますか？",
     onClose,
@@ -198,6 +206,12 @@ export function PersonalOkrReviewDraftModal({
             {error && !analyzing && (
               <span style={{ fontSize: "11px", color: "var(--color-text-danger)" }}>{error}</span>
             )}
+            {unsaved && !analyzing && (
+              <button
+                onClick={onRetrySave}
+                style={{ fontFamily: "inherit", fontSize: "11px", padding: "3px 10px", background: "transparent", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-sm)", color: "var(--color-text-secondary)", cursor: "pointer" }}
+              >保存し直す</button>
+            )}
           </div>
 
           {/* ②AIの下書き（編集可能） */}
@@ -224,6 +238,7 @@ export function PersonalOkrReviewDraftModal({
                   Kintoneの「個人OKR_月次振返り記録」の「振り返り」欄に貼り付けてください。自己評価の割合・達成度バンドの数値は含まれていません（人が決めてください）。
                   保存すると、この画面の「振り返り」にも記録されます。
                 </div>
+                {numericWarning && <div style={{ fontSize: "11px", color: "var(--color-text-danger)", background: "var(--color-bg-danger, var(--color-bg-secondary))", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-sm)", padding: "6px 10px", marginTop: "6px", lineHeight: 1.6 }}>{numericWarning}</div>}
                 {saveError && <div style={{ fontSize: "11px", color: "var(--color-text-danger)", marginTop: "6px" }}>{saveError}</div>}
                 <div style={{ display: "flex", gap: "8px", marginTop: "10px" }}>
                   <button

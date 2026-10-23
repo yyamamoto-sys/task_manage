@@ -16,7 +16,7 @@
 // 種別（四半期OKRか月次振返りか）はAIに判定させ、人が確認画面で切り替えられるようにする
 // （山本さんの決定）。既存にあって抽出結果に無いKR・月には一切触れない（論理削除もしない）。
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { v4 as uuidv4 } from "uuid";
 import type {
   KeyResult, Member, Objective, PersonalKr, PersonalKrBand, PersonalKrKind, PersonalKrMonth,
@@ -29,7 +29,7 @@ import {
 } from "../../../lib/ai/personalOkrImportExtractor";
 import { mapKrKindHint, parseBandValue, parseWeightPct, parsePercentValue } from "../../../lib/personalOkr/importFieldParse";
 import { rankExistingPersonalKrMatches, rankGroupTfMatches, pickDefaultMapping } from "../../../lib/personalOkr/importMatch";
-import { buildImportApplyPlan, unloadedKrIds, type ImportKrDraftInput, type ImportMonthDraftInput } from "../../../lib/personalOkr/importApplyPlan";
+import { buildImportApplyPlan, unloadedKrIds, lockDisplayOrderStart, type DisplayOrderStartLock, type ImportKrDraftInput, type ImportMonthDraftInput } from "../../../lib/personalOkr/importApplyPlan";
 import { usePersonalOkrUiStore } from "../../../stores/personalOkrUiStore";
 import { useConfirmClose } from "../../../hooks/useConfirmClose";
 import { confirmDialog } from "../../../lib/dialog";
@@ -151,6 +151,8 @@ export function PersonalOkrImportModal({
   const [krDrafts, setKrDrafts] = useState<KrDraft[]>([]);
   // M53（52回目）：確認画面で「AIが抽出した直後」の内容。ここからの差を未保存の編集とみなす。
   const [reviewBaseline, setReviewBaseline] = useState<string | null>(null);
+  // M64：新規KRの display_order 開始値（初回の登録実行時に固定。やり直し・再解析で解除）
+  const orderStartLockRef = useRef<DisplayOrderStartLock | null>(null);
 
   // 呼び出しを2回に分けたことに伴う実進度（1/2 個人KRを抽出中／2/2 月次計画を抽出中）。
   // 無言で長時間待たせないため、時間ベースの演出ではなく実際の呼び出し完了状況を表示する。
@@ -274,6 +276,7 @@ export function PersonalOkrImportModal({
         };
       });
       setKrDrafts(drafts);
+      orderStartLockRef.current = null;
       setReviewBaseline(JSON.stringify({
         docType: result.detected_doc_type, fiscalYear: effectiveFiscalYear, quarter: effectiveQuarter, krDrafts: drafts,
       }));
@@ -331,7 +334,7 @@ export function PersonalOkrImportModal({
       keyResultId: d.keyResultId || null,
       taskForceId: d.taskForceId || null,
       label: d.label.trim(),
-      weightPct: parseWeightPct(d.weightPct) ?? 0,
+      weightPct: parseWeightPct(d.weightPct),
       category: d.category || null,
       activity: d.activity || null,
       strengthRole: d.strengthRole || null,
@@ -355,10 +358,13 @@ export function PersonalOkrImportModal({
       })),
     }));
 
+    const orderStartLock = lockDisplayOrderStart(orderStartLockRef.current, `${fiscalYear}:${quarter}`, existingKrsInPeriod.length);
+    orderStartLockRef.current = orderStartLock;
     const plan = buildImportApplyPlan({
       fiscalYear, quarter, memberId: currentUser.id, groupId: currentGroupId ?? DEFAULT_OKR_GROUP_ID,
       sourceLabel, nowIso, drafts, existingKrsById, existingMonthsByKrIdAndIndex,
-      nextDisplayOrderStart: existingKrsInPeriod.length,
+      // 🔴 M64：初回実行時の値に固定する（再実行で保存済みの新規KRが件数に加わって並びがずれるのを防ぐ）
+      nextDisplayOrderStart: orderStartLock.value,
     });
 
     const total = Math.max(1, plan.krs.length + plan.months.length);
@@ -408,7 +414,7 @@ export function PersonalOkrImportModal({
 
   const handleResetNow = () => {
     setStep("input"); setRawText(""); setAttachment(null); setFileError(null); setError(null);
-    setKrDrafts([]); setReviewBaseline(null); setApplyResults(null); setImportSourceInfo(null); setImportWarnings([]);
+    setKrDrafts([]); orderStartLockRef.current = null; setReviewBaseline(null); setApplyResults(null); setImportSourceInfo(null); setImportWarnings([]);
   };
   const handleReset = async () => {
     if (reviewDirty && !(await confirmDialog("確認画面で編集した内容を破棄して最初からやり直します。よろしいですか？", { tone: "danger", confirmLabel: "破棄してやり直す" }))) return;
@@ -584,6 +590,7 @@ function ReviewStep({
         <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", margin: "4px 0 10px" }}>
           🔴「対応づけ」で既存のKRを選ぶと、その行を上書き更新します。既存の週の目標状態・メモはこの操作で失われません。
           「新規KRとして作成」を選んだ場合のみ新しい行が作られます。既存にあってここに無いKRには一切触れません。
+          <br />空欄の項目は今の値を残します（既存のKRに対応づけた場合）。
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
           {krDrafts.map(draft => (

@@ -97,7 +97,10 @@ export function PersonalOkrAiPanel({
     if (!value || !context || callState === "loading") return;
     setInputText("");
     const systemPrompt = buildPersonalOkrChatSystemPrompt(buildPersonalOkrAiContextText(context));
-    await submit(value, systemPrompt);
+    const ok = await submit(value, systemPrompt);
+    // 失敗したらユーザーのターンは履歴から巻き戻されている。入力欄に元の文を戻す（M58）。
+    // 待つ間に新しく打ち始めた文があれば上書きしない
+    if (!ok) setInputText(cur => (cur.trim() === "" ? value : cur));
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {

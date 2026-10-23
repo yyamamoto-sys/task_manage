@@ -45,6 +45,9 @@ interface Props {
   outlookRow: PersonalKrOutlook | null | undefined;
   analyzing: boolean;
   outlookError: string | null;
+  /** AI解析は成功したがDBへの保存に失敗し、結果が画面（メモリ）にしか無い（M55） */
+  outlookUnsaved: boolean;
+  onRetrySave: () => void;
   /** 文脈（PersonalOkrAiContextInput）が組み立てられているか。falseなら再解析ボタンを無効化する */
   canReanalyze: boolean;
   onReanalyze: () => void;
@@ -59,7 +62,7 @@ function formatAnalyzedAt(iso: string | null | undefined): string {
 
 export function AheadBlock({
   facts, taskStats, targetAndEvidenceSet, bandTarget, bandOverride, editable, onSetOverride,
-  outlookRow, analyzing, outlookError, canReanalyze, onReanalyze,
+  outlookRow, analyzing, outlookError, outlookUnsaved, onRetrySave, canReanalyze, onReanalyze,
 }: Props) {
   const bandAi = outlookRow?.band_ai ?? null;
   const display = resolveBandDisplay(bandOverride, bandAi, bandTarget);
@@ -77,6 +80,14 @@ export function AheadBlock({
         <span style={{ display: "inline-flex", alignItems: "center", gap: "7px", fontSize: "10.5px", color: "var(--color-text-tertiary)", fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>
           {analyzing ? (
             <>解析中…</>
+          ) : outlookRow && outlookUnsaved ? (
+            <>
+              <span style={{ color: "var(--color-text-danger)" }} title={outlookError ?? undefined}>解析済み（保存に失敗しました）</span>
+              <button
+                onClick={onRetrySave}
+                style={{ fontFamily: "inherit", fontSize: "10px", padding: "2px 9px", borderRadius: "var(--radius-full)", border: "1px solid var(--color-border-primary)", background: "transparent", color: "var(--color-text-secondary)", cursor: "pointer" }}
+              >保存し直す</button>
+            </>
           ) : outlookError ? (
             <span style={{ color: "var(--color-text-danger)" }} title={outlookError}>解析に失敗しました</span>
           ) : outlookRow ? (

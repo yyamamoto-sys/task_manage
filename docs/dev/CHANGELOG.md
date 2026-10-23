@@ -8446,3 +8446,20 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * KanbanView.tsx：Ctrl+A・Esc が shouldIgnoreCommandKey（IME・モーダル表示中）を通る。同じ列へのドロップは保存しない。単体ドロップの保存失敗は握って未処理の Promise 拒否にしない。
 # * WorkloadView.tsx：選んでいた PJ が一覧から消えたら全プロジェクトに戻す。
 # * テスト：kanbanKeysAndDrop.test.ts（修正前コードで赤）。DB 変更なし・MIN_CLIENT_VERSION は上げない。
+
+#
+# v3.180（2026-10-23）：個人OKR領域の判断待ち12件の解決（docs/REFACTORING.md M54〜M59・M61〜M67）
+#
+# * M54：PersonalOkrAiPanel に key（KR×月）を付け、KRタブ・月の切替で会話履歴を作り直す。
+# * M58：usePersonalOkrAiConsultation.submit は失敗時に rollbackLastUserTurn（sessionManager.ts）でユーザーのターンを巻き戻し false を返す。パネルは入力欄へ元の文を戻す。
+# * M59：personalOkrAiContext.ts に clipForAi（欄ごと1500字・総量8000字・「…（以下省略）」の印）。総量超過時はメモ→末尾の順に削る。
+# * M55：persistGenerated.ts（INSERT失敗を値で返す）。runOutlookAnalysis／runReviewDraft は AI 成功後に INSERT が失敗しても結果を state に載せ、outlookUnsavedKeys／reviewDraftUnsavedKeys とエラーを併記。retrySaveOutlook／retrySaveReviewDraft で AI を呼び直さず再保存（AheadBlock・振り返り下書きモーダルに「保存し直す」）。
+# * M56：draftNumericEvalCheck.ts（[自己評価：…]・評価語＋◯%・バンド数値を検出する純関数）。振り返り・計画・全体の下書きモーダルが警告を表示（自動では消さない）。
+# * M62：draftCloseGuard.ts。振り返り・全体・計画の下書きモーダルは「下書きがあり未反映」でも閉じる前に確認する。
+# * M61：periodReviewsLoadError.ts で未適用（42P01・42703・PGRST204/205＋対象テーブル名）とそれ以外を分類。未適用以外は formatErrorForUser の文言＋「再読み込み」（reloadPeriodReviews）。
+# * M63：importApplyPlan.ts は既存KR・既存月に対応づけたとき、空欄（null）の項目に既存値を使う（weightPct は number|null）。確認画面に「空欄の項目は今の値を残します」。
+# * M64：lockDisplayOrderStart で新規KRの display_order 開始値を初回実行時に固定（やり直し・再解析で解除）。
+# * M65：resyncRegistry.ts と personalOkrUiStore.resyncAll。App.tsx の resync（切断復帰・10分非表示からの復帰・30秒の最短間隔）が requestPersonalOkrResync も呼ぶ。KR一覧・月・開いているKRの週/メモ/紐づけ・全体タブを静かに取り直し（フラグは戻さない）、他のKRは詳細の読み込み済み印を外して次回に取り直す。fetchMerge.ts に mergeResyncRows。
+# * M66：conflictRefresh.ts（resolveSaveConflict・PersonalOkrConflictError）。saveKr／saveMonth／saveWeek／saveMemo／savePeriodReview は ConflictError で該当行だけ取り直し（personalOkrStore.fetchPersonalOkrRowById）て state を最新にし、案内文のエラーを投げる。書きかけの欄は syncEditedValue（M60）が守る。上書きを選ぶUIは作らない。
+# * M67：ensureWeekTasksLoaded が boolean を返し、PersonalKrPanel.handleOpenLinker は読めなければ週リンクのモーダルを開かず理由と「再試行」を出す。
+# * テスト：personalOkrJudgementFixes.test.ts・personalOkrUiStoreJudgementFixes.test.ts・personalOkrJudgementWiring.test.ts（修正前コードで赤を確認）。noFullReloadOnChange.test.ts の resync 検査を requestPersonalOkrResync 込みに更新。DB 変更なし・MIN_CLIENT_VERSION は上げない。

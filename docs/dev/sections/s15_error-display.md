@@ -61,3 +61,10 @@ if (error) throw new Error(await buildInvokeErrorMessage(data, error, response))
 実装は `src/lib/ai/edgeFunctionError.ts`（`readEdgeErrorPayload` / `extractEdgeError` / `buildInvokeErrorMessage`）に集約されており、`invokeAI.ts` と `callAIConsultation`（`apiClient.ts`）の両方がこれを経由する。新しく `supabase.functions.invoke()` を直接呼ぶコードを書くときは、必ずこのモジュール（または同じ判断）を経由し、`data` だけでエラー本文を組み立てないこと。
 
 ---
+
+---
+
+### v3.180：個人OKRの取得・保存エラーの表示（M55・M61）
+
+- 「全体」タブの取得エラーは種類で分ける（`lib/personalOkr/periodReviewsLoadError.ts`）。テーブル・列が無い（未適用）だけ従来の案内、それ以外は`formatErrorForUser`の文言＋「再読み込み」。
+- AI成功後のDB保存失敗は、結果を捨てずに画面へ残し`formatErrorForUser`のエラーを併記する（「保存し直す」で再保存）。

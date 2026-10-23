@@ -35,3 +35,16 @@ export function mergeFetchedRows<T extends Row>(
   const localOnlyRows = local.filter(r => !fetchedIds.has(r.id));
   return localOnly === "start" ? [...localOnlyRows, ...merged] : [...merged, ...localOnlyRows];
 }
+
+/**
+ * 復帰時の全件再取得（M65）用。取得結果を基準にし、手元の方が新しい行（取得中に保存した行）だけ手元を採る。
+ * mergeFetchedRows と違い、取得結果に無い手元だけの行は捨てる（別端末で削除された行を残さない）。
+ */
+export function mergeResyncRows<T extends Row>(fetched: T[], local: T[] | undefined): T[] {
+  if (!local || local.length === 0) return fetched;
+  const localById = new Map(local.map(r => [r.id, r]));
+  return fetched.map(f => {
+    const l = localById.get(f.id);
+    return l && ts(l.updated_at) > ts(f.updated_at) ? l : f;
+  });
+}

@@ -43,3 +43,9 @@ v3.88のリリース確認で「`viewMode`切替時に`TaskSidePanel`が無警�
 ### テスト
 
 `src/lib/editing/__tests__/unsavedEditorRegistry.test.ts`（新規12件）：登録/解除の対称性（解除漏れがあると誤検知し続けることの確認）・pull型（getterが呼び出し時に評価されること）・`confirmDiscardUnsavedEdits`の安全側デフォルト（`confirmDialog`をモックして検証。vitest.config.tsの test環境は`node`のため`window`に触れない設計にした）を固定している。**（2026-08-20・v3.90で訂正）** 「機械チェックは新設していない」としていたが、v3.90でコンポーネント間の配線（どの画面遷移がガードを経由するか）自体をソース走査で固定する機械チェックを追加できた。詳細はSection 47参照。
+
+---
+
+### v3.180：AI下書きモーダルの閉じる確認（M62）
+
+個人OKRのAI下書き3モーダル（振り返り・全体の振り返り・計画）は、編集の有無に加えて「下書きがあり反映先へ未反映」でも閉じる前に確認する（`lib/personalOkr/draftCloseGuard.ts`）。生成直後で未編集でも、AI課金済みの下書きを確認なしで捨てない。反映した時点の内容を覚え、以後の編集は再びdirtyになる。詳細＝`docs/dev/sections/s24_personal-okr.md`のv3.180。

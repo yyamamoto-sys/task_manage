@@ -57,6 +57,16 @@ export interface PersonalOkrAiContextInput {
 
 /** 実施記録の文字数上限（仕様書§W4「各1500字目安」）。546対策（CLAUDE.md Section 19・28）。 */
 export const ACTUAL_ACTIVITIES_AI_CLIP_CHARS = 1500;
+/** KRの6本文欄・計画4欄の欄ごとの上限（M59）。実施記録と同じ1500字 */
+export const FIELD_AI_CLIP_CHARS = 1500;
+/** AI文脈テキスト全体の上限（M59）。planDraftContext（PLAN_DRAFT_CONTEXT_CHAR_LIMIT）と同じ8000字 */
+export const AI_CONTEXT_TOTAL_CHAR_LIMIT = 8000;
+export const AI_CONTEXT_CLIP_MARK = "…（以下省略）";
+
+/** 上限を超えた欄だけ切り、切ったことが分かる印を付ける（無言で切らない） */
+export function clipForAi(s: string, max: number = FIELD_AI_CLIP_CHARS): string {
+  return s.length > max ? s.slice(0, max) + AI_CONTEXT_CLIP_MARK : s;
+}
 
 /**
  * 【設計意図・仕様書§W6（誤配線の是正）】personal_kr_memosにmonth列が無くKR単位のため、
@@ -102,6 +112,15 @@ export function buildFilledWeekLines(weeks: PersonalOkrAiContextWeek[]): string[
 
 /** AIへ渡すユーザーメッセージ本文（テキストブロック）を組み立てる */
 export function buildPersonalOkrAiContextText(input: PersonalOkrAiContextInput): string {
+  const full = composeAiContextText(input);
+  if (full.length <= AI_CONTEXT_TOTAL_CHAR_LIMIT) return full;
+  // 総量超過：まず人手の補助情報であるメモを落とし、それでも超えるなら末尾を切って印を付ける
+  const withoutMemos = composeAiContextText({ ...input, recentMemos: [] });
+  if (withoutMemos.length <= AI_CONTEXT_TOTAL_CHAR_LIMIT) return withoutMemos;
+  return withoutMemos.slice(0, AI_CONTEXT_TOTAL_CHAR_LIMIT) + AI_CONTEXT_CLIP_MARK;
+}
+
+function composeAiContextText(input: PersonalOkrAiContextInput): string {
   const lines: string[] = [];
 
   lines.push(`【対象KR】${input.krLabel}（${input.krKindLabel}）`);
@@ -117,14 +136,14 @@ export function buildPersonalOkrAiContextText(input: PersonalOkrAiContextInput):
   const facts6Filled = facts6.filter(([, v]) => !!v);
   if (facts6Filled.length > 0) {
     lines.push("【このKRの内容】");
-    for (const [label, v] of facts6Filled) lines.push(`- ${label}：${v}`);
+    for (const [label, v] of facts6Filled) lines.push(`- ${label}：${clipForAi(v as string)}`);
   }
 
   lines.push(`【${input.monthLabel}の計画】`);
-  if (input.positioning) lines.push(`- 位置づけ：${input.positioning}`);
-  if (input.activities) lines.push(`- 当月に取り組む内容：${input.activities}`);
-  if (input.targetAndEvidence) lines.push(`- 当月末の達成目標と証拠：${input.targetAndEvidence}`);
-  if (input.risks) lines.push(`- リスクと依存関係：${input.risks}`);
+  if (input.positioning) lines.push(`- 位置づけ：${clipForAi(input.positioning)}`);
+  if (input.activities) lines.push(`- 当月に取り組む内容：${clipForAi(input.activities)}`);
+  if (input.targetAndEvidence) lines.push(`- 当月末の達成目標と証拠：${clipForAi(input.targetAndEvidence)}`);
+  if (input.risks) lines.push(`- リスクと依存関係：${clipForAi(input.risks)}`);
   // 🔴 未記入なら行ごと出さない（記入が無いことに言及させないため）
   if (input.bandTarget != null) lines.push(`- 当月末 狙いのバンド：${input.bandTarget}%`);
 
@@ -132,7 +151,7 @@ export function buildPersonalOkrAiContextText(input: PersonalOkrAiContextInput):
   // 1500字でクリップする（546対策。CLAUDE.md Section 19・28）。
   if (input.actualActivities) {
     lines.push("【当月の実施記録（計画外の対応・方針転換・追加業務）】");
-    lines.push(input.actualActivities.slice(0, ACTUAL_ACTIVITIES_AI_CLIP_CHARS));
+    lines.push(clipForAi(input.actualActivities, ACTUAL_ACTIVITIES_AI_CLIP_CHARS));
   }
 
   // 🔴 週ごとの目標設定・自己評価は任意の補助機能。埋まっている週の行だけ出し、

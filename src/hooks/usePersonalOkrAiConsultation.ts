@@ -17,7 +17,7 @@
 
 import { useState, useCallback } from "react";
 import { sendPersonalOkrChatMessage } from "../lib/ai/personalOkrChatClient";
-import { createSession, addTurn, truncateOldTurns, MAX_TURNS_WARNING, type ConsultationSession } from "../lib/ai/sessionManager";
+import { createSession, addTurn, truncateOldTurns, rollbackLastUserTurn, MAX_TURNS_WARNING, type ConsultationSession } from "../lib/ai/sessionManager";
 import { formatErrorForUser } from "../lib/errorMessage";
 
 export type OkrChatCallState = "idle" | "loading" | "success" | "error";
@@ -27,8 +27,9 @@ export function usePersonalOkrAiConsultation() {
   const [callState, setCallState] = useState<OkrChatCallState>("idle");
   const [errorMessage, setErrorMessage] = useState("");
 
-  const submit = useCallback(async (text: string, systemPrompt: string) => {
-    if (!text.trim() || callState === "loading") return;
+  /** 成功ならtrue。失敗時はユーザーのターンを履歴から巻き戻し、falseを返す（呼び出し側が入力欄へ元の文を戻す。M58） */
+  const submit = useCallback(async (text: string, systemPrompt: string): Promise<boolean> => {
+    if (!text.trim() || callState === "loading") return false;
     setCallState("loading");
     setErrorMessage("");
 
@@ -42,9 +43,12 @@ export function usePersonalOkrAiConsultation() {
       const assistantTurn = { role: "assistant" as const, content: answer, timestamp: new Date().toISOString() };
       setSession(addTurn(withUser, assistantTurn));
       setCallState("success");
+      return true;
     } catch (e) {
+      setSession(rollbackLastUserTurn);
       setErrorMessage(formatErrorForUser("AIへの相談に失敗しました", e));
       setCallState("error");
+      return false;
     }
   }, [session, callState]);
 

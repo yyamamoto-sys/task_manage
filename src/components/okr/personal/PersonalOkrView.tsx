@@ -121,17 +121,23 @@ export function PersonalOkrView({ currentUser }: Props) {
   const outlookByKrMonth = usePersonalOkrUiStore(s => s.outlookByKrMonth);
   const outlookAnalyzingKeys = usePersonalOkrUiStore(s => s.outlookAnalyzingKeys);
   const outlookErrorByKey = usePersonalOkrUiStore(s => s.outlookErrorByKey);
+  const outlookUnsavedKeys = usePersonalOkrUiStore(s => s.outlookUnsavedKeys);
+  const retrySaveOutlook = usePersonalOkrUiStore(s => s.retrySaveOutlook);
   const ensureOutlookLoaded = usePersonalOkrUiStore(s => s.ensureOutlookLoaded);
   const runOutlookAnalysis = usePersonalOkrUiStore(s => s.runOutlookAnalysis);
   const reviewDraftByKrMonth = usePersonalOkrUiStore(s => s.reviewDraftByKrMonth);
   const reviewDraftAnalyzingKeys = usePersonalOkrUiStore(s => s.reviewDraftAnalyzingKeys);
   const reviewDraftErrorByKey = usePersonalOkrUiStore(s => s.reviewDraftErrorByKey);
+  const reviewDraftUnsavedKeys = usePersonalOkrUiStore(s => s.reviewDraftUnsavedKeys);
+  const retrySaveReviewDraft = usePersonalOkrUiStore(s => s.retrySaveReviewDraft);
   const ensureReviewDraftLoaded = usePersonalOkrUiStore(s => s.ensureReviewDraftLoaded);
   const runReviewDraft = usePersonalOkrUiStore(s => s.runReviewDraft);
   const periodReviews = usePersonalOkrUiStore(s => s.periodReviews);
   const periodReviewsLoaded = usePersonalOkrUiStore(s => s.periodReviewsLoaded);
   const periodReviewsLoading = usePersonalOkrUiStore(s => s.periodReviewsLoading);
   const periodReviewsError = usePersonalOkrUiStore(s => s.periodReviewsError);
+  const periodReviewsErrorKind = usePersonalOkrUiStore(s => s.periodReviewsErrorKind);
+  const reloadPeriodReviews = usePersonalOkrUiStore(s => s.reloadPeriodReviews);
   const loadPeriodReviews = usePersonalOkrUiStore(s => s.loadPeriodReviews);
   const savePeriodReview = usePersonalOkrUiStore(s => s.savePeriodReview);
   const actualActivitiesAvailable = usePersonalOkrUiStore(s => s.actualActivitiesAvailable);
@@ -422,6 +428,8 @@ export function PersonalOkrView({ currentUser }: Props) {
           periodReviewsLoaded={periodReviewsLoaded}
           periodReviewsLoading={periodReviewsLoading}
           periodReviewsError={periodReviewsError}
+          periodReviewsErrorKind={periodReviewsErrorKind}
+          reloadPeriodReviews={reloadPeriodReviews}
           loadPeriodReviews={loadPeriodReviews}
           savePeriodReview={savePeriodReview}
           actualActivitiesAvailable={actualActivitiesAvailable}
@@ -459,6 +467,8 @@ export function PersonalOkrView({ currentUser }: Props) {
           outlookByKrMonth={previewOutlookByKrMonth ?? outlookByKrMonth}
           outlookAnalyzingKeys={outlookAnalyzingKeys}
           outlookErrorByKey={outlookErrorByKey}
+          outlookUnsavedKeys={outlookUnsavedKeys}
+          onRetrySaveOutlook={previewSample ? PREVIEW_NOOP_ASYNC : retrySaveOutlook}
           ensureOutlookLoaded={previewSample ? PREVIEW_NOOP_ASYNC : ensureOutlookLoaded}
           onRunOutlookAnalysis={previewSample ? PREVIEW_NOOP_ASYNC : runOutlookAnalysis}
           onAiContext={setAiContext}
@@ -466,6 +476,8 @@ export function PersonalOkrView({ currentUser }: Props) {
           reviewDraftByKrMonth={reviewDraftByKrMonth}
           reviewDraftAnalyzingKeys={reviewDraftAnalyzingKeys}
           reviewDraftErrorByKey={reviewDraftErrorByKey}
+          reviewDraftUnsavedKeys={reviewDraftUnsavedKeys}
+          onRetrySaveReviewDraft={previewSample ? PREVIEW_NOOP_ASYNC : retrySaveReviewDraft}
           ensureReviewDraftLoaded={previewSample ? PREVIEW_NOOP_ASYNC : ensureReviewDraftLoaded}
           onRunReviewDraft={previewSample ? PREVIEW_NOOP_ASYNC : runReviewDraft}
           readOnly={!!previewSample}
@@ -587,7 +599,10 @@ export function PersonalOkrView({ currentUser }: Props) {
       width: aiPanelOpen ? `${aiPanelWidth}px` : "0", flexShrink: 0, overflow: "hidden",
       transition: aiPanelResizing ? "none" : "width 0.3s ease",
     }}>
+      {/* key：KRタブ・月を切り替えたら会話履歴を作り直す（M54）。応答待ちの途中で切り替えても
+          古い応答が新しい会話に混ざらない */}
       <PersonalOkrAiPanel
+        key={`${selectedKrId ?? ""}:${monthIndex}`}
         isOpen={aiPanelOpen}
         onClose={() => setAiPanelOpen(false)}
         krLabel={selectedKr?.label ?? ""}
