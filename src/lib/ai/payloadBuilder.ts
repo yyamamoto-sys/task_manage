@@ -77,6 +77,36 @@ function makeShortId(prefix: string, index: number): string {
   return `${prefix}_${String(index + 1).padStart(3, "0")}`;
 }
 
+/**
+ * 同じ会話の中では、同じPJ・タスクに同じショートIDを使い続けるための割り当て器。
+ * 毎回 001 から振り直すと、タスクが完了して一覧から減った・対象PJを切り替えた、といった変化で
+ * 番号がずれ、会話履歴にある過去の提案（旧番号）が別のタスクに解決されてしまう。
+ * prev に前回までの対応を渡すと、そこにあるUUIDは同じIDのまま、新しいUUIDには未使用の番号を振る。
+ * 返す map には prev のエントリも残す（過去の提案の反映先を引けるように）。
+ */
+function createShortIdAllocator(prev?: Map<string, string>) {
+  const map = new Map<string, string>(prev ?? []);
+  const prevIdByUuid = new Map<string, string>();
+  const maxByPrefix = new Map<string, number>();
+  for (const [short, uuid] of map) {
+    prevIdByUuid.set(uuid, short);
+    const m = /^([a-z]+)_(\d+)$/.exec(short);
+    if (m) maxByPrefix.set(m[1], Math.max(maxByPrefix.get(m[1]) ?? 0, Number(m[2])));
+  }
+  return {
+    map,
+    allocate(prefix: string, uuid: string): string {
+      const existing = prevIdByUuid.get(uuid);
+      if (existing) return existing;
+      const n = (maxByPrefix.get(prefix) ?? 0) + 1;
+      maxByPrefix.set(prefix, n);
+      const short = makeShortId(prefix, n - 1);
+      map.set(short, uuid);
+      return short;
+    },
+  };
+}
+
 // ===== 会計カレンダー（1月〜12月の暦年）=====
 // CLAUDE.md Section 6-14 参照
 
@@ -174,6 +204,8 @@ interface BuildOptions {
   taskProjects?: TaskProject[];
   /** PJ↔TF の紐付け。AI に PJ→TF→KR の OKR文脈を伝えるため（双方向に展開） */
   projectTaskForces?: ProjectTaskForce[];
+  /** 同じ会話のこれまでのショートID対応。渡すと同じPJ・タスクには同じIDを振り続ける（過去の提案の番号ずれ防止） */
+  prevShortIdMap?: Map<string, string>;
   /** 送るPJの範囲。null/未指定＝「すべてのPJ」（アーカイブ・完了PJを除く）／id＝そのPJだけ（aiTarget.ts） */
   targetPjId?: string | null;
   consultationType: ConsultationType;
@@ -200,7 +232,8 @@ interface BuildOptions {
  */
 export function buildPayload(opts: BuildOptions): BuildPayloadResult {
   const today = new Date();
-  const shortIdMap = new Map<string, string>();
+  const idAllocator = createShortIdAllocator(opts.prevShortIdMap);
+  const shortIdMap = idAllocator.map;
 
   const activeTasks = active(opts.tasks);
   const taskProjects = opts.taskProjects ?? [];
@@ -241,10 +274,6 @@ export function buildPayload(opts: BuildOptions): BuildPayloadResult {
     }
   }
 
-  // タスクのショートIDはPJをまたいでグローバルに連番にする
-  // （shortIdMap.sizeを使うとPJ分のエントリが混入してキーが衝突するため専用カウンターを使う）
-  let taskCounter = 0;
-
   // parent_task_name の解決用：全タスクの UUID → name マップ（プロジェクトまたぎで参照できる）
   const taskNameByUuid = new Map(activeTasks.map(t => [t.id, t.name]));
 
@@ -260,14 +289,11 @@ export function buildPayload(opts: BuildOptions): BuildPayloadResult {
     return names.length > 0 ? names.join("・") : "未担当";
   };
 
-  const aiProjects: AIProject[] = aiScope.projects.map(({ project: pj, allTasks: pjTasks, openTasks: pjOpenTasks }, pjIdx) => {
-    const pjShortId = makeShortId("pj", pjIdx);
-    shortIdMap.set(pjShortId, pj.id);
+  const aiProjects: AIProject[] = aiScope.projects.map(({ project: pj, allTasks: pjTasks, openTasks: pjOpenTasks }) => {
+    const pjShortId = idAllocator.allocate("pj", pj.id);
 
     const aiTasks: AITask[] = pjOpenTasks.map((task) => {
-      const taskShortId = makeShortId("task", taskCounter);
-      taskCounter++;
-      shortIdMap.set(taskShortId, task.id);
+      const taskShortId = idAllocator.allocate("task", task.id);
 
       return {
         task_id: taskShortId,

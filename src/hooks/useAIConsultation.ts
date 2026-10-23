@@ -35,6 +35,7 @@ import { insertAiUsageLog } from "../lib/supabase/store";
 import type { FileAttachment } from "../lib/ai/invokeAI";
 import { buildUserTurnContent } from "../lib/ai/consultationAttachment";
 import { showToast } from "../components/common/Toast";
+import { formatErrorForUser } from "../lib/errorMessage";
 
 // ===== 型定義 =====
 
@@ -81,7 +82,11 @@ export function useAIConsultation(targetPjId: string | null, currentMemberId: st
   // sessionRef: useCallback内でstale closureを避けるための参照
   // （sessionをuseCallbackの依存配列に含めると毎回新しい関数参照が生成されるため）
   const sessionRef = useRef<ConsultationSession>(session);
+  // 二重送信の防止（submit の入口で見る）／リセットの世代番号／ショートIDの対応（最新値を submit から読む）
+  const inFlightRef = useRef(false);
+  const generationRef = useRef(0);
   const [shortIdMap, setShortIdMap] = useState<Map<string, string>>(() => useConsultSessionStore.getState().shortIdMap);
+  const shortIdMapRef = useRef<Map<string, string>>(shortIdMap);
   const [proposals, setProposals] = useState<UIProposal[]>(() => useConsultSessionStore.getState().proposals);
   const [errorMessage, setErrorMessage] = useState<string>("");
   const [followUpSuggestions, setFollowUpSuggestions] = useState<string[]>(() => useConsultSessionStore.getState().followUpSuggestions);
@@ -109,58 +114,80 @@ export function useAIConsultation(targetPjId: string | null, currentMemberId: st
       const includeOKR = opts.includeOKR ?? true;
 
       if (!consultation.trim()) return false;
+      // 返答待ちの間の二重送信を止める（ボタン・Ctrl+Enter以外の経路＝提案カードの「見送る」等も含む。二重に課金される）
+      if (inFlightRef.current) return false;
+      inFlightRef.current = true;
+      // リセットされたあとに届いた返答で、消したはずの会話を復活させないための世代番号
+      const generation = generationRef.current;
 
       const model = THINKING_MODEL;
 
       setCallState("loading");
       setErrorMessage("");
 
-      // 相談実行者本人（「私／自分」の参照先）を members から解決する
-      // 本人は表示部署に属していなくてもよい（全社スーパー管理者が他部署を表示中など）ので全件から引く
-      const me = useAppStore.getState().members.find((m) => m.id === currentMemberId);
-
-      // ペイロード構築
-      const { payload, shortIdMap: newShortIdMap } = buildPayload({
-        projects,
-        targetPjId,
-        tasks,
-        members,
-        taskProjects,
-        projectTaskForces,
-        consultationType,
-        consultation,
-        scope: targetPjId ? "related_pj" : "all_pj",
-        targetDeadline,
-        includeOKR,
-        currentObjective: objective,
-        keyResults,
-        taskForces,
-        projectSections,
-        currentMember: me ? { id: me.id, short_name: me.short_name } : null,
-      });
-
-      setShortIdMap(newShortIdMap);
-
-      // sessionRef.currentを使って最新のセッションを取得（stale closureを回避）
-      const latestSession = sessionRef.current;
-      const tokenStatusNow =
-        latestSession.turns.length > MAX_TURNS_WARNING ? "warning" : "ok";
-
-      // ユーザーターンをセッションに追加
-      const userTurn = {
-        role: "user" as const,
-        content: buildUserTurnContent(consultation, attachments),
-        timestamp: new Date().toISOString(),
-      };
-      let currentSession = addTurn(latestSession, userTurn);
-
-      // トークン上限を超えていた場合は古いターンを削除してから送信
-      const historyForApi =
-        tokenStatusNow === "warning"
-          ? truncateOldTurns(currentSession).turns.slice(0, -1) // 今回追加したユーザーターンは除く（payloadに含まれる）
-          : currentSession.turns.slice(0, -1); // 最後のユーザーターンはpayloadに含めるので除外
-
       try {
+        // 相談実行者本人（「私／自分」の参照先）を members から解決する
+        // 本人は表示部署に属していなくてもよい（全社スーパー管理者が他部署を表示中など）ので全件から引く
+        const me = useAppStore.getState().members.find((m) => m.id === currentMemberId);
+
+        // ペイロード構築。同じ会話のあいだは同じPJ・タスクに同じショートIDを使い続ける
+        // （毎回振り直すと、過去の提案を反映したときに別のタスクへ解決されうる）
+        const { payload, shortIdMap: newShortIdMap } = buildPayload({
+          projects,
+          targetPjId,
+          tasks,
+          members,
+          taskProjects,
+          projectTaskForces,
+          consultationType,
+          consultation,
+          scope: targetPjId ? "related_pj" : "all_pj",
+          targetDeadline,
+          includeOKR,
+          currentObjective: objective,
+          keyResults,
+          taskForces,
+          projectSections,
+          currentMember: me ? { id: me.id, short_name: me.short_name } : null,
+          prevShortIdMap: shortIdMapRef.current,
+        });
+
+        shortIdMapRef.current = newShortIdMap;
+        setShortIdMap(newShortIdMap);
+
+        // sessionRef.currentを使って最新のセッションを取得（stale closureを回避）
+        const latestSession = sessionRef.current;
+        const tokenStatusNow =
+          latestSession.turns.length > MAX_TURNS_WARNING ? "warning" : "ok";
+
+        // ユーザーターンを追加したセッション。成功したときだけ sessionRef／state へ反映する
+        // （失敗したときはユーザーのターンを履歴に残さない。呼び出し側が入力欄へ元の文を戻す）
+        const userTurn = {
+          role: "user" as const,
+          content: buildUserTurnContent(consultation, attachments),
+          timestamp: new Date().toISOString(),
+        };
+        let currentSession = addTurn(latestSession, userTurn);
+
+        // トークン上限を超えていた場合は古いターンを削除してから送信
+        const historyForApi =
+          tokenStatusNow === "warning"
+            ? truncateOldTurns(currentSession).turns.slice(0, -1) // 今回追加したユーザーターンは除く（payloadに含まれる）
+            : currentSession.turns.slice(0, -1); // 最後のユーザーターンはpayloadに含めるので除外
+
+        // トークン使用量をDBに記録（失敗しても相談の処理は止めない・コンソールには記録）
+        // APIを呼ぶたびにその場で記録する。返答の解析に失敗して例外になっても、トークンは消費済みのため
+        const logUsage = (usage: AIUsage, isRetry: boolean) => {
+          insertAiUsageLog({
+            member_id: currentMemberId,
+            consultation_type: consultationType,
+            input_tokens: usage.input_tokens,
+            output_tokens: usage.output_tokens,
+          }).catch((err: unknown) => {
+            console.warn(`AI使用量ログ${isRetry ? "（リトライ分）" : ""}の記録に失敗（相談は継続）:`, err);
+          });
+        };
+
         // APIコール＋パース（パース失敗時は1回だけ自己修正リトライ。consultationRunner.ts参照）
         const result = await runAIConsultation(
           payload,
@@ -169,22 +196,11 @@ export function useAIConsultation(targetPjId: string | null, currentMemberId: st
           model,
           responseVolume,
           attachments,
+          logUsage,
         );
 
-        // トークン使用量をDBに記録（失敗しても相談の処理は止めない・コンソールには記録）
-        // リトライが発生した場合は実際に消費した2回分をそれぞれ記録する
-        const logUsage = (usage: AIUsage, label: string) => {
-          insertAiUsageLog({
-            member_id: currentMemberId,
-            consultation_type: consultationType,
-            input_tokens: usage.input_tokens,
-            output_tokens: usage.output_tokens,
-          }).catch((err: unknown) => {
-            console.warn(`AI使用量ログ${label}の記録に失敗（相談は継続）:`, err);
-          });
-        };
-        logUsage(result.usage, "");
-        if (result.retryUsage) logUsage(result.retryUsage, "（リトライ分）");
+        // 返答待ちの間にリセットされていたら捨てる（会話の復活を防ぐ）。入力を戻す必要も無いので true
+        if (generationRef.current !== generation) return true;
 
         const uiProposals = mapProposalsToUI(result.proposals);
 
@@ -203,18 +219,14 @@ export function useAIConsultation(targetPjId: string | null, currentMemberId: st
         setCallState("success");
         return true;
       } catch (e) {
-        const message =
-          e instanceof AIError
-            ? e.message
-            : e instanceof Error
-              ? e.message
-              : "予期しないエラーが発生しました";
-        // エラー時もuserTurnをセッションに保存する（次回送信時に履歴が欠落しないよう）
-        sessionRef.current = currentSession;
-        setSession(currentSession);
+        if (generationRef.current !== generation) return true;
+        // AIError は日本語の案内文を持つのでそのまま。それ以外は原因（コード・詳細）が残るよう整形する（Section 15）
+        const message = e instanceof AIError ? e.message : formatErrorForUser("AI相談に失敗しました", e);
         setErrorMessage(message);
         setCallState("error");
         return false;
+      } finally {
+        if (generationRef.current === generation) inFlightRef.current = false;
       }
     },
     [projects, tasks, members, targetPjId, currentMemberId,
@@ -224,9 +236,13 @@ export function useAIConsultation(targetPjId: string | null, currentMemberId: st
   // ===== reset: セッションをリセット =====
 
   const reset = useCallback(() => {
+    // 返答待ちの途中でリセットしたら、その返答は捨てる（届いたときに会話が復活しないように）
+    generationRef.current += 1;
+    inFlightRef.current = false;
     const emptySession = createSession();
     sessionRef.current = emptySession;
     setSession(emptySession);
+    shortIdMapRef.current = new Map();
     setShortIdMap(new Map());
     setProposals([]);
     setFollowUpSuggestions([]);

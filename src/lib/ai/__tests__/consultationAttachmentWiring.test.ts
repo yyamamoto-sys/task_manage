@@ -24,7 +24,7 @@ describe("useAIConsultation は履歴に添付の本文を積まない", () => {
   });
 
   it("添付は runAIConsultation へそのまま渡す", () => {
-    expect(src).toMatch(/runAIConsultation\([\s\S]*?attachments,\s*\)/);
+    expect(src).toMatch(/runAIConsultation\([\s\S]*?attachments,\s*(logUsage,\s*)?\)/);
   });
 
   it("送信の成否を返す（失敗時に画面が添付を戻せる）", () => {

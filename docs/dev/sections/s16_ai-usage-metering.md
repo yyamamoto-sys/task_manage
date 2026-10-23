@@ -45,3 +45,9 @@ export type AIIntent =
 ### このルールは新規 AI 機能を実装する時に必ず確認する
 
 「AI を呼ぶ → invokeAI 経由か？」「AIIntent に新タグは追加したか？」をレビュー時にチェックする。
+
+---
+
+### v3.182 の追記：解析に失敗した送信の使用量も記録する
+
+AI相談（`apiClient` 経由のレガシー経路）の使用量は `runAIConsultation` の `onUsage` で、API を1回呼ぶたびに記録する。返答の解析に失敗して例外になる送信（`max_tokens`・不正JSON・リトライ後も不正）でもトークンは消費済みのため、成功時の戻り値からだけ記録してはならない（`consultationRunnerUsage.test.ts`）。

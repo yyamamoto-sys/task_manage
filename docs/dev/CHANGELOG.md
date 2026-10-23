@@ -8474,3 +8474,13 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * M79：lib/dashboardKpi.ts。KPI「進行中」「今週の完了率」を、期限超過・PJ進捗と同じ葉タスク基準（子を持つ親は数えない。親判定は絞り込み前の全タスク）に揃えた。KPIタイルに説明文（ツールチップ）は無かったので文言の修正は無し。
 # * M70：lib/overlayEscape.ts の closeOnEscapeAndStop。CustomSelect の Esc は window の capture 段階で受けて stopImmediatePropagation（開いている間だけ登録）。document の keydown（バブリング）で Esc を待つモーダル全部に効く。useConfirmClose の role="listbox" 判定は他のオーバーレイ用の安全網として残す（矛盾しない：CustomSelect 経由では先に止まりモーダルに届かない）。
 # * テスト：settleSaves.test.ts・settleSavesWiring.test.ts・catchUpSince.test.ts・client.test.ts（channel）・inlineAddOrphan.test.ts・hiddenSelection.test.ts・dashboardKpi.test.ts・overlayEscape.test.ts（修正前のコードで赤を確認）。DB 変更なし・MIN_CLIENT_VERSION は上げない。M57・M76 は記録のまま（M76 は次にマイグレーションを出すときに相乗り）。
+
+# v3.182（2026-10-23）：巡回60回目＝B AI相談の点検（docs/REFACTORING.md「60回目の巡回」・M81〜M83）
+#
+# * 送信失敗の巻き戻し：useAIConsultation.submit は失敗時にユーザーのターンを履歴（sessionRef・state）へ入れない（v3.180 の個人OKRと同型）。ConsultationPanel.handleSubmit は失敗（false）で入力欄へ元の文と提案の選択を戻す（待つ間に打った文・選んだ提案があれば触らない）。従来は入力欄を空にしたまま ErrorView の「再試行」が `inputText.trim()` で何もしなかった。エラー時の履歴末尾除外（omitTailCount）と「送信した相談」エコーを廃止（巻き戻し済みで、入力欄に文が戻るため）。
+# * 二重送信：submit に処理中フラグ（inFlightRef）。ProposalCard の「見送る」（onDecline）・ツアー実演は画面側の callState を見ずに submit を呼ぶ。
+# * リセット後の復活：reset が世代番号（generationRef）を進め、返答待ちの途中で届いた結果・エラーは状態に反映せず捨てる（捨てた場合 submit は true＝入力を戻さない）。
+# * ショートID：buildPayload に prevShortIdMap。同じ会話の中では同じPJ・タスクに同じ番号を振り続け、前回までの対応は返す map にも残す（会話履歴の過去の提案を shortIdMap で引き直すため）。reset で空に戻す。従来は毎回 001 から振り直しており、タスクの完了・対象PJの切替で番号がずれて、過去の提案の「反映する」が別タスクに当たりえた。
+# * AI使用量：runAIConsultation に onUsage（API 1回ごとに呼ぶ）。解析失敗・max_tokens で例外になる送信の消費分も ai_usage_logs に記録する（従来は成功時の戻り値からだけ記録）。
+# * エラー整形：AIError 以外は formatErrorForUser 経由（Section 15）。
+# * テスト：payloadBuilderStableIds.test.ts・consultationRunnerUsage.test.ts・consultationFailureWiring.test.ts（修正前のコードで赤を確認）。consultationAttachmentWiring.test.ts の runAIConsultation 引数の検査を onUsage 込みに更新。DB 変更なし・MIN_CLIENT_VERSION は上げない。

@@ -41,8 +41,11 @@ export async function runAIConsultation(
   model?: string,
   responseVolume?: ResponseVolume,
   attachments: FileAttachment[] = [],
+  /** APIを1回呼び終えるたびに、そのコールの使用量を渡す。解析に失敗して例外になる場合でも消費済みのため、戻り値ではなくここで記録する */
+  onUsage?: (usage: AIUsage, isRetry: boolean) => void,
 ): Promise<RunAIConsultationResult> {
   const first = await callAIConsultation(payload, consultationType, history, model, responseVolume, undefined, attachments);
+  onUsage?.(first.usage, false);
 
   try {
     const parsed = parseAIResponse(first.text, first.stopReason);
@@ -62,6 +65,7 @@ export async function runAIConsultation(
       previousResponseText: first.text,
       reason: err.message,
     }, attachments);
+    onUsage?.(retry.usage, true);
 
     // リトライ結果のパース失敗はそのまま呼び出し元に伝播する（これ以上は救済しない）
     const parsedRetry = parseAIResponse(retry.text, retry.stopReason);

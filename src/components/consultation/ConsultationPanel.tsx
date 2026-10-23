@@ -167,19 +167,18 @@ export function ConsultationPanel({
   // 【二重表示の防止】最新のやりとりは上部の「送信した相談」＋「最新の提案」で表示するため、
   // 会話履歴（ChatHistory）からは除外する。除外しないと最新の質問・回答が画面に2回出る。
   // - 提案付き成功時：末尾の user+assistant の2ターンが「現在のやりとり」
-  // - エラー時：末尾の user 1ターン（回答はまだ無い）
+  // - エラー時：除外しない（失敗した送信のユーザーターンは履歴に残さず、入力欄へ戻す）
   // - ローディング/初期/提案なし成功：session 末尾に未コミット or 履歴側で表示するため除外しない
   const omitTailCount =
-    callState === "success" && proposals.length > 0 ? 2 :
-    callState === "error" ? 1 : 0;
+    callState === "success" && proposals.length > 0 ? 2 : 0;
   const historyTurns = omitTailCount > 0
     ? session.turns.slice(0, Math.max(0, session.turns.length - omitTailCount))
     : session.turns;
   const hasOlderHistory = historyTurns.length > 0;
   // 「送信した相談」エコーは、質問が会話履歴に二重表示されない条件でのみ出す
-  // （提案なし成功時は質問を会話履歴側で表示するのでエコーは出さない）。
+  // （提案なし成功時は質問を会話履歴側で表示するのでエコーは出さない。失敗時は入力欄へ戻すので出さない）。
   const showSubmittedEcho = !!lastSubmittedText && (
-    callState === "loading" || callState === "error" ||
+    callState === "loading" ||
     (callState === "success" && proposals.length > 0)
   );
 
@@ -258,9 +257,16 @@ ${marker}` : text);
       const refs = selectedProposals.map(p => `・「${p.title}」`).join("\n");
       consultation = `以下の提案についてのフィードバックです:\n${refs}\n\n${text}`;
     }
+    const sentSelection = selectedProposalIds;
     setSelectedProposalIds(new Set());
 
     const ok = await submit({ consultation, consultationType, responseVolume, attachments: sentAttachments });
+    // 失敗したときは入力欄へ元の文と提案の選択を戻す（待つ間に新しく打ち始めた文・選んだ提案があれば触らない）。
+    // 戻さないと「再試行」も押せず、打ち直しになる
+    if (!ok) {
+      setInputText(cur => (cur.trim() === "" ? text : cur));
+      setSelectedProposalIds(prev => (prev.size === 0 ? sentSelection : prev));
+    }
     // 失敗したときは添付を戻す（成功したときだけ消す）。その間に新しく添付されていたら触らない
     if (!ok && sentAttachments.length > 0) {
       setAttachments(prev => (prev.length === 0 ? sentAttachments : prev));

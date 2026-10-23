@@ -239,3 +239,9 @@ return {
 3. **PDF**（最後・難易度高・将来検討）
 
 ---
+
+---
+
+### 6-5 の追記（v3.182）：shortIdMap は会話のあいだ保つ
+
+`buildPayload` に `prevShortIdMap` を渡すと、同じPJ・タスクには同じショートIDを使い続ける（返す map には前回までの対応も残す）。履歴の過去の提案は最新の map で引くため、毎回 001 から振り直すと別のタスクへ解決されうる。`useAIConsultation` は `shortIdMapRef` で保持し、`reset` で空に戻す。
