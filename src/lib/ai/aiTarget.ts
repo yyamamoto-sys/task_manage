@@ -87,3 +87,18 @@ export function resolveAiScope(input: ResolveAiScopeInput): AiScope {
   }
   return { projects: scoped, openTasks };
 }
+
+/**
+ * AI相談の途中で「対象PJ」を変えるとき、新しい相談として始めるかの確認を出すか（v3.183・M83）。
+ * 会話（履歴・表示中の提案・返答待ち）が空なら出さない。PJが変わらないときも出さない。
+ */
+export function shouldConfirmTargetChange(input: {
+  currentPjId: string | null;
+  nextPjId: string | null;
+  turnCount: number;
+  proposalCount: number;
+  loading: boolean;
+}): boolean {
+  if (input.currentPjId === input.nextPjId) return false;
+  return input.turnCount > 0 || input.proposalCount > 0 || input.loading;
+}

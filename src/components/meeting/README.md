@@ -7,7 +7,8 @@
 | ファイル | 役割 |
 |---|---|
 | `MeetingImportPanel.tsx` | 貼り付け/ファイル添付（VTT/Word/PDF/画像）→ AI抽出 → 候補レビュー → 登録 |
-| `src/lib/ai/meetingExtractor.ts` | 抽出ロジック（AI基盤 `invokeAI` 経由） |
+| `src/lib/ai/meetingExtractor.ts` | 抽出ロジック（AI基盤 `invokeAI` 経由。出力切れ・開始日>期日の検証を含む） |
+| `src/lib/ai/meetingDrafts.ts` | 抽出結果→確認画面の下書き・下書き→保存（途中失敗の保存済み分を返す。v3.183） |
 | `src/lib/docxText.ts` | Word本文のテキスト抽出 |
 
 ## 改修・バグ探しの注意点

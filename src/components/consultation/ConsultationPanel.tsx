@@ -23,7 +23,8 @@ import { HelpButton } from "../guide/HelpButton";
 import { lazyWithRetry } from "../../lib/lazyWithRetry";
 import { GuestAiQuotaNotice } from "../common/GuestAiQuotaNotice";
 import { ProjectTargetSelect } from "../common/ProjectTargetSelect";
-import { aiTargetPickerProjects, resolveAiScope } from "../../lib/ai/aiTarget";
+import { aiTargetPickerProjects, resolveAiScope, shouldConfirmTargetChange } from "../../lib/ai/aiTarget";
+import { confirmDialog } from "../../lib/dialog";
 import type { FileAttachment } from "../../lib/ai/invokeAI";
 import { formatAttachmentHistoryMarker } from "../../lib/ai/consultationAttachment";
 import { ConsultAttachments } from "./ConsultAttachments";
@@ -134,7 +135,6 @@ export function ConsultationPanel({
   // ===== 対象PJ（AI相談・資料インプット共通。AIに送る範囲。lib/ai/aiTarget.ts） =====
   // 初期値はサイドバーで選択中のPJ。パネル内で自由に切り替えられ、サイドバーの選択が変わったら追従する
   const [targetPjId, setTargetPjId] = useState<string | null>(defaultTargetProjectId);
-  useEffect(() => { setTargetPjId(defaultTargetProjectId); }, [defaultTargetProjectId]);
   const scopedProjects = useAppStore(selectScopedProjects);
   const scopedTasks    = useAppStore(selectScopedTasks);
   const taskProjects   = useAppStore(s => s.taskProjects);
@@ -157,6 +157,15 @@ export function ConsultationPanel({
   } = useAIConsultation(effectiveTargetPjId, currentUser.id);
 
   const hasHistory = session.turns.length > 0;
+  // 対象PJの切替確認（M83）が最新の状態を読むための参照
+  const targetChangeRef = useRef({
+    raw: targetPjId, current: effectiveTargetPjId, turnCount: 0, proposalCount: 0, loading: false, isOpen, inputText: "",
+  });
+  targetChangeRef.current = {
+    raw: targetPjId, current: effectiveTargetPjId, turnCount: session.turns.length, proposalCount: proposals.length,
+    loading: callState === "loading", isOpen, inputText,
+  };
+  const targetChangeAskingRef = useRef(false);
 
   // 自動更新（v3.152）：パネルを開いている間・会話がある間・返答待ちの間は再読み込みしない（会話が消えるため）
   useEffect(() => {
@@ -309,6 +318,40 @@ ${marker}` : text);
     // 新しい sessionId をミラーにも反映（resetAi が sessionId="" に戻すため上書きする）
     useConsultSessionStore.getState().saveAi({ sessionId: sessionIdRef.current });
   };
+
+  // 【対象PJの切替・M83】会話の途中でPJを変えると、AIは前のターンのタスクを見えないまま続きになる。
+  // 会話があるときは新しい相談として始めるか確認する（空なら確認なしで切り替える）。
+  // 「新しく始める」は会話・ショートID・世代番号をまとめて reset する（返答待ちの返答も捨てる）。入力中の文は残す
+  const requestTargetChange = (next: string | null) => {
+    const s = targetChangeRef.current;
+    if (next === s.raw) return;
+    if (!shouldConfirmTargetChange({
+      currentPjId: s.current, nextPjId: next, turnCount: s.turnCount, proposalCount: s.proposalCount, loading: s.loading,
+    })) {
+      setTargetPjId(next);
+      return;
+    }
+    if (targetChangeAskingRef.current) return;
+    targetChangeAskingRef.current = true;
+    void confirmDialog(
+      "対象のプロジェクトが変わりました。新しい相談として始めますか。\n「このまま続ける」と、これまでの会話を引き継ぎます。AIには新しい対象のタスクだけが渡ります。",
+      { tone: "neutral", confirmLabel: "新しく始める", cancelLabel: "このまま続ける" },
+    ).then(startNew => {
+      if (!startNew) return;
+      const draft = targetChangeRef.current.inputText;
+      handleReset();
+      setInputText(draft);
+      setTargetPjId(next);
+    }).finally(() => { targetChangeAskingRef.current = false; });
+  };
+  const requestTargetChangeRef = useRef(requestTargetChange);
+  requestTargetChangeRef.current = requestTargetChange;
+
+  // サイドバーで選んだPJへの追従。パネルを開いて会話している間だけ確認を挟む（閉じているときに確認を出さない）
+  useEffect(() => {
+    if (targetChangeRef.current.isOpen) requestTargetChangeRef.current(defaultTargetProjectId);
+    else setTargetPjId(defaultTargetProjectId);
+  }, [defaultTargetProjectId]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -520,7 +563,7 @@ ${marker}` : text);
             <ProjectTargetSelect
               projects={scopedProjects}
               value={effectiveTargetPjId}
-              onChange={setTargetPjId}
+              onChange={requestTargetChange}
               style={{ flex: 1, minWidth: 0 }}
             />
           </div>

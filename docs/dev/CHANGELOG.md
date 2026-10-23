@@ -8484,3 +8484,19 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * AI使用量：runAIConsultation に onUsage（API 1回ごとに呼ぶ）。解析失敗・max_tokens で例外になる送信の消費分も ai_usage_logs に記録する（従来は成功時の戻り値からだけ記録）。
 # * エラー整形：AIError 以外は formatErrorForUser 経由（Section 15）。
 # * テスト：payloadBuilderStableIds.test.ts・consultationRunnerUsage.test.ts・consultationFailureWiring.test.ts（修正前のコードで赤を確認）。consultationAttachmentWiring.test.ts の runAIConsultation 引数の検査を onUsage 込みに更新。DB 変更なし・MIN_CLIENT_VERSION は上げない。
+
+
+# v3.183（2026-10-23）：M81・M83 の解決＋巡回61回目＝C 会議読み込みの点検（docs/REFACTORING.md「61回目の巡回」・M84〜M87）
+#
+# * M81：ConsultAttachments の「外す」ボタンは読み込み中（loading）も disabled。読み込み完了時の onChange が開始時点の一覧に追加分を足した配列で上書きし、外したチップが戻る不具合を防ぐ。
+# * M83（A案）：aiTarget.ts の shouldConfirmTargetChange（会話の履歴・表示中の提案・返答待ちのどれかがあり、PJが変わるときだけ true）。ConsultationPanel の「対象PJ」選択とサイドバー追従（パネルを開いているとき）は requestTargetChange を通り、確認ダイアログ（tone:neutral・「新しく始める」／「このまま続ける」）を出す。新しく始める＝handleReset（世代番号・ショートIDの reset を含む。入力中の文は残す）してから対象を切り替える。このまま続ける＝従来どおり（選択は変えない）。会話が空なら確認なしで切り替える。
+# * 資料インプットの下書き・保存を lib/ai/meetingDrafts.ts へ切り出し（buildTaskDrafts・buildStatusDrafts・applyMeetingDrafts）。画面は MeetingImportPanel。
+# * 登録の途中失敗：従来は途中で失敗すると確認画面に戻るが下書きは全部チェックのまま残り、再登録で保存済みのタスクが二重に作られた（新規PJも二重）。applyMeetingDrafts は保存済み・見つからなかった分の下書きIDを返し、画面は保存済みを外す。作成済みの新規PJは createdProjectIdRef で再試行時に使い回す。
+# * 担当者の既定：AIが担当者名を返さない（null）と m.display_name.includes("") が真になり先頭のメンバーへ割り当てていた。名前なし＝実行者本人、名前あり・不一致＝空（確認画面で未設定と見える）。
+# * 更新候補：AIが返した suggested_task_id が送ったタスク一覧に無いときは空にしてチェックを外す（従来は存在しないIDのままチェック済みで、登録時に黙って飛ばされた）。更新対象の引き当ては AIの範囲（openTasks）ではなく表示部署のタスクから（登録前に対象PJを変えても落ちない）。見つからなかった分は完了画面に件数を出す。
+# * 出力切れ：extractMeetingData は parseMeetingResponse を通し、stop_reason が max_tokens のときは JSON の構文エラーではなく「2回に分けて」の案内を出す（Section 6-1b）。
+# * 日付：validateAnalysis は start_date が due_date より後の組の start_date を null にする。
+# * 文字数：読み込み時の30,000字切り（VTT/SRTでは整形後に収まる分まで捨て、超過の警告も出なかった）をやめ、読み込み時の安全上限は100万字に。入力欄の文字数と超過警告は parseTranscript 後の長さで数える（handleAnalyze が切り詰める基準と同じ）。
+# * 二重起動：handleAnalyze・handleApply に処理中フラグ（Ctrl+Enter の連打などでの二重課金・二重登録を防ぐ）。
+# * AI使用量：invokeAI が全呼び出しの使用量を記録するため、会議読み込みに記録漏れは無い（AI相談側は別経路の apiClient だったため v3.182 で onUsage を足した）。変更なし。
+# * テスト：consultationTargetChange.test.ts・meetingDrafts.test.ts（修正前のコードで赤を確認）。DB 変更なし・MIN_CLIENT_VERSION は上げない。

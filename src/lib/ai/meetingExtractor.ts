@@ -205,15 +205,21 @@ export function validateAnalysis(data: unknown): MeetingAnalysis {
 
   const new_tasks: MeetingTask[] = d.new_tasks
     .filter((t): t is Record<string, unknown> => isObj(t) && typeof t.name === "string" && t.name.trim() !== "")
-    .map(t => ({
-      name: t.name as string,
-      assignee_short_name: strOrNull(t.assignee_short_name),
-      start_date: toIsoDateOrNull(t.start_date),
-      due_date: toIsoDateOrNull(t.due_date),
-      project_hint: strOrNull(t.project_hint),
-      priority: (PRIORITIES as readonly unknown[]).includes(t.priority) ? (t.priority as MeetingTask["priority"]) : null,
-      source_quote: str(t.source_quote),
-    }));
+    .map(t => {
+      const due_date = toIsoDateOrNull(t.due_date);
+      let start_date = toIsoDateOrNull(t.start_date);
+      // 開始日が期日より後の組はガントで1日だけの表示に化ける。どちらが誤りか分からないので開始日を空にし、確認画面で人が入れる
+      if (start_date && due_date && start_date > due_date) start_date = null;
+      return {
+        name: t.name as string,
+        assignee_short_name: strOrNull(t.assignee_short_name),
+        start_date,
+        due_date,
+        project_hint: strOrNull(t.project_hint),
+        priority: (PRIORITIES as readonly unknown[]).includes(t.priority) ? (t.priority as MeetingTask["priority"]) : null,
+        source_quote: str(t.source_quote),
+      };
+    });
 
   // new_status が5値以外の候補は保存すると CHECK 制約で落ちるだけなので、候補ごと除く
   const status_updates: MeetingStatusUpdate[] = d.status_updates
@@ -254,6 +260,14 @@ export async function extractMeetingData(params: ExtractMeetingParams): Promise<
   // 添付（PDF等）がある場合は document/image ブロックとして同梱（テキスト添付なら本文に追記される）
   const content = buildMessageContent(userMessage, params.attachment ?? null);
   const res = await invokeAI(SYSTEM_PROMPT, [{ role: "user", content }], 4096, "meeting-extract");
-  const text = res.content[0].text;
+  return parseMeetingResponse(res.content[0]?.text ?? "", res.stop_reason);
+}
+
+export const TRUNCATED_MEETING_MESSAGE =
+  "抽出結果が長すぎて途中で切れました。資料を前半・後半など2回に分けて読み込んでください。";
+
+/** AIの返答を検証済みの形にする。出力上限で途中切れ（stop_reason）のときは、壊れたJSONのパース失敗にせず案内を出す（Section 6-1b） */
+export function parseMeetingResponse(text: string, stopReason: string | undefined): MeetingAnalysis {
+  if (stopReason === "max_tokens") throw new Error(TRUNCATED_MEETING_MESSAGE);
   return validateAnalysis(parseJsonSafe<unknown>(text));
 }

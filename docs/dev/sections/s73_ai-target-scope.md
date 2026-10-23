@@ -32,3 +32,11 @@ AI相談（`payloadBuilder.ts`）は、表示部署のアーカイブ以外の�
 ToDo分解（`todoDecomposeClient`）・OKR系（`okrKrAnalysisClient` 等）・個人OKR系はPJ・タスクの一覧を送らない。グループOKRの分析パネルはアーカイブ済みで描画経路が無い。
 
 ---
+
+### v3.183 の追記：会話の途中で対象PJを変えたとき（M83）・資料インプットの下書きと登録（巡回61回目）
+
+- **会話の途中で「対象PJ」を変えると確認する（M83・山本さん承認のA案）**：AIは前のターンで見ていたPJのタスクを今回は見えないのに、履歴だけが引き継がれていた。`shouldConfirmTargetChange`（`aiTarget.ts`）が、会話の履歴・表示中の提案・返答待ちのどれかがあり、かつPJが変わるときだけ true を返す。`ConsultationPanel` の「対象PJ」選択とサイドバー追従（パネルを開いているとき。閉じているときは確認なしで追従）は `requestTargetChange` を通り、「対象のプロジェクトが変わりました。新しい相談として始めますか。」を出す。「新しく始める」は `handleReset`（世代番号・ショートIDの reset を含む）してから対象を切り替える。入力中の文は残す。「このまま続ける」は従来どおり（選択は変えない）。会話が空なら確認なしで切り替える。**B案（反映直前に対象の現在状態を見て、完了・削除済みなら止める）は実施しない**（`applyProposal` 全体の設計に及ぶため）。
+- **資料インプットの下書き・保存は `lib/ai/meetingDrafts.ts`**：`buildTaskDrafts`（担当者：名前なし＝実行者本人・名前あり不一致＝空。先頭のメンバーへ割り当てない）・`buildStatusDrafts`（AIが返したIDが送った一覧に無ければ空にしてチェックを外す）・`applyMeetingDrafts`（途中で失敗したら保存済みの下書きIDを返す）。画面は保存済みを外すので、残りだけを再登録できる（二重登録の防止）。作成済みの新規PJは `createdProjectIdRef` で使い回す。更新対象は表示部署のタスクから引く。
+- **`extractMeetingData`**：`parseMeetingResponse` を通し、`stop_reason==="max_tokens"` は構文エラーではなく「2回に分けて」の案内（Section 6-1b）。`validateAnalysis` は開始日が期日より後の組の開始日を空にする。
+- **文字数**：読み込み時に30,000字で切らない（安全上限は100万字）。入力欄の字数と超過警告は `parseTranscript` 後の長さで数える。AIへ渡すのは整形後の先頭30,000字。
+- **機械チェック**：`consultationTargetChange.test.ts`・`meetingDrafts.test.ts`。

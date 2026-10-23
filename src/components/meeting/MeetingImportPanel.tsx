@@ -8,16 +8,17 @@
 
 import { useState, useRef, useMemo, useCallback } from "react";
 import { useAppStore, selectScopedTasks, selectScopedProjects, selectScopedMembers } from "../../stores/appStore";
-import type { Member, Project, Task } from "../../lib/localData/types";
+import type { Member, Task } from "../../lib/localData/types";
 import { active } from "../../lib/localData/localStore";
 import { resolveAiScope } from "../../lib/ai/aiTarget";
 import {
   parseTranscript,
   extractMeetingData,
   type MeetingAnalysis,
-  type MeetingTask,
-  type MeetingStatusUpdate,
 } from "../../lib/ai/meetingExtractor";
+import {
+  applyMeetingDrafts, buildStatusDrafts, buildTaskDrafts, type StatusDraft, type TaskDraft,
+} from "../../lib/ai/meetingDrafts";
 import type { FileAttachment } from "../../lib/ai/invokeAI";
 import { extractDocxText, isDocxFile } from "../../lib/docxText";
 import { extractHtmlText, isHtmlFile } from "../../lib/htmlText";
@@ -38,35 +39,15 @@ const MEETING_PHASES = [
 // ===== 定数 =====
 
 const MAX_TRANSCRIPT_CHARS = 30000;
+// 読み込み時の安全上限（画面が固まらないための値）。AIに渡す30,000字は、タイムスタンプ等を除いた整形後の文字数で数える。
+// 読み込み時に30,000字で切ると、VTT/SRTでは整形後に収まる分まで捨ててしまい、超過の警告も出なかった（v3.183）
+const MAX_RAW_CHARS = 1_000_000;
+const capRawText = (text: string): string => (text.length > MAX_RAW_CHARS ? text.slice(0, MAX_RAW_CHARS) : text);
 
 // ラベルは taskMeta.ts（アプリ全体の単一の真実源）から取得し、他画面（リスト/カンバン等）との表記統一を保つ
 const PRIORITY_OPTIONS: { value: "high" | "mid" | "low"; label: string }[] = (
   ["high", "mid", "low"] as const
 ).map(value => ({ value, label: TASK_PRIORITY_LABEL[value] }));
-
-// ===== タスクドラフト型 =====
-
-interface TaskDraft {
-  tempId: string;
-  checked: boolean;
-  name: string;
-  assignee_member_id: string;
-  start_date: string;
-  due_date: string;
-  project_id: string;
-  priority: "high" | "mid" | "low" | null;
-  source_quote: string;
-}
-
-interface StatusDraft {
-  tempId: string;
-  checked: boolean;
-  task_id: string;          // 紐づける既存タスクのID
-  task_name_hint: string;
-  new_status: "todo" | "in_progress" | "done" | "on_hold" | "cancelled";
-  reason: string;
-  source_quote: string;
-}
 
 // ===== Props =====
 
@@ -114,7 +95,7 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false, targe
   const [analysis, setAnalysis] = useState<MeetingAnalysis | null>(null);
   const [taskDrafts, setTaskDrafts] = useState<TaskDraft[]>([]);
   const [statusDrafts, setStatusDrafts] = useState<StatusDraft[]>([]);
-  const [applyResults, setApplyResults] = useState<{ created: number; updated: number } | null>(null);
+  const [applyResults, setApplyResults] = useState<{ created: number; updated: number; skipped: number } | null>(null);
   const [saveProgress, setSaveProgress] = useState<{ current: number; total: number; label: string }>({
     current: 0, total: 1, label: "",
   });
@@ -148,14 +129,14 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false, targe
     // Word(.docx)：本文テキストを抽出
     if (isDocxFile(file)) {
       extractDocxText(file)
-        .then(text => { setPdfAttachment(null); setRawText(text.length > MAX_TRANSCRIPT_CHARS ? text.slice(0, MAX_TRANSCRIPT_CHARS) : text); })
+        .then(text => { setPdfAttachment(null); setRawText(capRawText(text)); })
         .catch((e: unknown) => setFileError(e instanceof Error ? e.message : "Wordファイルの読み込みに失敗しました。"));
       return;
     }
     // HTML(.html/.htm)：本文テキストを抽出（raw HTML ではなく textContent を渡す）
     if (isHtmlFile(file)) {
       extractHtmlText(file)
-        .then(text => { setPdfAttachment(null); setRawText(text.length > MAX_TRANSCRIPT_CHARS ? text.slice(0, MAX_TRANSCRIPT_CHARS) : text); })
+        .then(text => { setPdfAttachment(null); setRawText(capRawText(text)); })
         .catch((e: unknown) => setFileError(e instanceof Error ? e.message : "HTMLファイルの読み込みに失敗しました。"));
       return;
     }
@@ -164,7 +145,7 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false, targe
     reader.onload = e => {
       setPdfAttachment(null);
       const text = (e.target?.result as string) ?? "";
-      setRawText(text.length > MAX_TRANSCRIPT_CHARS ? text.slice(0, MAX_TRANSCRIPT_CHARS) : text);
+      setRawText(capRawText(text));
     };
     reader.onerror = () => setFileError("ファイルの読み込みに失敗しました。");
     reader.readAsText(file, "utf-8");
@@ -179,9 +160,14 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false, targe
 
   // ===== AI 解析 =====
 
+  // 解析中の二重起動（Ctrl+Enterの連打・ボタンとの重なり）で2回課金しない
+  const analyzingRef = useRef(false);
+
   const handleAnalyze = useCallback(async () => {
     const text = rawText.trim();
     if (!text && !pdfAttachment) return;
+    if (analyzingRef.current) return;
+    analyzingRef.current = true;
     setError(null);
     setStep("analyzing");
 
@@ -207,163 +193,68 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false, targe
       });
 
       setAnalysis(result);
-
-      // タスクドラフトを初期化
-      setTaskDrafts(
-        (result.new_tasks ?? []).map((t: MeetingTask, i) => ({
-          tempId: `task-${i}`,
-          checked: true,
-          name: t.name,
-          assignee_member_id:
-            members.find(m =>
-              m.short_name === t.assignee_short_name ||
-              m.display_name.includes(t.assignee_short_name ?? "")
-            )?.id ?? (members[0]?.id ?? ""),
-          start_date: t.start_date ?? "",
-          due_date: t.due_date ?? "",
-          project_id:
-            projects.find(p =>
-              t.project_hint && p.name.includes(t.project_hint)
-            )?.id ?? "",
-          priority: t.priority,
-          source_quote: t.source_quote,
-        })),
-      );
-
-      // ステータスドラフトを初期化
-      setStatusDrafts(
-        (result.status_updates ?? []).map((u: MeetingStatusUpdate, i) => ({
-          tempId: `status-${i}`,
-          checked: !!u.suggested_task_id,
-          task_id: u.suggested_task_id ?? "",
-          task_name_hint: u.task_name_hint,
-          new_status: u.new_status,
-          reason: u.reason,
-          source_quote: u.source_quote,
-        })),
-      );
+      setTaskDrafts(buildTaskDrafts(result.new_tasks, members, projects, currentUser.id));
+      setStatusDrafts(buildStatusDrafts(result.status_updates, new Set(tasks.map(t => t.id))));
+      createdProjectIdRef.current = null;
 
       setStep("review");
     } catch (e) {
       setError(formatErrorForUser("AI解析に失敗しました", e));
       setStep("input");
+    } finally {
+      analyzingRef.current = false;
     }
-  }, [rawText, pdfAttachment, projects, tasks, members, everyMember]);
+  }, [rawText, pdfAttachment, projects, tasks, members, everyMember, currentUser.id]);
 
   // ===== 適用 =====
 
+  // 前回の登録で作成済みの新規PJ。途中で失敗して再登録しても、同じPJを二重に作らない
+  const createdProjectIdRef = useRef<string | null>(null);
+  const applyingRef = useRef(false);
+
   const handleApply = useCallback(async () => {
+    if (applyingRef.current) return;
+    applyingRef.current = true;
     setStep("applying");
     setError(null);
-    let created = 0;
-    let updated = 0;
-
-    const newProjNeeded = taskDrafts.some(d => d.checked && d.project_id === "__new__");
-    const validTaskDrafts = taskDrafts.filter(d => d.checked && d.name.trim());
-    const validStatusDrafts = statusDrafts.filter(d => d.checked && d.task_id);
-    const totalSteps = (newProjNeeded ? 1 : 0) + validTaskDrafts.length + validStatusDrafts.length;
-
-    setSaveProgress({
-      current: 0,
-      total: Math.max(1, totalSteps),
-      label: totalSteps === 0 ? "完了処理…" : "登録処理を開始しています…",
-    });
 
     try {
-      let stepCount = 0;
-      // 新規PJが必要な場合は先に作成する
-      let resolvedNewProjId: string | null = null;
-      if (newProjNeeded) {
-        setSaveProgress(p => ({ ...p, current: stepCount, label: "新規プロジェクトを作成中…" }));
-        const now = new Date().toISOString();
-        resolvedNewProjId = crypto.randomUUID();
-        const newProj: Project = {
-          id: resolvedNewProjId,
-          name: pendingNewProjName.trim() || "新規プロジェクト",
-          purpose: "",
-          contribution_memo: "",
-          owner_member_id: currentUser.id,
-          owner_member_ids: [currentUser.id],
-          status: "active",
-          color_tag: pendingNewProjColor,
-          start_date: "",
-          end_date: "",
-          is_deleted: false,
-          created_at: now,
-          updated_at: now,
-          updated_by: currentUser.id,
-        };
-        await saveProject(newProj);
-        stepCount += 1;
-        setSaveProgress(p => ({ ...p, current: stepCount }));
+      const outcome = await applyMeetingDrafts(
+        {
+          taskDrafts, statusDrafts, currentUserId: currentUser.id,
+          newProject: { name: pendingNewProjName, color: pendingNewProjColor },
+          createdProjectId: createdProjectIdRef.current,
+        },
+        {
+          saveTask, saveProject,
+          // 更新対象は、AIの対象PJの範囲ではなく表示部署のタスクから引く（登録前に対象PJを変えても更新が黙って落ちない）
+          findTask: id => allTasks.find(t => t.id === id && !t.is_deleted),
+          onProgress: (current, total, label) => setSaveProgress({ current, total, label }),
+        },
+      );
+      createdProjectIdRef.current = outcome.createdProjectId;
+
+      if (outcome.error) {
+        // 保存できた分は画面から外す（残したまま再登録すると同じタスクが二重に作られる）
+        const savedTasks = new Set(outcome.savedTaskTempIds);
+        const gone = new Set([...outcome.savedStatusTempIds, ...outcome.skippedStatusTempIds]);
+        setTaskDrafts(prev => prev.filter(d => !savedTasks.has(d.tempId)));
+        setStatusDrafts(prev => prev.filter(d => !gone.has(d.tempId)));
+        const done = outcome.created + outcome.updated;
+        const note = done > 0
+          ? `（登録済みの分：タスク${outcome.created}件・更新${outcome.updated}件は画面から外しました。残りだけをもう一度登録できます）`
+          : "";
+        setError(`${formatErrorForUser("登録に失敗しました", outcome.error)}${note}`);
+        setStep("review");
+        return;
       }
 
-      // 新規タスク作成
-      for (let i = 0; i < validTaskDrafts.length; i++) {
-        const draft = validTaskDrafts[i];
-        setSaveProgress(p => ({
-          ...p, current: stepCount,
-          label: `タスクを追加中… (${i + 1}/${validTaskDrafts.length})`,
-        }));
-        const now = new Date().toISOString();
-        const resolvedProjId = draft.project_id === "__new__"
-          ? resolvedNewProjId
-          : (draft.project_id || null);
-        const newTask: Task = {
-          id: crypto.randomUUID(),
-          name: draft.name.trim(),
-          project_id: resolvedProjId,
-          todo_ids: [],
-          assignee_member_id: draft.assignee_member_id || currentUser.id,
-          assignee_member_ids: [draft.assignee_member_id || currentUser.id],
-          status: "todo",
-          priority: draft.priority,
-          start_date: draft.start_date || null,
-          due_date: draft.due_date || null,
-          estimated_hours: null,
-          comment: draft.source_quote ? `資料メモ：「${draft.source_quote}」` : "",
-          is_deleted: false,
-          created_at: now,
-          updated_at: now,
-          updated_by: currentUser.id,
-        };
-        await saveTask(newTask);
-        created++;
-        stepCount += 1;
-        setSaveProgress(p => ({ ...p, current: stepCount }));
-      }
-
-      // ステータス更新
-      for (let i = 0; i < validStatusDrafts.length; i++) {
-        const draft = validStatusDrafts[i];
-        setSaveProgress(p => ({
-          ...p, current: stepCount,
-          label: `ステータスを更新中… (${i + 1}/${validStatusDrafts.length})`,
-        }));
-        const existing = tasks.find(t => t.id === draft.task_id);
-        if (!existing) {
-          stepCount += 1;
-          setSaveProgress(p => ({ ...p, current: stepCount }));
-          continue;
-        }
-        await saveTask({
-          ...existing,
-          status: draft.new_status,
-          // updated_at は触らない（CLAUDE.md Section 5）
-          updated_by: currentUser.id,
-        });
-        updated++;
-        stepCount += 1;
-        setSaveProgress(p => ({ ...p, current: stepCount }));
-      }
-
-      setApplyResults({ created, updated });
+      setApplyResults({ created: outcome.created, updated: outcome.updated, skipped: outcome.skipped });
       setStep("done");
-    } catch (e) {
-      setError(formatErrorForUser("登録に失敗しました", e));
-      setStep("review");
+    } finally {
+      applyingRef.current = false;
     }
-  }, [taskDrafts, statusDrafts, tasks, currentUser, saveTask, saveProject, pendingNewProjName, pendingNewProjColor]);
+  }, [taskDrafts, statusDrafts, allTasks, currentUser, saveTask, saveProject, pendingNewProjName, pendingNewProjColor]);
 
   const handleReset = () => {
     setStep("input");
@@ -375,6 +266,7 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false, targe
     setTaskDrafts([]);
     setStatusDrafts([]);
     setApplyResults(null);
+    createdProjectIdRef.current = null;
   };
 
   const checkedTaskCount = taskDrafts.filter(d => d.checked && d.name.trim()).length;
@@ -457,6 +349,7 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false, targe
           <DoneStep
             created={applyResults.created}
             updated={applyResults.updated}
+            skipped={applyResults.skipped}
             onReset={handleReset}
             onClose={onClose}
           />
@@ -572,7 +465,8 @@ function InputStep({
   onAnalyze: () => void;
 }) {
   const trimmed = rawText.trim();
-  const charCount = trimmed.length;
+  // AIに渡す文字数は、時刻行などを除いた整形後で数える（handleAnalyze が切り詰める基準と同じ）
+  const charCount = useMemo(() => parseTranscript(trimmed).length, [trimmed]);
   const overLimit = charCount > MAX_TRANSCRIPT_CHARS;
 
   return (
@@ -635,7 +529,7 @@ function InputStep({
               議事録・会議メモ・資料・報告書など何でも可
             </span>
           </FieldLabel>
-          <span style={{
+          <span title="時刻の行などを除いた、AIに渡す文字数です" style={{
             fontSize: "10px",
             color: overLimit ? "#ca8a04" : "var(--color-text-tertiary)",
           }}>
@@ -1143,8 +1037,8 @@ function StatusDraftCard({
 
 // ===== DoneStep =====
 
-function DoneStep({ created, updated, onReset, onClose }: {
-  created: number; updated: number;
+function DoneStep({ created, updated, skipped, onReset, onClose }: {
+  created: number; updated: number; skipped: number;
   onReset: () => void; onClose: () => void;
 }) {
   return (
@@ -1159,7 +1053,8 @@ function DoneStep({ created, updated, onReset, onClose }: {
       <div style={{ fontSize: "13px", color: "var(--color-text-secondary)", lineHeight: 1.7 }}>
         {created > 0 && <div>タスク {created}件 を新規作成しました</div>}
         {updated > 0 && <div>タスク {updated}件 のステータスを更新しました</div>}
-        {created === 0 && updated === 0 && <div>変更はありませんでした</div>}
+        {skipped > 0 && <div>タスク {skipped}件 は対象のタスクが見つからず、更新できませんでした</div>}
+        {created === 0 && updated === 0 && skipped === 0 && <div>変更はありませんでした</div>}
       </div>
       <div style={{ display: "flex", gap: "10px", marginTop: "8px" }}>
         <button onClick={onReset} style={ghostButtonStyle}>

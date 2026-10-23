@@ -109,7 +109,7 @@ export function ConsultAttachments({ attachments, onChange, disabled, onLoadingC
                   </span>
                 )}
                 <button
-                  type="button" aria-label={`${att.fileName}を外す`} title="外す" disabled={disabled}
+                  type="button" aria-label={`${att.fileName}を外す`} title={loading ? "読み込みが終わるまで外せません" : "外す"} disabled={disabled || loading}
                   onClick={() => onChange(attachments.filter((_, j) => j !== i))}
                   style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", padding: 0, lineHeight: 1, flexShrink: 0 }}
                 >✕</button>
