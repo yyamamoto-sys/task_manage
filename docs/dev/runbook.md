@@ -168,7 +168,7 @@
 
 ### 個人情報・機密漏洩疑い
 
-1. **即座に藤本さんに連絡**
+1. **即座に管理者（山本 勇気）に連絡**（対応できないときは IT：app_gantt@amita-net.co.jp）
 2. **Anthropic API キーをローテーション**
 3. **Supabase の RLS ポリシーを再確認**（`anon` 経由で漏れていないか）
 4. **アクセスログ調査**：Supabase の Logs から異常アクセスを探す
@@ -212,8 +212,8 @@
 | Vercel 障害 | Vercel サポート + status.vercel.com |
 | Supabase 障害 | Supabase サポート + status.supabase.com |
 | Anthropic 障害 | status.anthropic.com |
-| データ事故 | 藤本さん（即時）+ Supabase サポート |
-| アプリの致命的バグ | 後任者（即時）+ 影響範囲を藤本さんに共有 |
+| データ事故 | 管理者（山本 勇気）（即時）/ 代行：IT（app_gantt@amita-net.co.jp）+ Supabase サポート |
+| アプリの致命的バグ | 管理者（山本 勇気）（即時）/ 代行：IT（app_gantt@amita-net.co.jp） |
 
 ## 9. 関連
 

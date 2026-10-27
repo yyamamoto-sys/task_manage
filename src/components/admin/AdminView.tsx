@@ -2227,7 +2227,7 @@ function MemberFormFields({ form, setForm, groups, isMobile, editId, currentUser
       <div>
         <FieldLabel>ログイン用メールアドレス（任意）</FieldLabel>
         <input type="email" value={form.email} onChange={e => setForm(f => ({...f, email: e.target.value}))}
-          placeholder="例：y.yamamoto@amita-net.co.jp" style={inputStyle} />
+          placeholder="例：example@amita-net.co.jp" style={inputStyle} />
         <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", marginTop: "3px" }}>
           設定するとログイン後にこのメンバーが自動選択されます
         </div>
@@ -2381,7 +2381,7 @@ function MemberFormFields({ form, setForm, groups, isMobile, editId, currentUser
       <div>
         <FieldLabel>Teamsアカウント（任意）</FieldLabel>
         <input value={form.teams_account} onChange={e => setForm(f => ({...f, teams_account: e.target.value}))}
-          placeholder="例：y.yamamoto@amita-net.co.jp" style={inputStyle} />
+          placeholder="例：example@amita-net.co.jp" style={inputStyle} />
       </div>
       <div>
         <FieldLabel>アバターカラー</FieldLabel>

@@ -16,3 +16,7 @@ public/pdfjs/
 
 # Skills lock（個別環境用）
 skills-lock.json
+
+# ローカル連携情報（個別環境用）
+supabase/.temp/
+.vercel/
