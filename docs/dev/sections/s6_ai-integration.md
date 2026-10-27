@@ -249,3 +249,11 @@ return {
 ### 6-1b の追記（v3.186）：出力切れの検知は `assertNotTruncated` に寄せる
 
 `stop_reason === "max_tokens"`（出力上限で途中切れ）の検知は、`lib/ai/assertNotTruncated.ts` の `assertNotTruncated(res, message)` を、`invokeAI` が返った直後（JSON のパース・文章の保存より前）に1回呼ぶ。文言は機能ごとの案内（「2回に分けて」「質問を分けて」等）を `message` で渡す。**新しい AI 呼び出しを足したら必ず適用する**（検知が無いと、JSON は構文エラーの汎用文言になり、文章は途中切れのまま保存・表示される）。リトライしない方針（同じ長さの壁に当たる）は従来どおり。`invokeAI.ts` に置かないのは、各テストが invokeAI モジュールを丸ごとモックしているため。使用量の記録は `invokeAI` の中（v3.185＝記録→空の判定）で済んでおり、出力切れでも課金済みの使用量は記録される。文章を返すPJ分析2本だけは `finalizeAnalysisText`（注記を付けて途中まで残す型）を使う。テスト＝`assertNotTruncated.test.ts`。
+
+### 6-16. AI相談と PJ 登録の統合の経緯（メモ）
+
+- 以前は、相談（1問→提案カード）と PJ 登録（会話→プラン→一括作成）の2系統が同居していた。**現在は相談チャットに一本化済み**で、新規 PJ の作成は `add_project` 提案カード（確認ダイアログで PJ 名・目的・各タスクを編集可）経由。旧 PJ 作成モーダルと `projectPlanClient.ts` は削除した。
+- `AIIntent` の `"project-plan"` は、`ai_usage_logs` の履歴ラベルとテストが参照するため**意図的に残してある**。削除しない。
+- `PlanMessage` 型は `krQuarterPlanClient.ts` にも別定義があり、`KrQuarterPlanPanel` はそちらを使う。混同しないこと。
+- `add_project` は、いきなり提案せず、システムプロンプトの「新規PJ作成のヒアリング・プロトコル」に従い、不足している要点を `info` アクションで最大2往復だけ確認してから提案する（「おまかせ」「たたき台でよい」や、2往復で打ち切るフォールバックあり。`systemPrompt.test.ts` に回帰テスト）。
+- `add_task` に `new_subtasks` を付けると、親＋子タスクを一括作成できる（`parent_task_id`・PJ 継承・`display_order` 連番・Undo 対応）。

@@ -215,9 +215,47 @@
 | データ事故 | 管理者（山本 勇気）（即時）/ 代行：IT（app_gantt@amita-net.co.jp）+ Supabase サポート |
 | アプリの致命的バグ | 管理者（山本 勇気）（即時）/ 代行：IT（app_gantt@amita-net.co.jp） |
 
-## 9. 関連
+## 9. 本番 DB・開発 DB の照会手順
+
+構造の確認・集計・障害の切り分けで DB を読むときの手順。Supabase ダッシュボードの SQL Editor に貼って実行してもよい（その場合はこの節の CLI は不要）。
+
+> **実行は人が行う。** Supabase CLI・`pg_dump` など、外部クラウドへ接続する操作は、社内のセキュリティ監視（EDR）で検知され、ヘルプデスクから照会が来た実績がある。読み取りだけの照会も対象になった。時間帯を含めて記録に残る前提で実行する。
+
+### 9.1 本番を読む
+
+1. **ログイン**：`npx supabase login`。対話端末が必要なため、Claude Code 内の `!` では実行できない。別のターミナルで行う。
+2. **接続先の確認（必須）**：`npx supabase projects list` で、リポジトリがリンクしているプロジェクトが本番（国外リージョン＝ap-southeast-2）であることを確かめてから照会する。
+3. **照会**：SQL をファイルにして実行する。
+   ```bash
+   npx supabase db query --linked -f <SQLファイルのパス> -o csv
+   ```
+4. 照会する SQL は `select` のみにする。構造の差の確認は `information_schema.columns`、ポリシーは `pg_policies`、関数本文は `pg_get_functiondef` を使う（`schema.sql` は実 DB とずれる。CLAUDE.md Section 22・58）。
+
+### 9.2 開発 DB を読む
+
+開発 DB（dev）は別プロジェクト（東京リージョン）。リポジトリのリンク先を変えずに照会するには、作業用ディレクトリを使う。
+
+1. 一時ディレクトリに `supabase/.temp/project-ref` を作り、中に開発プロジェクトの識別子だけを書く（識別子はリポジトリにも会話にも貼らない。`supabase/.temp/` は `.gitignore` 済み）。
+2. 照会：
+   ```bash
+   npx supabase db query --linked --workdir <一時ディレクトリ> -f <SQLファイルの絶対パス> -o csv
+   ```
+   `-f` は workdir 基準で解決されるため、**絶対パスで渡す**。
+
+### 9.3 本番と開発の構造の差を調べる
+
+列・関数本文の md5・ポリシー・制約・索引・トリガー・cron を、1本の照会で出力し、本番と開発で同じ SQL を流して `comm` などで突き合わせると、差がすぐ分かる。開発 DB に意図的に残る差は、Realtime の publication が空であること、バックアップなどの cron が無いこと。
+
+### 9.4 注意
+
+- 開発 DB に cron（`push-reminders` など）を登録しない。登録すると本番と二重に通知が飛ぶ。
+- 本番で SQL を適用するときは、デプロイとの順序に注意する（`lessons-learned.md` §1）。
+
+## 10. 関連
 
 - [handover-checklist.md](./handover-checklist.md)
 - [architecture.md](./architecture.md)
 - [data-model.md](./data-model.md)
 - [supabase-migrations.md](./supabase-migrations.md)
+- [status-and-open-items.md](./status-and-open-items.md)
+- [lessons-learned.md](./lessons-learned.md)
