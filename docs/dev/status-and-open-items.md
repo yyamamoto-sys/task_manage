@@ -32,7 +32,7 @@
 
 ## 3. 未解決事項
 
-- **SMTP 未設定**：Supabase 標準のメール送信は、組織メンバー宛てにしか送れず、1時間に2通まで。このため、未サインアップのメンバーへの確認メールやパスワード再設定メールが届かない。社用メールサーバーでの SMTP 設定が必要（IT 確認待ち）。手順は `account-recovery.md`。
+- **SMTP 未設定**：Supabase 標準のメール送信は、組織メンバー宛てにしか送れず、1時間に2通まで。このため、未サインアップのメンバーへの確認メールやパスワード再設定メールが届かない。社用メールサーバーでの SMTP 設定で解消できる。環境移管の範囲からは外し、移管完了後に検討する（2026-10-27 決定）。それまでの再設定は管理者が手作業で行う。手順は `account-recovery.md`。
 - **2026-10-30 の Supabase 仕様変更（Data API の自動 GRANT 廃止）**：既存テーブルは影響なし。備えとして `schema.sql` 末尾に GRANT ブロック（57テーブル）を追加し、CLAUDE.md Section 39 に「新テーブルは同じマイグレーションに GRANT を書く」を追加済み。**以後の新テーブルはマイグレーションと `schema.sql` の配列の両方に書く**。
 - **Disk IO と Pro 移行**：本番で Disk IO Budget 警告が出た。原因はディスクではなくメモリ不足（Swap が常時張り付き）。DB 本体は約22MB。CPU の最大消費は Realtime の変更取得。根本対策は Pro プラン（組織アカウントへの環境移管に合わせて実施予定）。つなぎとして v3.171 で、非表示10分で Realtime 購読を解除・通知ベルの定期取得を間引く対策を入れた。購読テーブルの削減（key_results・task_forces・todos 等）は未実施（publication の変更は別マイグレーション）。リスクは、朝の一斉復帰で全件再取得が集中すること。効果はダッシュボードの Disk IO 残量を数日観察して確認する。
 - **巡回の次回候補**：65 回目＝ユーティリティ／フック（useConfirmClose・useUnsavedEditor・overlayEscape・useFloatingPanel・fetchAllRows）。同時に、文章を返す AI 呼び出し（KR レポート・分析・対話）の出力切れを、例外ではなく「注記を付けて残す」に戻す（v3.186 で例外にしたのは行き過ぎ。PJ 分析の `finalizeAnalysisText` 型に揃える）。その次は F 管理・設定（AdminView 各セクション本体・lib/feedback・FeedbackModal）、I 通知の未点検分（reminderLogic 等・各 store・sw.js・Edge Function 本体）。巡回1回あたりの AI 消費は約20〜24万トークン。
