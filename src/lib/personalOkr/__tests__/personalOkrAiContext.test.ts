@@ -27,7 +27,7 @@ function baseInput(overrides: Partial<PersonalOkrAiContextInput> = {}): Personal
       { label: "W3", goalState: null, selfRating: null },
     ],
     taskSummary: { linkedTaskCount: 5, delayedCount: 1, stagnantCount: 0, blockedCount: 2 },
-    recentMemos: ["高瀬さんとの合意が先", "検証ログはタスクコメントに寄せる"],
+    recentMemos: ["小林さんとの合意が先", "検証ログはタスクコメントに寄せる"],
     actualActivities: null,
     ...overrides,
   };
@@ -42,7 +42,7 @@ describe("buildPersonalOkrAiContextText", () => {
     expect(text).toContain("狙いのバンド：70%");
     expect(text).toContain("W1：（検証ログの形式が決まっている）｜◯達成");
     expect(text).toContain("紐づくタスク5件・遅延1件・停滞0件・先行待ち2件");
-    expect(text).toContain("高瀬さんとの合意が先");
+    expect(text).toContain("小林さんとの合意が先");
   });
 
   it("🔴 タスクの生データ（Task[]相当のフィールド名）を含まない。件数のみの要約であること", () => {

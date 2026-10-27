@@ -82,9 +82,9 @@ const MONTHLY_FIXTURE = `個人OKR_月次振返り記録
 計画
 【位置づけ】
 位置づけの本文
-${monthlyBlock(8, "高瀬")}
-${monthlyBlock(9, "高瀬")}
-${monthlyBlock(10, "高瀬")}
+${monthlyBlock(8, "小林")}
+${monthlyBlock(9, "小林")}
+${monthlyBlock(10, "小林")}
 `;
 
 const LABELS_MISSING_FIXTURE = `個人OKR設定フォーム
@@ -215,7 +215,7 @@ describe("parseKintoneMonthlyText", () => {
     expect(month1.risks).toContain("リスクの本文（8月）");
     expect(month1.review_text).toBe("振り返りの本文（8月）");
     expect(month1.self_eval_pct).toBe(80);
-    expect(month1.gm_comment).toBe("高瀬コメントの本文（8月）");
+    expect(month1.gm_comment).toBe("小林コメントの本文（8月）");
     // 単一値が明記されていない場合はband_targetをnullにする方針だが、このフィクスチャは
     // "70%"の単一値のみを含むため数値が入ることを確認する
     expect(month1.band_target).toBe(70);

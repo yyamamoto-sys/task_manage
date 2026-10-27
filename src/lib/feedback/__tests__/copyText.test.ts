@@ -47,11 +47,11 @@ describe("buildFeedbackCopyText", () => {
 
   it("🔴 送信者・管理者メモは載せない（入力に紛れ込んでも出力に出ない）", () => {
     const polluted = {
-      ...item(), member_id: "m-secret-id", member_name: "山本 勇気", email: "yamamoto@amita-net.co.jp", admin_memo: "社内メモ：対応しない方針",
+      ...item(), member_id: "m-secret-id", member_name: "山田 太郎", email: "taro.yamada@example.com", admin_memo: "社内メモ：対応しない方針",
     } as unknown as FeedbackCopyInput;
     const text = buildFeedbackCopyText([polluted], OPTS);
     expect(text).not.toContain("m-secret-id");
-    expect(text).not.toContain("山本 勇気");
+    expect(text).not.toContain("山田 太郎");
     expect(text).not.toContain("amita-net.co.jp");
     expect(text).not.toContain("社内メモ");
     expect(text).not.toContain("member_id");

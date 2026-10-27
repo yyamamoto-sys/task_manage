@@ -2,22 +2,22 @@ import { describe, it, expect } from "vitest";
 import { matchMemberByName } from "../okrImportMatch";
 
 const members = [
-  { id: "m1", display_name: "駒井 映里", short_name: "駒井" },
-  { id: "m2", display_name: "山本 勇気", short_name: "山本" },
+  { id: "m1", display_name: "山田 花子", short_name: "山田" },
+  { id: "m2", display_name: "佐藤 次郎", short_name: "佐藤" },
   { id: "m3", display_name: "田中 太郎", short_name: "田中" },
 ];
 
 describe("matchMemberByName", () => {
   it("display_nameの完全一致を返す", () => {
-    expect(matchMemberByName("駒井 映里", members)?.id).toBe("m1");
+    expect(matchMemberByName("山田 花子", members)?.id).toBe("m1");
   });
 
   it("short_nameの完全一致を返す", () => {
-    expect(matchMemberByName("山本", members)?.id).toBe("m2");
+    expect(matchMemberByName("佐藤", members)?.id).toBe("m2");
   });
 
   it("display_nameを含む部分一致を返す（1件のみヒット）", () => {
-    expect(matchMemberByName("駒井", members)?.id).toBe("m1");
+    expect(matchMemberByName("山田", members)?.id).toBe("m1");
   });
 
   it("該当なしはnull", () => {

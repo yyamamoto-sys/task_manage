@@ -94,7 +94,7 @@ const MONTHLY_PART_PAYLOAD = {
           review_text: "振り返りの本文",
           self_eval_pct: 80,
           gm_eval_pct: 75,
-          gm_comment: "高瀬コメントの本文",
+          gm_comment: "小林コメントの本文",
         },
       ],
     },
@@ -178,7 +178,7 @@ describe("extractPersonalOkrMonthlyData", () => {
     expect(month.weight_override_pct).toBe(25);
     expect(month.self_eval_pct).toBe(80);
     expect(month.gm_eval_pct).toBe(75);
-    expect(month.gm_comment).toBe("高瀬コメントの本文");
+    expect(month.gm_comment).toBe("小林コメントの本文");
     expect(month.band_target).toBeNull();
   });
 

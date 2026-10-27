@@ -171,9 +171,9 @@ describe("buildPlanDraftContextText", () => {
   });
 
   it("直近のメモ：記入があれば出し、無ければセクションごと省略", () => {
-    const withMemo = buildPlanDraftContextText(baseInput({ recentMemos: ["高瀬さんとの合意が先"] }));
+    const withMemo = buildPlanDraftContextText(baseInput({ recentMemos: ["小林さんとの合意が先"] }));
     expect(withMemo).toContain("【直近のメモ】");
-    expect(withMemo).toContain("高瀬さんとの合意が先");
+    expect(withMemo).toContain("小林さんとの合意が先");
 
     const withoutMemo = buildPlanDraftContextText(baseInput({ recentMemos: [] }));
     expect(withoutMemo).not.toContain("【直近のメモ】");
