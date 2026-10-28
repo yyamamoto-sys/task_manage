@@ -568,7 +568,7 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
             <button
               key={label}
               onClick={() => { if (mineOnly !== val && onToggleMineOnly) onToggleMineOnly(); }}
-              title="サイドバーの「自分/全件」トグルと連動します"
+              title="サイドバーの「担当タスクのみ／全タスク」トグルと連動します"
               style={{
                 padding: "4px 12px", fontSize: "11px",
                 borderRadius: "var(--radius-sm)", border: "none", cursor: "pointer",

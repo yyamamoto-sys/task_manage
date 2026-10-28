@@ -40,9 +40,7 @@ await supabase.from('tasks')
   いると、一覧からそのPJだけが消えてハイライトが行方不明になる。`filterSidebarProjects` は
   `pinnedProjectId`（＝選択中のPJ id）を渡すとcompleted/archived判定だけを免除し、選択中のPJは
   常に一覧に残す（トグルを勝手にON にする案・選択を強制解除する案も検討し、「見ているものが
-  急に消えない」を優先してこちらを採用した）。**mineOnly（自分のPJのみ）の絞り込みまでは
-  免除しない**（既存の「mineOnly中に担当外のactive PJを選んでも一覧からは消える」挙動と
-  一貫させるため）。
+  急に消えない」を優先してこちらを採用した）。（v3.188で mineOnly によるPJ一覧の絞り込み自体を撤去した。mineOnly はタスクの絞り込みだけに効く。）
 - **視覚的な区別**：一覧上でcompleted・archivedはどちらも鈍色（`--color-text-tertiary`）で
   表示するが、マークは archived=🗄・completed=✅ で区別する（同じ見た目にしない）。
 - **揃えた範囲**：`MainLayout.tsx` の `projects` を共有するダッシュボード・カンバン・ガント・

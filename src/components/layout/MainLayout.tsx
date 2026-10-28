@@ -63,7 +63,7 @@ import { GuestAiQuotaNotice } from "../common/GuestAiQuotaNotice";
 import { computeAccessibleGroupsForSidebar } from "../../lib/projectInvite/sidebarGroupVisibility";
 import { confirmDiscardUnsavedEdits, hasUnsavedEditors } from "../../lib/editing/unsavedEditorRegistry";
 import { saveSidebarGroupId } from "../../lib/layout/sidebarCurrentGroupRestore";
-import { filterSidebarProjects } from "../../lib/project/sidebarProjectFilter";
+import { filterSidebarProjects, sortProjectsMineFirst } from "../../lib/project/sidebarProjectFilter";
 import { canEditProjectBasicInfo } from "../../lib/project/projectEditPermission";
 import type { ProjectRowMenuActionId } from "../../lib/project/projectRowMenu";
 import { ProjectRowMenu } from "../project/ProjectRowMenu";
@@ -121,10 +121,6 @@ function ViewLoading() {
   // スピナー単体よりレイアウトの骨格を見せた方が体感が速い（スケルトンUI）
   return <ViewSkeleton />;
 }
-
-// mineOnly=false のときに filterSidebarProjects へ渡す空集合（毎回 new Set() を作らないための
-// 安定参照。mineOnly=false 分岐では参照されないため中身は常に空でよい）
-const EMPTY_ID_SET: ReadonlySet<string> = new Set();
 
 /**
  * モバイル専用：全画面ラボビュー（GraphView 等）を全画面表示にする薄いラッパー。
@@ -709,7 +705,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   });
   const projects = useMemo(
     () => filterSidebarProjects(allProjects, {
-      showCompletedAndArchived, mineOnly: false, myProjectIds: EMPTY_ID_SET,
+      showCompletedAndArchived,
       pinnedProjectId: selectedProjectId,
     }),
     [allProjects, showCompletedAndArchived, selectedProjectId]
@@ -725,8 +721,8 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
     [rawKrs, rawObjectives, currentGroupId],
   );
 
-  // 「自分が担当タスクを持つPJ」。サイドバーの「自分」モードで各ビューが
-  // 担当者=自分のタスクに絞られるのと連動して PJ 表示も絞る。
+  // 「自分が担当タスクを持つPJ」。サイドバーでは行の目印と並び順（上にまとめる）にだけ使う。
+  // 🔴 PJ一覧からPJを消す用途には使わない（v3.188。「担当タスクのみ」はタスクの絞り込みで、PJは消さない）。
   const myProjectIds = useMemo(() => {
     const ids = new Set<string>();
     (rawTasks ?? []).forEach((t: Task) => {
@@ -737,8 +733,8 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   }, [rawTasks, currentUser.id]);
 
   // 初期値の決定はsrc/lib/layout/sidebarMineOnlyDefault.tsの一般則に従う（v3.76）。
-  // 「自分」で0件・「全件」で1件以上なら初期値を「全件」にする（招待受諾者・新入社員の救済。
-  // 「招待受諾者かどうか」を判定する分岐は書かない）。useStateの初期化関数は初回マウント時
+  // 自分の担当タスクがまだ無く、PJは1件以上あるなら初期値を「全タスク」にする（各ビューが空になる
+  // のを避ける。招待受諾者・新入社員。「招待受諾者かどうか」を判定する分岐は書かない）。useStateの初期化関数は初回マウント時
   // にしか呼ばれないため、以後ユーザーが明示的に切り替えた選択を再判定で上書きすることはない。
   const [mineOnly, setMineOnlyState] = useState<boolean>(
     () => resolveInitialSidebarMineOnly(
@@ -753,9 +749,9 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
     return next;
   });
 
-  const visibleProjects = useMemo(
-    () => mineOnly ? projects.filter(p => myProjectIds.has(p.id)) : projects,
-    [projects, mineOnly, myProjectIds],
+  const sidebarProjects = useMemo(
+    () => sortProjectsMineFirst(projects, myProjectIds),
+    [projects, myProjectIds],
   );
 
   // 通知のクリック先「自分のタスク一覧」（/?open=my-tasks。設計書 §3.2）：計画モードのリストを「自分」で表示する
@@ -768,7 +764,8 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
     setSelectedProjectId(null);
     setSelectedKrId(null);
     setViewMode("list");
-    localStorage.setItem(KEYS.SIDEBAR_MY_PROJECTS_ONLY, "1");
+    // 一時的に「担当タスクのみ」にするだけで保存しない（保存すると次回以降も残る。v3.188）。
+    // サイドバーのボタンが「担当タスクのみ」の強調表示になるので、状態は利用者から見える。
     setMineOnlyState(true);
   });
   // 設定を開く入口は openSettings(pageId?) の1つ（歯車＝トップ、各種の直接ジャンプ＝ページ指定）。
@@ -1574,8 +1571,8 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
                 maxWidth: "80px",
               }}
             >
-              <option value="">{mineOnly ? t("layout.mobile.myPj") : t("layout.mobile.allPj")}</option>
-              {visibleProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              <option value="">{t("layout.mobile.allPj")}</option>
+              {sidebarProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           )}
           {/* AI相談ボタン */}
@@ -1818,13 +1815,12 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
       <Sidebar
         viewMode={viewMode}
         setViewMode={navSetViewMode}
-        projects={visibleProjects}
+        projects={sidebarProjects}
+        myProjectIds={myProjectIds}
         mineOnly={mineOnly}
         onToggleMineOnly={toggleMineOnly}
         showCompletedAndArchived={showCompletedAndArchived}
         onToggleShowCompletedAndArchived={toggleShowCompletedAndArchived}
-        mineOnlyProjectsCount={projects.filter(p => myProjectIds.has(p.id)).length}
-        projectsCount={projects.length}
         selectedProjectId={selectedProjectId}
         onSelectProject={handleSelectProject}
         keyResults={keyResults}
@@ -1965,12 +1961,11 @@ interface SidebarProps {
   viewMode: ViewMode;
   setViewMode: (v: ViewMode) => void;
   projects: Project[];
-  /** プロジェクト表示フィルタ：自分が参加しているPJのみ */
+  /** 自分が担当するタスクを持つPJ（行の目印用。一覧の絞り込みには使わない） */
+  myProjectIds: ReadonlySet<string>;
+  /** 各ビューのタスクを自分担当に絞る（PJ一覧は絞らない） */
   mineOnly: boolean;
   onToggleMineOnly: () => void;
-  /** フィルタ切替ボタンのバッジ表示用 */
-  mineOnlyProjectsCount: number;
-  projectsCount: number;
   /** 「完了・アーカイブも表示」トグル（既定OFF）。CLAUDE.md参照：completed/archivedを既定で隠す */
   showCompletedAndArchived: boolean;
   onToggleShowCompletedAndArchived: () => void;
@@ -2024,7 +2019,7 @@ interface SidebarProps {
 }
 
 function Sidebar({
-  viewMode, setViewMode, projects,
+  viewMode, setViewMode, projects, myProjectIds,
   mineOnly, onToggleMineOnly,
   showCompletedAndArchived, onToggleShowCompletedAndArchived,
   selectedProjectId, onSelectProject,
@@ -2411,7 +2406,9 @@ function Sidebar({
                 {isCompleted && <span style={{ fontSize: "8px" }}>✅</span>}
               </span>
             );
-            const tooltip = isArchived ? `${pj.name}（アーカイブ済み）` : isCompleted ? `${pj.name}（完了）` : pj.name;
+            const isMine = myProjectIds.has(pj.id);
+            const baseTooltip = isArchived ? `${pj.name}（アーカイブ済み）` : isCompleted ? `${pj.name}（完了）` : pj.name;
+            const tooltip = isMine ? `${baseTooltip}${t("layout.sidebar.myPjTooltipSuffix")}` : baseTooltip;
             // 折りたたみ時は「⋮」の表示領域が無いため既存のNavItem（単体ボタンの行）を使う。
             // 展開時は「⋮」を右端に置くため、NavItemが持つ「行全体=1個の<button>」構造をやめ、
             // [選択ボタン][⋮トリガー]の2つを並べたラッパーdivに変える（<button>の中に<button>は
@@ -2448,6 +2445,7 @@ function Sidebar({
                 >
                   <span style={{ flexShrink: 0, opacity: isSelected ? 1 : 0.6 }}>{icon}</span>
                   <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pj.name}</span>
+                  {isMine && <span aria-hidden="true" style={{ flexShrink: 0, fontSize: "9px", opacity: 0.55 }}>👤</span>}
                 </button>
                 <ProjectRowMenu
                   projectName={pj.name}
@@ -2460,33 +2458,6 @@ function Sidebar({
               </div>
             );
           })}
-          {projects.length === 0 && !c && mineOnly && (
-            <div style={{
-              padding: "12px 14px", fontSize: "11px",
-              color: "var(--color-text-tertiary)", lineHeight: 1.5,
-            }}>
-              {t("layout.sidebar.noMineProjects1")}<br />
-              {t("layout.sidebar.noMineProjects2")}
-              <br />
-              {/* 0件の理由と次の操作を同じ場所に置く（v3.76・招待受諾者の実機報告対応）。
-                  1タップで「全件」に切り替えられる導線。 */}
-              <button
-                onClick={onToggleMineOnly}
-                style={{
-                  marginTop: "6px",
-                  padding: 0,
-                  background: "transparent",
-                  border: "none",
-                  color: "var(--color-brand)",
-                  fontSize: "11px",
-                  textDecoration: "underline",
-                  cursor: "pointer",
-                }}
-              >
-                {t("layout.sidebar.switchToAllProjects")}
-              </button>
-            </div>
-          )}
           </>)}
           {/* 【2026-08-12・v3.54】計画モードの「OKRタスク」セクション（KR一覧でGantt/Kanban/List
               をselectedKrId絞り込みする入口）は、山本さんの指示（「あまり使われないので一旦非表示。

@@ -19,17 +19,16 @@
 // `pinnedProjectId`（＝現在選択中のPJ id）を渡すと、completed/archived判定だけを免除して
 // 常に一覧に残す方式にした（トグルを勝手にONにする／選択を強制解除する、の2案を検討し、
 // 「今見ているものが急に消えない」を優先してこちらを採用）。
-// 🔴 mineOnly の絞り込みは pinnedProjectId でも免除しない。既存挙動（mineOnly中に
-// 自分の担当外の active なPJを選択しても一覧からは消える）と一貫性を保つため。
+//
+// 【v3.188】「自分」トグル（mineOnly）でPJ一覧を絞る処理を撤去した。トグルの説明はタスクの
+// 絞り込みなのに一覧からPJが消え、「PJが見えない」と複数の利用者が困ったため。mineOnly は
+// 各ビューのタスクの絞り込みにだけ効く。自分が担当するPJは sortProjectsMineFirst で上に
+// まとめ、行の目印で示す。
 export type SidebarProjectStatus = "active" | "completed" | "archived";
 
 export interface SidebarProjectFilterOptions {
   /** 「完了・アーカイブも表示」トグルの状態（v3.50。旧「アーカイブを表示」を置き換え） */
   showCompletedAndArchived: boolean;
-  /** 「自分が参加しているPJのみ」トグルの状態 */
-  mineOnly: boolean;
-  /** mineOnly=true のときに残す対象PJ id */
-  myProjectIds: ReadonlySet<string>;
   /** 現在選択中のPJ id（completed/archived判定のみ免除して常に表示する） */
   pinnedProjectId?: string | null;
 }
@@ -42,7 +41,20 @@ export function filterSidebarProjects<
     const isPinned = opts.pinnedProjectId != null && p.id === opts.pinnedProjectId;
     const isHiddenByDefault = p.status === "completed" || p.status === "archived";
     if (isHiddenByDefault && !opts.showCompletedAndArchived && !isPinned) return false;
-    if (opts.mineOnly && !opts.myProjectIds.has(p.id)) return false;
     return true;
   });
+}
+
+/**
+ * 自分が担当するタスクを持つPJを上にまとめる安定ソート（各グループ内は渡された順を保つ）。
+ * サイドバーに手動の並び順（ドラッグ等）は無く、元の順序は store の並びのみ。
+ */
+export function sortProjectsMineFirst<T extends { id: string }>(
+  projects: T[],
+  myProjectIds: ReadonlySet<string>,
+): T[] {
+  const mine: T[] = [];
+  const others: T[] = [];
+  for (const p of projects) (myProjectIds.has(p.id) ? mine : others).push(p);
+  return mine.length === 0 || others.length === 0 ? projects : [...mine, ...others];
 }

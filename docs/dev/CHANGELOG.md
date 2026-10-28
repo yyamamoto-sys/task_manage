@@ -8535,3 +8535,13 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * installViewportSync（main.tsx・描画前）が resize で再評価し、値が変わったときだけ <html data-mobile> を付け外しして購読者へ通知。useIsMobile は引数 breakpoint を廃止（呼び出し側に渡している箇所は無かった）し、この判定を購読する。
 # * globals.css のモバイル節は @media (max-width: 768px) をやめ html[data-mobile] セレクタへ。JS と CSS の判定が常に一致する。
 # * テスト：viewport.test.ts。DB 変更なし・MIN_CLIENT_VERSION は上げない。
+
+# v3.188（2026-10-28）：サイドバーのPJ一覧から mineOnly による絞り込みを撤去（「自分」にするとPJが消える不具合）
+#
+# * 原因：MainLayout の visibleProjects が mineOnly 時に myProjectIds（自分が担当するタスクを持つPJ）だけを残し、サイドバーとモバイルPJ選択へ渡していた。ボタンの説明は「タスクの絞り込み」としか書いておらず、PJが消えることは利用者に伝わらなかった。openMyTasks が SIDEBAR_MY_PROJECTS_ONLY に "1" を保存していたため、通知からマイタスクを開くだけで「自分」が次回以降も残っていた。
+# * PJ一覧は mineOnly に関係なく全件（filterSidebarProjects は完了・アーカイブの扱いだけ。mineOnly/myProjectIds オプションを撤去）。mineOnly は各ビュー（Dashboard/Gantt/GanttMobile/Kanban/List/Calendar等）のタスクの絞り込みだけに効く。各ビューはもともと projects（mineOnly で絞らない配列）を受けており、PJ一覧の絞り込みを前提にした箇所は無かった。
+# * sortProjectsMineFirst（sidebarProjectFilter.ts）：担当ありのPJを上にまとめる安定ソート。サイドバーに手動の並び順（ドラッグ等）は無いので並べ替えてよい。行に👤とツールチップ（layout.sidebar.myPjTooltipSuffix）。ビューへ渡す projects は並べ替えない。
+# * openMyTasks は localStorage へ保存しない（一時的に mineOnly=true にするだけ。ボタンの強調表示で状態が見える）。トグルを押したときの保存は従来どおり。
+# * ボタン文言：自分／全件 → 担当タスクのみ／全タスク（ja/en）。ツールチップに「プロジェクト一覧は絞られません」。空状態の案内（noMineProjects1/2・switchToAllProjects）とモバイルの layout.mobile.myPj を撤去。uiGuide・ツアー・docs/guides を追随。
+# * resolveInitialSidebarMineOnly は残した。目的はPJが消えるのの救済から「担当タスクの無い人の各ビューが空に見える」ことの回避に変わったが、一般則自体は有効（mineCount＝担当タスクを持つPJ数が0かつPJ1件以上なら全タスク）。
+# * テスト：sidebarProjectFilter.test.ts（mineOnly関連を撤去・sortProjectsMineFirst追加）。DB変更なし。localStorage の形式は変えていないので MIN_CLIENT_VERSION は据え置き。
