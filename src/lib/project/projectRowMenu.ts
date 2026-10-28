@@ -11,7 +11,7 @@
 
 import { canGuestEdit } from "../guest/guestCapability";
 
-export type ProjectRowMenuActionId = "settings" | "complete" | "archive" | "restore";
+export type ProjectRowMenuActionId = "settings" | "importWbs" | "complete" | "archive" | "restore";
 
 export interface ProjectRowMenuItem {
   id: ProjectRowMenuActionId;
@@ -36,6 +36,8 @@ export function buildProjectRowMenuItems(
   if (!canEdit) return items;
 
   if (project.status === "active") {
+    // WBSの取込（v3.189）：ゲストには出さない（Section 23）。グループの作成はPJ基本情報の編集と同じ権限（Section 78）
+    if (!isGuest) items.push({ id: "importWbs", icon: "📥" });
     items.push({ id: "complete", icon: "✅" });
     items.push({ id: "archive", icon: "🗄" });
   } else {

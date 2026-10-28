@@ -35,6 +35,7 @@ import { useFloatingPanel } from "../../hooks/useFloatingPanel";
 
 const ITEM_LABEL_KEY: Record<ProjectRowMenuActionId, string> = {
   settings: "layout.sidebar.pjRowMenu.settings",
+  importWbs: "layout.sidebar.pjRowMenu.importWbs",
   complete: "layout.sidebar.pjRowMenu.complete",
   archive:  "layout.sidebar.pjRowMenu.archive",
   restore:  "layout.sidebar.pjRowMenu.restore",

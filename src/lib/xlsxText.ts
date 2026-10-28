@@ -35,7 +35,7 @@ export interface XlsxExtractResult {
   truncated: boolean;
 }
 
-function parseSharedStrings(xml: string | undefined): string[] {
+export function parseSharedStrings(xml: string | undefined): string[] {
   if (!xml) return [];
   const out: string[] = [];
   forEachElement(xml, "si", (_attrs, inner) => {
@@ -45,7 +45,7 @@ function parseSharedStrings(xml: string | undefined): string[] {
 }
 
 /** "AB12" → 列番号（A=0）。列が読めなければ -1。 */
-function columnIndex(ref: string | undefined): number {
+export function columnIndex(ref: string | undefined): number {
   const m = /^([A-Za-z]+)/.exec(ref ?? "");
   if (!m) return -1;
   let n = 0;
@@ -105,8 +105,14 @@ function sheetToText(xml: string, shared: string[], maxChars: number): { text: s
   return { text: lines.join("\n"), truncated };
 }
 
-/** .xlsx のバイト列からシートごとのテキストを抽出する（非表示シートの件数つき）。失敗時は例外を投げる。 */
-export function extractXlsxDetailed(buf: Uint8Array, maxChars: number = EXTRACT_CHAR_CAP): XlsxExtractResult {
+export interface XlsxSheetRef { name: string; path: string; hidden: boolean }
+
+/** シート一覧（表示順）・共有文字列・展開予算をまとめて解決する。xlsxGrid.ts（WBS取込）と共用。 */
+export function resolveXlsxSheets(buf: Uint8Array): {
+  ordered: XlsxSheetRef[];
+  shared: string[];
+  budget: ReturnType<typeof createZipBudget>;
+} {
   const names = listZipNames(buf, NOT_XLSX_MESSAGE);
   const sheetFiles = names.filter(n => /^xl\/worksheets\/sheet\d+\.xml$/.test(n));
   if (sheetFiles.length === 0) throw new Error("Excelファイルのシート（worksheets）が見つかりませんでした。");
@@ -122,7 +128,7 @@ export function extractXlsxDetailed(buf: Uint8Array, maxChars: number = EXTRACT_
   const shared = parseSharedStrings(sharedXml ? decodeUtf8(sharedXml) : undefined);
 
   // 表示順のシート名。workbook.xml が読めなければファイル番号順・名前は「シートN」
-  const ordered: { name: string; path: string; hidden: boolean }[] = [];
+  const ordered: XlsxSheetRef[] = [];
   if (meta["xl/workbook.xml"] && meta["xl/_rels/workbook.xml.rels"]) {
     const rels = parseRels(decodeUtf8(meta["xl/_rels/workbook.xml.rels"]));
     forEachElement(decodeUtf8(meta["xl/workbook.xml"]), "sheet", attrs => {
@@ -140,6 +146,12 @@ export function extractXlsxDetailed(buf: Uint8Array, maxChars: number = EXTRACT_
     const sorted = [...sheetFiles].sort((a, b) => trailingNumber(a) - trailingNumber(b));
     for (const path of sorted) ordered.push({ name: `シート${trailingNumber(path)}`, path, hidden: false });
   }
+  return { ordered, shared, budget };
+}
+
+/** .xlsx のバイト列からシートごとのテキストを抽出する（非表示シートの件数つき）。失敗時は例外を投げる。 */
+export function extractXlsxDetailed(buf: Uint8Array, maxChars: number = EXTRACT_CHAR_CAP): XlsxExtractResult {
+  const { ordered, shared, budget } = resolveXlsxSheets(buf);
 
   const blocks: string[] = [];
   let length = 0;

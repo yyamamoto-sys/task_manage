@@ -113,6 +113,8 @@ const ProjectStructureView = withChunkDownloadGate(lazyWithRetry(() => import(".
 const OkrDashboardView   = withChunkDownloadGate(lazyWithRetry(() => import("../okr/OkrDashboardView").then(m => ({ default: m.OkrDashboardView })), "OkrDashboardView"), "OkrDashboardView");
 // バージョン履歴（v3.61）：releaseNotes.ts（利用者向けデータ）を静的importするため、開かない
 // 利用者にダウンロードさせないようlazy化する（CLAUDE.md Section 19）。小さいためDLゲート対象外。
+// WBS取込（v3.189）：取り込む人だけが読み込む（xlsx解析もこの中で動的import。Section 19）。小さいためDLゲート対象外。
+const WbsImportModal = lazyWithRetry(() => import("../project/WbsImportModal").then(m => ({ default: m.WbsImportModal })), "WbsImportModal");
 const VersionHistoryModal = lazyWithRetry(() => import("../common/VersionHistoryModal").then(m => ({ default: m.VersionHistoryModal })), "VersionHistoryModal");
 type GuideModeViewProps = NonNullable<Parameters<typeof GuideModeViewComponent>[0]>;
 const GuideModeView      = withChunkDownloadGate<GuideModeViewProps>(lazyWithRetry(() => import("../guide/GuideModeView").then(m => ({ default: m.GuideModeView })), "GuideModeView"), "GuideModeView");
@@ -378,6 +380,8 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
   const [isMilestoneAddOpen, setIsMilestoneAddOpen] = useState(false);
   const [isPjCreateOpen, setIsPjCreateOpen] = useState(false);
+  /** WBS取込モーダル。open=開いている／projectId=PJ行の「⋮」から開いたときのPJ */
+  const [wbsImport, setWbsImport] = useState<{ projectId: string | null } | null>(null);
   const [isFabMenuOpen, setIsFabMenuOpen] = useState(false);
   const [isMobileLabOpen, setIsMobileLabOpen] = useState(false);
   const [isPaletteOpen, setIsPaletteOpen] = useState(false);
@@ -1793,6 +1797,16 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           onCreated={id => { handleSelectProject(id); }}
         />
       )}
+      {wbsImport && (
+        <Suspense fallback={null}>
+          <WbsImportModal
+            currentUser={currentUser}
+            defaultProjectId={wbsImport.projectId}
+            onClose={() => setWbsImport(null)}
+            onImported={id => { handleSelectProject(id); }}
+          />
+        </Suspense>
+      )}
       {/* PC FAB（計画モードのみ。タスク・マイルストーンの追加はゲストにも開放済み） */}
       {appMode === "plan" && canGuestEdit(isGuest, "task") && (
         <QuickAddFab
@@ -1840,6 +1854,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         onOpenAdmin={() => openSettings()}
         onOpenGuide={() => void guardedNavigate(() => setIsGuideOpen(true))}
         onCreateProject={() => setIsPjCreateOpen(true)}
+        onImportWbs={projectId => setWbsImport({ projectId })}
         collapsed={isSidebarCollapsed}
         onToggleCollapsed={toggleSidebar}
         width={sidebarWidth}
@@ -1990,6 +2005,8 @@ interface SidebarProps {
   onOpenAdmin: () => void;
   onOpenGuide: () => void;
   onCreateProject: () => void;
+  /** WBS取込を開く。projectId＝PJ行の「⋮」から開いたときのPJ（見出しの📥からは null） */
+  onImportWbs: (projectId: string | null) => void;
   collapsed: boolean;
   onToggleCollapsed: () => void;
   /** サイドバー展開時の幅（px）。v3.66・境界のドラッグ／キーボードで変更できる */
@@ -2026,7 +2043,7 @@ function Sidebar({
   keyResults, selectedKrId, onSelectKr,
   currentUser, onLogout, isConsultOpen, onOpenConsult,
   theme, onToggleTheme, onOpenGraph, onOpenCalendar, onOpenStructure, onOpenMyPage, activeLabView,
-  onOpenAdmin, onOpenGuide, onCreateProject, collapsed, onToggleCollapsed,
+  onOpenAdmin, onOpenGuide, onCreateProject, onImportWbs, collapsed, onToggleCollapsed,
   width, isResizing, onResizePointerDown, onResizePointerMove, onResizePointerUp, onResizeDoubleClick, onResizeKeyDown,
   appMode, onToggleMode, onOpenPalette,
   accessibleGroups, currentGroupId, onSelectGroup,
@@ -2102,6 +2119,7 @@ function Sidebar({
   // 一括操作トーストと同じ考え方）。
   const handleProjectRowMenuAction = async (pj: Project, actionId: ProjectRowMenuActionId) => {
     if (actionId === "settings") { setSettingsModalProjectId(pj.id); return; }
+    if (actionId === "importWbs") { onImportWbs(pj.id); return; }
     const nextStatus: Project["status"] = actionId === "complete" ? "completed" : actionId === "archive" ? "archived" : "active";
     const prevStatus = pj.status;
     const toastKey = actionId === "complete" ? "layout.sidebar.pjRowMenu.toastComplete"
@@ -2346,6 +2364,23 @@ function Sidebar({
                   onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "var(--color-bg-tertiary)"; (e.currentTarget as HTMLButtonElement).style.color = "var(--color-text-secondary)"; }}
                   onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; (e.currentTarget as HTMLButtonElement).style.color = "var(--color-text-tertiary)"; }}
                 >＋</button>
+                {!isGuest && (
+                  <button
+                    onClick={() => onImportWbs(null)}
+                    title={t("layout.sidebar.pjImportWbsTitle")}
+                    aria-label={t("layout.sidebar.pjImportWbsTitle")}
+                    style={{
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      width: 16, height: 16, flexShrink: 0,
+                      background: "transparent", border: "1px solid var(--color-border-primary)",
+                      borderRadius: "var(--radius-sm)", cursor: "pointer",
+                      fontSize: "10px", lineHeight: 1, color: "var(--color-text-tertiary)",
+                      padding: 0,
+                    }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "var(--color-bg-tertiary)"; (e.currentTarget as HTMLButtonElement).style.color = "var(--color-text-secondary)"; }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; (e.currentTarget as HTMLButtonElement).style.color = "var(--color-text-tertiary)"; }}
+                  >📥</button>
+                )}
               </div>
               <button
                 onClick={onToggleMineOnly}
