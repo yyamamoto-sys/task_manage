@@ -1,16 +1,11 @@
 import { useState, useEffect } from "react";
+import { currentIsMobile, subscribeIsMobile } from "../lib/viewport";
 
-export function useIsMobile(breakpoint = 768): boolean {
-  const [isMobile, setIsMobile] = useState(
-    () => window.matchMedia(`(max-width: ${breakpoint}px)`).matches
-  );
-
+export function useIsMobile(): boolean {
+  const [isMobile, setIsMobile] = useState(currentIsMobile);
   useEffect(() => {
-    const mql = window.matchMedia(`(max-width: ${breakpoint}px)`);
-    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
-    mql.addEventListener("change", handler);
-    return () => mql.removeEventListener("change", handler);
-  }, [breakpoint]);
-
+    setIsMobile(currentIsMobile());
+    return subscribeIsMobile(setIsMobile);
+  }, []);
   return isMobile;
 }

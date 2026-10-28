@@ -2,7 +2,7 @@
 //
 // 設定のトップ（v3.155）。見出し3つ（個人／部署の管理／アプリの管理）の下にカードを並べる。
 // 誰に何が見えるかは buildSettingsCardGroups（src/lib/settings/settingsPages.ts）が決める。
-// カード全体が1つの button。PC は多列グリッド、モバイル（幅768px以下）は1列の行型（右端に「›」）。
+// カード全体が1つの button。PC は多列グリッド、モバイル（viewport.ts の判定）は1列の行型（右端に「›」）。
 
 import type { CSSProperties } from "react";
 import { useT } from "../../hooks/useT";

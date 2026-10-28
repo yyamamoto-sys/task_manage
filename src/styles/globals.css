@@ -750,28 +750,27 @@ select { transition: border-color var(--transition-fast), box-shadow var(--trans
   padding-bottom: env(safe-area-inset-bottom);
 }
 
-@media (max-width: 768px) {
+/* JS の判定（src/lib/viewport.ts）と常に一致させるため @media ではなく html[data-mobile] で切り替える */
   /* タップ領域：iOS HIG / WCAG 2.5.5 の最小 44px を確保。
      アイコンだけの極小ボタンは .tap-compact を付けて従来サイズに戻せる */
-  button { min-height: 44px; }
-  button.tap-compact { min-height: 0; }
+html[data-mobile] button { min-height: 44px; }
+html[data-mobile] button.tap-compact { min-height: 0; }
   /* フォーム部品も指で押せる高さに。font-size:16px は iOS のフォーカス時ズーム防止 */
-  input[type="date"], input[type="number"], input[type="text"], input[type="email"],
-  input[type="search"], select, textarea {
+html[data-mobile] input[type="date"], html[data-mobile] input[type="number"], html[data-mobile] input[type="text"], html[data-mobile] input[type="email"],
+html[data-mobile] input[type="search"], html[data-mobile] select, html[data-mobile] textarea {
     font-size: 16px;
     min-height: 44px;
   }
-  textarea { min-height: 56px; } /* 複数行は従来の最小高さを優先 */
+html[data-mobile] textarea { min-height: 56px; } /* 複数行は従来の最小高さを優先 */
 
   /* 横スクロールするビュー（ガント等）に慣性スクロールと端の余白を与える。
      overflow-x:auto を持つ要素に .mobile-hscroll を付けて使う */
-  .mobile-hscroll {
+html[data-mobile] .mobile-hscroll {
     -webkit-overflow-scrolling: touch;
     overscroll-behavior-x: contain;
   }
   /* モバイルは余白なしで表示領域を最大化（タップ領域を守るため） */
-  body { padding: 0; padding-top: var(--reload-bar-h, 0px); }
-}
+html[data-mobile] body { padding: 0; padding-top: var(--reload-bar-h, 0px); }
 
 /* ===== アプリ外枠（余白＋角丸）===== */
 /* body の padding が「外周の隙間」を作り、#root がその上に角丸のカードとして浮かぶ。

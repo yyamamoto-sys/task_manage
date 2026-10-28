@@ -10,10 +10,14 @@ import { createDirectLogger, getClientErrorScreen, installClientErrorLogging } f
 import { setDiagnosticLogger } from "./lib/errors/diagnosticLog";
 import { canLogClientError, logClientError } from "./lib/supabase/clientErrorStore";
 import { APP_VERSION } from "./lib/version";
+import { installViewportSync } from "./lib/viewport";
 import "./styles/globals.css";
 
 // React マウント前に localStorage スキーマを移行する
 migrateLocalStorage();
+
+// 描画前に <html data-mobile> を付ける（初回描画で CSS と JS の判定がずれないように）
+installViewportSync();
 
 // 画面に出たエラーを super_admin 向けに記録する（CLAUDE.md Section 67）。React の外で取り付けるのは、
 // ErrorBoundary が App ごと置き換えた後のクラッシュも拾うため。開発サーバーでは既定で送らない。

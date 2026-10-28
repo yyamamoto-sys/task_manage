@@ -39,6 +39,15 @@ export interface ReleaseNoteEntry {
 
 export const RELEASE_NOTES: ReleaseNoteEntry[] = [
   {
+    version: "v3.187",
+    date: "2026-10-28",
+    title: "PCでウィンドウを半分に寄せても、スマホ表示にならなくなりました",
+    highlights: [
+      "PCのブラウザでは、画面幅の3分の1以下まで狭めたときだけスマホ表示に切り替わります（例：1920px画面・倍率125%なら約512px以下）。半分に寄せた程度ではPC表示のままです。",
+      "スマホ・タブレットは従来どおり幅768px以下でスマホ表示です。",
+    ],
+  },
+  {
     version: "v3.186",
     date: "2026-10-23",
     title: "AIの返答が長すぎて途切れたときに、途中の結果を使わず案内を出すようになりました",

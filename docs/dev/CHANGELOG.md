@@ -8528,3 +8528,10 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * 64回目 G：ツアーの既読が書けない環境（localStorage は読めるが容量超過などで書けない）では、お知らせツアーが「あとで」の数秒後に何度も始まり直していた（3秒ごとの条件の見直しが毎回未読と判定）。保存の成否に関わらず、開いている間は既読として扱う（tourCompletion.ts の *WithFallback・メモリ上の記録）。
 # * 64回目 G：ガイドの表示（GuideOverlay）が Esc で閉じられず、背後のモーダルだけが閉じていた。window の capture 段階で Esc を受けて閉じる＋ role="dialog"（useConfirmClose の isEscapeOwnedByOverlay が背後のモーダルを閉じさせない）。
 # * テスト：assertNotTruncated.test.ts・setupWizardRun.test.ts・tourCompletion.test.ts・tourEscape.test.ts・guideOverlayEscape.test.ts（いずれも対応する修正を外して赤を確認）。tourLayering.test.ts の Esc の走査を新しい形に更新。Edge Function は変更なし（デプロイ不要）・DB 変更なし・MIN_CLIENT_VERSION は上げない。
+
+# v3.187（2026-10-28）：モバイル判定を画面幅基準に統一（PCで半分に寄せただけでスマホ表示になる問題）
+#
+# * lib/viewport.ts を新設（computeIsMobile）。screen.width > 1024（PC）は inner幅 <= round(screen.width/3) をモバイル、screen.width <= 1024（スマホ・タブレット）は従来どおり 768px 以下。スマホで 1/3 ルールを当てると永久にモバイルにならないための分岐で、壊してはいけない。
+# * installViewportSync（main.tsx・描画前）が resize で再評価し、値が変わったときだけ <html data-mobile> を付け外しして購読者へ通知。useIsMobile は引数 breakpoint を廃止（呼び出し側に渡している箇所は無かった）し、この判定を購読する。
+# * globals.css のモバイル節は @media (max-width: 768px) をやめ html[data-mobile] セレクタへ。JS と CSS の判定が常に一致する。
+# * テスト：viewport.test.ts。DB 変更なし・MIN_CLIENT_VERSION は上げない。
