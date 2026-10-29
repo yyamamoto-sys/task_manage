@@ -31,6 +31,8 @@ import { Avatar } from "../auth/UserSelectScreen";
 import { confirmDialog } from "../../lib/dialog";
 import { formatErrorForUser } from "../../lib/errorMessage";
 import { showToast } from "../common/Toast";
+import { CopyLinkButton } from "../share/CopyLinkButton";
+import { buildTaskLink } from "../../lib/share/shareLink";
 import { MentionTextarea } from "../common/MentionTextarea";
 import { deleteTaskWithUndo } from "../../lib/task/deleteTaskWithUndo";
 import { CustomSelect, type SelectOption } from "../common/CustomSelect";
@@ -579,6 +581,7 @@ export function TaskSidePanel({ taskId, currentUser, onClose, onSwitchFailed }: 
           onBlur={e => (e.currentTarget.style.borderBottomColor = "transparent")}
         />
         <SaveIndicator status={saveStatus} />
+        <CopyLinkButton labelKey="layout.shareLink.copyTaskLink" getUrl={() => buildTaskLink(window.location.origin, taskId)} />
         <button onClick={() => void handleClose()} aria-label="閉じる" title="閉じる" style={{
           background: "none", border: "none", cursor: "pointer", fontSize: "14px",
           color: "var(--color-text-tertiary)", flexShrink: 0,

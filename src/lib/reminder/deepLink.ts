@@ -19,6 +19,10 @@ export function stripOpenParam(href: string): string {
   const url = new URL(href);
   // `id` は他の用途のクエリと紛れないよう、お知らせツアー（open=tour）のときだけ取り除く
   if (url.searchParams.get("open") === "tour") url.searchParams.delete("id");
+  // 共有リンク（v3.192・src/lib/share/shareLink.ts）の pid・view・tid も、open=project/task のときだけ取り除く
+  const openValue = url.searchParams.get("open");
+  if (openValue === "project") { url.searchParams.delete("pid"); url.searchParams.delete("view"); }
+  if (openValue === "task") url.searchParams.delete("tid");
   url.searchParams.delete("open");
   url.searchParams.delete("mid");
   return `${url.pathname}${url.search}${url.hash}`;

@@ -8572,3 +8572,11 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * 「全体表示」：表示中の行（フィルタ・完了非表示・折りたたみ反映後）の最早開始〜最遅終了を fitDayWidth で収め、先頭へスクロール。対象なしは何もしない。i18n＝common.gantt.fitAll／fitAllTitle（ja/en）。
 # * ZOOM_MIN 8→4。週見出しは7×dayWidth が49px以上＝full／35〜48＝「W2」／35未満（dayWidth 4）＝週ラベルなしで月見出しに任せる。月見出しは overflow:hidden。parseSavedZoom は範囲を 4〜80 に（既存の保存値はそのまま有効）。
 # * テスト：ganttUtils.test.ts（スケール・高さ・メトリクス・縦補正・fit・見出し）、ganttRowScaleWiring.test.ts（ソース走査）。DB変更なし・MIN_CLIENT_VERSION 据え置き。
+
+# v3.192（2026-10-29）：プロジェクト・ビュー・タスクのリンクをコピーして共有できるように
+#
+# * src/lib/share/shareLink.ts：`/?open=project&pid=…[&view=…]`・`/?open=task&tid=…` の組み立て（buildProjectLink・buildTaskLink）と解析（extractShareTarget。id は UUID のみ・view は dashboard/kanban/gantt/list/workload の許可リスト）。pickAccessibleGroupId＝表示部署外の行を開くときの部署の選択。
+# * deepLink.ts の stripOpenParam：open=project のとき pid・view、open=task のとき tid も消す。
+# * MainLayout：起動時 effect（ゲストも通す）→ openShareTarget。見つからない・権限なしはトースト。guardedNavigate 経由。タスクは TaskEditModal で開く。
+# * 発行側：PJ行「⋮」に copyLink（projectRowMenu.ts）／サイドバー「メニュー」見出し右とモバイルヘッダーに「このビューのリンクをコピー」／TaskSidePanel・TaskEditModal の見出しに「このタスクのリンクをコピー」。
+# * DB変更なし・MIN_CLIENT_VERSION 据え置き。設計＝docs/dev/sections/s87_share-link.md。

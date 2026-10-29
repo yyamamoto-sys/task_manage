@@ -11,7 +11,7 @@
 
 import { canGuestEdit } from "../guest/guestCapability";
 
-export type ProjectRowMenuActionId = "settings" | "importWbs" | "complete" | "archive" | "restore";
+export type ProjectRowMenuActionId = "settings" | "copyLink" | "importWbs" | "complete" | "archive" | "restore";
 
 export interface ProjectRowMenuItem {
   id: ProjectRowMenuActionId;
@@ -30,9 +30,11 @@ export interface BuildProjectRowMenuItemsOptions {
 export function buildProjectRowMenuItems(
   { project, canEdit, isGuest }: BuildProjectRowMenuItemsOptions,
 ): ProjectRowMenuItem[] {
-  if (!canGuestEdit(isGuest, "project")) return [];
+  // リンクをコピー（v3.192）は閲覧だけでできる操作なので、編集権限・ゲストの別に関わらず常に出す
+  const copyLink: ProjectRowMenuItem = { id: "copyLink", icon: "🔗" };
+  if (!canGuestEdit(isGuest, "project")) return [copyLink];
 
-  const items: ProjectRowMenuItem[] = [{ id: "settings", icon: "⚙" }];
+  const items: ProjectRowMenuItem[] = [{ id: "settings", icon: "⚙" }, copyLink];
   if (!canEdit) return items;
 
   if (project.status === "active") {

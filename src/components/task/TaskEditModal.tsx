@@ -18,6 +18,8 @@
 
 import { useState, useCallback, useMemo, useRef, useEffect, useId } from "react";
 import { useAppStore, selectScopedTasks, selectScopedProjects, selectScopedTaskDependencies } from "../../stores/appStore";
+import { CopyLinkButton } from "../share/CopyLinkButton";
+import { buildTaskLink } from "../../lib/share/shareLink";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { useAssigneeCandidates } from "../../hooks/useAssigneeCandidates";
 import type { Member, Task } from "../../lib/localData/types";
@@ -385,6 +387,7 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
 
           {/* 保存状態インジケータ */}
           <SaveIndicator status={saveStatus} />
+          <CopyLinkButton labelKey="layout.shareLink.copyTaskLink" getUrl={() => buildTaskLink(window.location.origin, taskId)} />
 
           <button onClick={() => void handleClose()} aria-label="閉じる" title="閉じる" style={{
             background: "none", border: "none", cursor: "pointer",

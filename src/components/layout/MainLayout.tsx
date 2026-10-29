@@ -15,6 +15,9 @@ import { useSnapshotProvider } from "../../hooks/useSnapshotProvider";
 import { captureFeedbackSnapshot, onOpenFeedbackRequest, requestOpenFeedback, type FeedbackCapture } from "../../lib/feedback/capture";
 import { useLangStore } from "../../stores/langStore";
 import { extractOpenTarget, extractTourId, stripOpenParam, type OpenTarget } from "../../lib/reminder/deepLink";
+import { extractShareTarget, buildProjectLink, pickAccessibleGroupId, isShareViewKey, type ShareTarget } from "../../lib/share/shareLink";
+import { copyShareLink } from "../../lib/share/copyShareLink";
+import { CopyLinkButton } from "../share/CopyLinkButton";
 import { extractMessageId } from "../../lib/adminMessages/adminMessages";
 import { setClientErrorScreen } from "../../lib/errors/clientErrorLog";
 import {
@@ -827,6 +830,62 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
       window.removeEventListener("app:open-settings", onOpenSettings);
     };
   }, [isGuest]);
+  // 共有リンク（/?open=project&pid=…[&view=…]・/?open=task&tid=…。v3.192・src/lib/share/shareLink.ts）。
+  // MainLayout は読込完了後にしか出ない（App.tsx）ので、ここで store を引いて「見つからない」と判定してよい。
+  // 権限は RLS で見える行だけが store に入っていることに任せる（新しい権限ロジックは作らない）。ゲストも通す。
+  const openShareTarget = (target: ShareTarget) => {
+    const st = useAppStore.getState();
+    const notFound = () => {
+      // ToastContainer は MainLayout の後に mount され、同じ commit では購読が間に合わないため 1 tick 遅らせる
+      setTimeout(() => showToast(tRef.current("layout.shareLink.notFound"), "info"), 200);
+    };
+    let projectId: string | null;
+    let taskId: string | null = null;
+    let view: ViewMode | null = null;
+    let groupRow: { group_id?: string | null; group_ids?: string[] | null } | null;
+    if (target.kind === "project") {
+      const pj = st.projects.find(p => p.id === target.projectId && !p.is_deleted);
+      if (!pj) { notFound(); return; }
+      projectId = pj.id; groupRow = pj; view = target.view;
+    } else {
+      const task = st.tasks.find(x => x.id === target.taskId && !x.is_deleted);
+      if (!task) { notFound(); return; }
+      taskId = task.id;
+      projectId = task.project_id ?? null;
+      groupRow = task;
+      // 所属PJがこの人から見えないタスクは、開けても文脈が無いので見つからない扱いにする
+      if (projectId && !st.projects.some(p => p.id === projectId && !p.is_deleted)) { notFound(); return; }
+    }
+    // 表示部署に入っていない行は、自分が選べる部署のうち行が属するものへ切り替える（サイドバーの部署切替と同じ処理）
+    const scoped = target.kind === "project" ? selectScopedProjects(st) : selectScopedTasks(st);
+    if (!scoped.some(r => r.id === (projectId && target.kind === "project" ? projectId : taskId))) {
+      const gid = pickAccessibleGroupId(groupRow ?? {}, accessibleGroups.map(g => g.id));
+      if (!gid) { notFound(); return; }
+      setCurrentGroupId(gid);
+      if (!isGuest) saveSidebarGroupId(currentUser.id, gid);
+    }
+    // 未保存編集の確認（Section 46）を通す。起動直後は確認が要らず即実行されるが、他の遷移と同じ入口に揃える
+    void guardedNavigate(() => {
+      closeLabViews();
+      setIsAdminOpen(false);
+      setIsGuideOpen(false);
+      localStorage.setItem(KEYS.APP_MODE, "plan");
+      setAppModeState("plan");
+      setSelectedKrId(null);
+      if (projectId) setSelectedProjectId(projectId);
+      if (view) setViewMode(view);
+      if (taskId) setAiEditTaskId(taskId);
+    });
+  };
+  const openShareTargetRef = useRef(openShareTarget);
+  openShareTargetRef.current = openShareTarget;
+  useEffect(() => {
+    // 読んだらクエリを消し、リロードで再発火させない（①の open= と同じ）。ゲストにも効かせるため isGuest では止めない
+    const target = extractShareTarget(window.location.search);
+    if (!target) return;
+    window.history.replaceState(window.history.state, "", stripOpenParam(window.location.href));
+    openShareTargetRef.current(target);
+  }, []);
   // エラー記録（Section 67）に「どの画面で起きたか」を添えるため、表示中の画面名を知らせる
   const clientErrorScreen = isGuideOpen ? "guide"
     : isAdminOpen ? "settings"
@@ -1579,6 +1638,13 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
               {sidebarProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           )}
+          {appMode === "plan" && selectedProjectId && isShareViewKey(viewMode) && (
+            <CopyLinkButton
+              labelKey="layout.shareLink.copyViewLink"
+              size={28}
+              getUrl={() => buildProjectLink(window.location.origin, selectedProjectId, viewMode)}
+            />
+          )}
           {/* AI相談ボタン */}
           {/* 検索（コマンドパレット。モバイルはCtrl+Kが使えないためボタンが唯一の起動手段） */}
           <button
@@ -2119,6 +2185,7 @@ function Sidebar({
   // 一括操作トーストと同じ考え方）。
   const handleProjectRowMenuAction = async (pj: Project, actionId: ProjectRowMenuActionId) => {
     if (actionId === "settings") { setSettingsModalProjectId(pj.id); return; }
+    if (actionId === "copyLink") { await copyShareLink(buildProjectLink(window.location.origin, pj.id), t); return; }
     if (actionId === "importWbs") { onImportWbs(pj.id); return; }
     const nextStatus: Project["status"] = actionId === "complete" ? "completed" : actionId === "archive" ? "archived" : "active";
     const prevStatus = pj.status;
@@ -2313,7 +2380,19 @@ function Sidebar({
       {appMode === "plan" ? (<>
         {/* 計画管理：メニュー */}
         <div data-tour-id="nav-items" style={{ padding: c ? "5px 0" : "5px 0 2px" }}>
-          {!c && <SectionLabel>{t("layout.sidebar.menuLabel")}</SectionLabel>}
+          {!c && (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingRight: "8px" }}>
+              <SectionLabel>{t("layout.sidebar.menuLabel")}</SectionLabel>
+              {/* v3.192：PJを開いているときだけ、いまのビューのリンクを発行できる（PJ未選択のマイタスク等では出さない） */}
+              {selectedProjectId && isShareViewKey(viewMode) && (
+                <CopyLinkButton
+                  labelKey="layout.shareLink.copyViewLink"
+                  size={20}
+                  getUrl={() => buildProjectLink(window.location.origin, selectedProjectId, viewMode)}
+                />
+              )}
+            </div>
+          )}
           {NAV_ITEMS.map(({ view, label, icon, tooltip }) => (
             <NavItem
               key={view}

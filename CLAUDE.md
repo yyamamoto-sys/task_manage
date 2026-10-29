@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.191
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.192
 #
-最終更新：2026-10-29（v3.191）
+最終更新：2026-10-29（v3.192）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -158,6 +158,7 @@
 | 84 | 84. ガイドツアー：クリックで開いたUIに吹き出しが隠れて続行不能になる不具合 | ガイドツアー：吹き出しが隠れて続行不能になる不具合 | docs/dev/sections/s84_tour-bubble-hidden.md |
 | 85 | 85. キーボードショートカットの追加 | キーボードショートカットの追加 | docs/dev/sections/s85_keyboard-shortcuts.md |
 | 86 | 86. 縮小表示時のフォント切替 | 縮小表示時のフォント切替 | docs/dev/sections/s86_small-font-switch.md |
+| 87 | 87. プロジェクト・ビュー・タスクのリンク共有（`/?open=project`・`/?open=task`） | プロジェクト・ビュー・タスクのリンク共有 | docs/dev/sections/s87_share-link.md |
 
 ---
 
