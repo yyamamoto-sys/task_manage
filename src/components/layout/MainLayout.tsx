@@ -18,6 +18,7 @@ import { extractOpenTarget, extractTourId, stripOpenParam, type OpenTarget } fro
 import { extractShareTarget, buildProjectLink, pickAccessibleGroupId, isShareViewKey, type ShareTarget } from "../../lib/share/shareLink";
 import { copyShareLink } from "../../lib/share/copyShareLink";
 import { CopyLinkButton } from "../share/CopyLinkButton";
+import { useOutsideDismiss } from "../../hooks/useOutsideDismiss";
 import { extractMessageId } from "../../lib/adminMessages/adminMessages";
 import { setClientErrorScreen } from "../../lib/errors/clientErrorLog";
 import {
@@ -2126,8 +2127,16 @@ function Sidebar({
 
   // サイドバー下部「その他」（ガイド／設定／招待コードを入力）の折りたたみ（v3.74）。
   // SIDEBAR_PJ_OPENとは向きが逆＝既定は閉じる（"1"のときだけ開く）。
-  const [miscOpen, setMiscOpen] = useState<boolean>(() => { try { return localStorage.getItem(KEYS.SIDEBAR_MISC_OPEN) === "1"; } catch { return false; } });
-  const toggleMiscOpen = () => setMiscOpen(v => { const n = !v; try { localStorage.setItem(KEYS.SIDEBAR_MISC_OPEN, n ? "1" : "0"); } catch { /* ignore */ } return n; });
+  // v3.193：開閉は保存しない（起動時は閉）。外側クリック・Esc・項目クリックで閉じる（ツアー実行中は閉じない）。
+  const [miscOpen, setMiscOpen] = useState<boolean>(false);
+  const toggleMiscOpen = () => setMiscOpen(v => !v);
+  const { isRunning: tourRunning } = useTour();
+  const miscItemsRef = useRef<HTMLDivElement | null>(null);
+  const miscToggleRef = useRef<HTMLButtonElement | null>(null);
+  const labMenuRef = useRef<HTMLDivElement | null>(null);
+  const labToggleRef = useRef<HTMLButtonElement | null>(null);
+  useOutsideDismiss(miscOpen, [miscItemsRef, miscToggleRef], () => setMiscOpen(false), tourRunning);
+  useOutsideDismiss(labOpen, [labMenuRef, labToggleRef], () => setLabOpen(false), tourRunning);
   // 初回ツアーの「guide」ステップは data-tour-id="guide-btn" を狙うが、折りたたまれていると
   // DOM上に存在せずskipIfMissingで黙って飛ばされてしまう。ツアー開始時（"welcome"ステップの
   // action）に「その他」を強制的に開く（localStorageは書き換えない＝ユーザーの既定選択は
@@ -2584,7 +2593,7 @@ function Sidebar({
         {/* ラボ サブメニュー（🧪ボタンで開閉）。activeプロップはNAV_ITEMSと同じNavItemを使い、
             現在開いているラボビューを強調表示する（CLAUDE.md Section 20・v3.34）。 */}
         {labOpen && (
-          <div style={{ borderTop: "1px solid var(--color-border-primary)", padding: c ? "4px 0" : "4px 6px" }}>
+          <div ref={labMenuRef} onClick={() => { if (!tourRunning) setLabOpen(false); }} style={{ borderTop: "1px solid var(--color-border-primary)", padding: c ? "4px 0" : "4px 6px" }}>
             <NavItem active={activeLabView === "structure"} icon={<span style={{ fontSize: "13px" }}>🏢</span>} label={t("layout.lab.structure.label")} tooltip={t("layout.lab.structure.desc")} onClick={onOpenStructure} collapsed={c} />
             <NavItem active={activeLabView === "graph"} icon={<GraphIcon />} label={t("layout.lab.graph.label")} tooltip={t("layout.lab.graph.tooltip")} onClick={onOpenGraph} collapsed={c} />
             <NavItem active={activeLabView === "calendar"} icon={<span style={{ fontSize: "13px" }}>🗓️</span>} label={t("layout.lab.calendar.label")} tooltip={t("layout.lab.calendar.tooltip")} onClick={onOpenCalendar} collapsed={c} />
@@ -2603,7 +2612,8 @@ function Sidebar({
           [アバター][EN][🧪][🗓️][⋯その他] …… [バージョン]。テーマ切替・ログアウトは「その他」へ移し、
           「その他」を開くと項目がこの行の上に積まれる（独立した見出し行は持たない）。 */}
       <div style={{ borderTop: "1px solid var(--color-border-primary)", padding: c ? "6px 4px" : "4px", flexShrink: 0 }}>
-        {(!showMiscGroup || miscOpen) && (<>
+        {(!showMiscGroup || miscOpen) && (
+        <div ref={miscItemsRef} onClick={() => { if (showMiscGroup && !tourRunning) setMiscOpen(false); }}>
         {/* 📖 ガイド（全モード共通・全画面オーバーレイ） */}
         <button
           data-tour-id="guide-btn"
@@ -2658,7 +2668,7 @@ function Sidebar({
             <span style={miscBtnLabelStyle}>{t("layout.logout.title")}</span>
           </button>
         )}
-        </>)}
+        </div>)}
         <div style={{
           display: "flex", alignItems: "center",
           justifyContent: c ? "center" : "flex-start",
@@ -2673,6 +2683,7 @@ function Sidebar({
           {/* 言語切り替え（🌐 日本語 | English） */}
           {!c && <LangToggle variant="text" />}
           <button
+            ref={labToggleRef}
             onClick={() => setLabOpen(o => !o)}
             aria-pressed={labOpen}
             aria-label={t("layout.lab.toggleTitle")}
@@ -2690,6 +2701,7 @@ function Sidebar({
               この行へ吸収した。サイドバーが折りたたまれているときは項目を常時アイコンで並べる。 */}
           {showMiscGroup && (
             <button
+              ref={miscToggleRef}
               onClick={toggleMiscOpen}
               aria-expanded={miscOpen}
               aria-label={miscOpen ? t("layout.sidebar.miscSectionCollapse") : t("layout.sidebar.miscSectionExpand")}

@@ -71,9 +71,8 @@ const KEYS = {
    *  （描画経路を切るだけの方式のため）。 */
   SIDEBAR_PJ_OPEN:     "sidebar_pj_open",
   SIDEBAR_OKR_OPEN:    "sidebar_okr_open",
-  /** サイドバー下部「その他」（ガイド／設定／招待コードを入力）の折りたたみ開閉状態。
-   *  SIDEBAR_PJ_OPENとは向きが逆＝既定は閉じる（"1"のときだけ開く）。v3.74・面積を
-   *  占領していた3ボタンを折りたたみ式にした（山本さんの指示）。 */
+  /** 【v3.193で読み書きを廃止】サイドバー下部「その他」の開閉は保存しなくなった（起動時は閉・外側クリックで閉じる）。
+   *  過去の保存値の識別と、表示設定のリセット（displaySettingsReset）での削除用に定数だけ残す。古い値は無害。 */
   SIDEBAR_MISC_OPEN:   "sidebar_misc_open",
   // 管理画面（v3.155：設定画面の作り直しで読まなくなった。過去の保存値の識別用に定数だけ残す）
   ADMIN_LAST_TAB:      "admin_last_tab",

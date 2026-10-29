@@ -39,6 +39,15 @@ export interface ReleaseNoteEntry {
 
 export const RELEASE_NOTES: ReleaseNoteEntry[] = [
   {
+    version: "v3.193",
+    date: "2026-10-29",
+    title: "サイドバー下の「⋯」「🧪」が自動で閉じるようになりました",
+    highlights: [
+      "サイドバー下の「⋯」「🧪」は、ほかの場所をクリックすると自動で閉じるようにしました（Esc キーや、項目を選んだときも閉じます）。",
+      "「⋯」は開いたままにならず、アプリを開き直すと閉じた状態から始まります。",
+    ],
+  },
+  {
     version: "v3.192",
     date: "2026-10-29",
     title: "プロジェクト・ビュー・タスクのリンクをコピーして共有できます",

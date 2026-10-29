@@ -8580,3 +8580,8 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * MainLayout：起動時 effect（ゲストも通す）→ openShareTarget。見つからない・権限なしはトースト。guardedNavigate 経由。タスクは TaskEditModal で開く。
 # * 発行側：PJ行「⋮」に copyLink（projectRowMenu.ts）／サイドバー「メニュー」見出し右とモバイルヘッダーに「このビューのリンクをコピー」／TaskSidePanel・TaskEditModal の見出しに「このタスクのリンクをコピー」。
 # * DB変更なし・MIN_CLIENT_VERSION 据え置き。設計＝docs/dev/sections/s87_share-link.md。
+
+# v3.193（2026-10-29）：サイドバー下の「⋯」「🧪」を外側クリック・Esc・項目クリックで閉じる／「⋯」の開閉を保存しない
+#
+# * useOutsideDismiss（hooks）＋ outsideDismiss.ts（純関数）。MainLayout の Sidebar で miscOpen・labOpen に適用。ツアー実行中（useTour().isRunning）は保留。
+# * KEYS.SIDEBAR_MISC_OPEN の読み書きを撤去（定数は表示設定リセット用に残す）。設計＝docs/dev/sections/s32_sidebar-misc.md。DB変更なし・MIN_CLIENT_VERSION 据え置き。

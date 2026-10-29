@@ -13,3 +13,13 @@
 - **DBスキーマ変更なし**（`schemaChecks.ts`への追記も不要）。
 
 ---
+
+## v3.193（2026-10-29）：外側クリック・Esc で閉じる／開閉を保存しない
+
+- 利用者から「⋯を開いたままで表示されっぱなしになり、サイドバーが圧迫される」との報告。
+- `miscOpen`（⋯）と `labOpen`（🧪）は、開いている間、**項目群とそのトグルボタンの外側**の pointerdown、または Esc で閉じる（`src/hooks/useOutsideDismiss.ts`・判定の純関数は `src/lib/layout/outsideDismiss.ts`）。項目をクリックしたときも、その動作のあとで閉じる（テーマ切替も）。
+- `miscOpen` は保存しない（起動時は閉）。`KEYS.SIDEBAR_MISC_OPEN` の読み書きを撤去。キー定義は、過去の保存値の識別と表示設定リセット（`displaySettingsReset`）での削除用に残す。古い値が残っていても読まないので無害。
+- ツアー実行中（`useTour().isRunning`）は外側クリック・Esc・項目クリックのいずれでも閉じない。ツアーの `open-sidebar-misc` で開いた場合も同じ。ツアー終了後は通常どおり。
+- サイドバー折りたたみ時（`showMiscGroup=false`＝アイコン常時表示）は項目クリックでも閉じない（従来どおり）。モバイルは Sidebar を使わず、専用のラボシートが外側タップで閉じる既存の作りのため対象外。
+- テスト：`src/lib/layout/__tests__/outsideDismiss.test.ts`（純関数・配線の走査）。DB変更なし。
+
