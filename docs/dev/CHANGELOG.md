@@ -8554,3 +8554,13 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * 当てはめ：G＝project_sections（Section 78。既存PJは同名なら既存へ）／P＝親／C＝子（親と同じグループ。saveTask の normalizeTaskSection が担保）／備考「完了」→done・「ユーザー」「仮」→tags・その他→comment「備考：…」・「マイルストーン」→タスク（先行のつながりを保つため）＋milestones の◆（終了日、無ければ開始日）＋タグ「マイルストーン」／担当者列→メンバー照合、無ければ取り込む本人／並び順→display_order をWBS順（既存PJは末尾から）。
 # * 書き込み：DBにトランザクションが無いため、PJ→グループ→タスク（skipCascade）→親の状態合わせ→先行→マイルストーンの順に1件ずつ書き、失敗したら逆順に論理削除して取り消す。親は子の保存で自動状態（computeParentAutoStatus）が動くため todo で作り、子の後に本来の値へ合わせる。先行を最後に張るのは B1 ゲート（先行未完了の完了を止める）を避けるため。取り消しも失敗したら残件数を画面に出す。
 # * DB変更なし・MIN_CLIENT_VERSION は据え置き。テスト：wbsImport/__tests__（解析・当てはめ・書き込み／取り消し。xlsx はテスト内で生成）、projectRowMenu.test.ts。
+
+# v3.190（2026-10-29）：マイルストーンの色を選べるようにする（ColorPicker 新設）
+#
+# * DB：milestones.color text NULL を追加（supabase/migrations/20261029_milestone_color.sql）。NULL＝既定のアンバー。"#RRGGBB" 限定の CHECK（milestones_color_hex_check）を付けた。schema.sql・schemaChecks.ts（milestones_color_column）に追記。
+# * src/lib/milestoneColor.ts（純粋関数）：normalizeHexColor／darkenHex／milestoneFillColor・milestoneBorderColor（枠は塗りの30%暗色。無指定は従来の #d97706）／milestoneGlyphColor（◆を文字で描く場所用）／milestoneColorPatch／generateColorGrid（グレー1行＋色相12列×明るさ6段）／MILESTONE_SWATCHES（10色）／pushRecentColor・parseRecentColors。
+# * src/components/common/ColorPicker.tsx：既定＋見本＋最近使った色（localStorage KEYS.RECENT_CUSTOM_COLORS・6件・try/catch）＋「その他の色…」ポップオーバー（useFloatingPanel・Portal・pointerEvents:auto・Esc は closeOnEscapeAndStop・グリッドは矢印キー移動）。グリッド／<input type="color">／HEX入力。選択中は2重リング＋✓。
+# * 表示：ガント◆・ホバー詳細（GanttView）、帯の色（getMilestoneBandColor）、スマホ・カレンダー・カルテ（個別色のときだけ◆）。ガントの凡例は既定色のまま。
+# * 列が未適用の本番でも壊れないようにした：読み込みは select("*")。保存は milestoneColorPatch で、色を付けない（元も無し）ときは color キー自体を送らない。元の色を既定へ戻すときだけ null を送る。
+# * AIへ渡すマイルストーン情報（name/date/description）には color を足していない（分析に不要）。MilestoneEditModal は従来から computeFormDirty の対象外（明示保存だが未保存警告なし）で、今回も追加していない。
+# * 互換性：列追加のみ・後方互換のため MIN_CLIENT_VERSION は据え置き（3.152）。

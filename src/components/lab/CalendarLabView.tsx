@@ -18,6 +18,7 @@ import { isTaskStagnant, STAGNANT_THRESHOLD_DAYS } from "../gantt/ganttUtils";
 import { toDate, addDays } from "../../lib/date";
 import { chunkIntoWeeks, assignBarLanes, computeWeekBarSegments } from "../../lib/calendar/calendarUtils";
 import { withBellReserve } from "../../lib/layout/topRightBell";
+import { milestoneGlyphColor } from "../../lib/milestoneColor";
 
 interface Props {
   onClose: () => void;
@@ -198,13 +199,13 @@ export function CalendarLabView({ onClose, currentUser, onOpenTask, onRequestQui
   const weeks = useMemo(() => chunkIntoWeeks(cells), [cells]);
 
   const milestonesByDate = useMemo(() => {
-    const map = new Map<string, { name: string; pjColor?: string }[]>();
+    const map = new Map<string, { name: string; pjColor?: string; color?: string | null }[]>();
     for (const m of milestones) {
       // 表示グリッド外のマイルストーンはスキップ
       if (m.date < gridRange.start || m.date > gridRange.end) continue;
       if (selectedPjIds.size > 0 && !selectedPjIds.has(m.project_id)) continue;
       if (!map.has(m.date)) map.set(m.date, []);
-      map.get(m.date)!.push({ name: m.name, pjColor: projectById.get(m.project_id)?.color_tag });
+      map.get(m.date)!.push({ name: m.name, color: m.color, pjColor: projectById.get(m.project_id)?.color_tag });
     }
     return map;
   }, [milestones, projectById, gridRange, selectedPjIds]);
@@ -558,7 +559,7 @@ export function CalendarLabView({ onClose, currentUser, onOpenTask, onRequestQui
                   <div key={`ms-${mi}`} title={`◆ ${m.name}`} style={{
                     fontSize: "10px", lineHeight: 1.3,
                     display: "flex", alignItems: "center", gap: "3px",
-                    color: "#d97706",
+                    color: milestoneGlyphColor(m),
                     overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flexShrink: 0,
                   }}>
                     <span style={{ flexShrink: 0 }}>◆</span>{m.name}

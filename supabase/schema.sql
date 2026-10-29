@@ -378,6 +378,10 @@ CREATE TABLE IF NOT EXISTS milestones (
 );
 -- 既存環境向け：列が無ければ追加（schema.sql 再適用時の drift 吸収）
 ALTER TABLE milestones ADD COLUMN IF NOT EXISTS description text;
+-- マイルストーンの色（NULL＝既定のアンバー）。"#RRGGBB" のみ（migrations/20261029_milestone_color.sql・v3.190）
+ALTER TABLE milestones ADD COLUMN IF NOT EXISTS color text;
+ALTER TABLE milestones DROP CONSTRAINT IF EXISTS milestones_color_hex_check;
+ALTER TABLE milestones ADD CONSTRAINT milestones_color_hex_check CHECK (color IS NULL OR color ~ '^#[0-9a-fA-F]{6}$');
 
 -- ===== 変更履歴 =====
 CREATE TABLE IF NOT EXISTS admin_change_logs (

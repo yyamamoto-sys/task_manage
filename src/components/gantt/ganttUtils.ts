@@ -7,6 +7,7 @@ import { calendarWeekNumber } from "../../lib/date/monthWeeks";
 import type { OverloadRange } from "../../lib/gantt/overload";
 import { computeRangeSelection } from "../../lib/selectionRange";
 import { isCompletedForProgress } from "../../lib/taskMeta";
+import { DEFAULT_MILESTONE_FILL, DEFAULT_MILESTONE_BORDER, milestoneFillColor } from "../../lib/milestoneColor";
 
 // computeRangeSelection は src/lib/selectionRange.ts に集約（ListView と共有するため）。
 // 既存の呼び出し元（本ファイル内・ganttUtils.test.ts）を壊さないよう再エクスポートする。
@@ -19,8 +20,8 @@ export const ZOOM_MAX = 80;
 export const ZOOM_STEP_RATIO = 1.25;
 export const STAGNANT_THRESHOLD_DAYS = 5;
 export const TODO_COLOR = "#6ee7b7";
-export const MS_COLOR   = "#f59e0b";
-export const MS_BORDER  = "#d97706";
+export const MS_COLOR   = DEFAULT_MILESTONE_FILL;
+export const MS_BORDER  = DEFAULT_MILESTONE_BORDER;
 /**
  * クリティカルパス専用アクセント色（B6）。既存の期限超過（var(--color-border-danger)＝
  * 淡いくすみ色の"塗り"）やホバー強調（filter:brightness）とは混同しないよう、彩度の高い
@@ -301,12 +302,9 @@ export function computeDayTicks(days: Date[], dayWidth: number, isHolidayFn: (da
 
 // ===== マイルストーン帯（PJ内・スクロールしても埋もれないようにする視認補助） =====
 
-/**
- * マイルストーンの帯色を1箇所から取得する。現状は全マイルストーン共通の MS_COLOR だが、
- * 将来マイルストーンごとに個別色を持つようになったら、ここだけ変更すれば帯・◆印の色が揃う。
- */
-export function getMilestoneBandColor(_ms: Milestone): string {
-  return MS_COLOR;
+/** マイルストーンの帯色を1箇所から取得する（個別色があればそれ、無ければ既定のアンバー）。 */
+export function getMilestoneBandColor(ms: Milestone): string {
+  return milestoneFillColor(ms);
 }
 
 export interface MilestoneBand {

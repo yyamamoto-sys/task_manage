@@ -14,6 +14,8 @@ import { showToast } from "../common/Toast";
 import { confirmDialog } from "../../lib/dialog";
 import { formatErrorForUser } from "../../lib/errorMessage";
 import { modalOverlayStyle, modalBoxStyle } from "../common/modalStyles";
+import { ColorPicker } from "../common/ColorPicker";
+import { milestoneColorPatch, normalizeHexColor } from "../../lib/milestoneColor";
 
 interface Props {
   milestone: Milestone;
@@ -38,6 +40,7 @@ export function MilestoneEditModal({ milestone, currentUser, project, onClose }:
   const [name, setName]               = useState(milestone.name);
   const [date, setDate]               = useState(milestone.date);
   const [description, setDescription] = useState(milestone.description ?? "");
+  const [color, setColor]               = useState<string | null>(() => normalizeHexColor(milestone.color));
   const [saving, setSaving]           = useState(false);
 
   const canSave = name.trim() !== "" && date !== "";
@@ -51,6 +54,7 @@ export function MilestoneEditModal({ milestone, currentUser, project, onClose }:
         name: name.trim(),
         date,
         description: description.trim() || undefined,
+        ...milestoneColorPatch(milestone.color, color),
         updated_by: currentUser.id,
       });
       showToast(`マイルストーン「${name.trim()}」を更新しました`);
@@ -139,6 +143,11 @@ export function MilestoneEditModal({ milestone, currentUser, project, onClose }:
               onChange={e => setDate(e.target.value)}
               style={{ ...inputStyle, width: "160px" }}
             />
+          </div>
+
+          <div>
+            <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "4px" }}>色（◆の色）</div>
+            <ColorPicker value={color} onChange={setColor} ariaLabel="マイルストーンの色" />
           </div>
 
           <div>

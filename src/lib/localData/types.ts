@@ -250,6 +250,8 @@ export interface Milestone {
   name: string;          // マイルストーン名
   date: string;          // YYYY-MM-DD形式
   description?: string;  // 任意の説明
+  /** "#RRGGBB"。null/未設定＝既定色（v3.190。列が未適用の環境では常に undefined） */
+  color?: string | null;
   is_deleted: boolean;
   created_at?: string;
   updated_at?: string;

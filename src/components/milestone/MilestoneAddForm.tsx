@@ -11,6 +11,8 @@
 
 import { useState } from "react";
 import type { Milestone } from "../../lib/localData/types";
+import { ColorPicker } from "../common/ColorPicker";
+import { milestoneColorPatch } from "../../lib/milestoneColor";
 
 // 週文字列（"2026-W13"）をその週の月曜日の日付に変換する
 export function weekToDate(weekStr: string): string {
@@ -60,6 +62,7 @@ export function MilestoneAddForm({ pjId, currentUserId, onAdd }: MilestoneAddFor
   const [weekVal, setWeekVal]     = useState("");
   const [name, setName]           = useState("");
   const [description, setDescription] = useState("");
+  const [color, setColor]         = useState<string | null>(null);
 
   const resolvedDate = dateMode === "date" ? dateVal : (weekVal ? weekToDate(weekVal) : "");
   const canSubmit = name.trim() !== "" && resolvedDate !== "";
@@ -73,10 +76,11 @@ export function MilestoneAddForm({ pjId, currentUserId, onAdd }: MilestoneAddFor
       name: name.trim(),
       date: resolvedDate,
       description: description.trim() || undefined,
+      ...milestoneColorPatch(undefined, color),
       is_deleted: false,
       created_at: now, updated_at: now, updated_by: currentUserId,
     });
-    setDateVal(""); setWeekVal(""); setName(""); setDescription("");
+    setDateVal(""); setWeekVal(""); setName(""); setDescription(""); setColor(null);
   };
 
   return (
@@ -133,6 +137,12 @@ export function MilestoneAddForm({ pjId, currentUserId, onAdd }: MilestoneAddFor
         onChange={e => setDescription(e.target.value)}
         style={{ ...inputStyle, resize: "vertical" }}
       />
+
+      {/* 色（既定＝アンバー） */}
+      <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+        <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", flexShrink: 0 }}>色</span>
+        <ColorPicker value={color} onChange={setColor} ariaLabel="マイルストーンの色" />
+      </div>
 
       <div>
         <button onClick={handleAdd} disabled={!canSubmit} style={primaryBtnStyle}>

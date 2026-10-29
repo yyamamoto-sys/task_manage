@@ -3,6 +3,7 @@
 
 import type { Member, Project, Task, ToDo, Milestone, TaskDependency } from "../../lib/localData/types";
 import { toDateStr } from "../../lib/date";
+import { milestoneGlyphColor } from "../../lib/milestoneColor";
 import { TaskEditModal } from "../task/TaskEditModal";
 import { getAssigneeIds, TASK_STATUS_STYLE, suppressOverdue } from "../../lib/taskMeta";
 import { EmptyState } from "../common/EmptyState";
@@ -229,7 +230,7 @@ export function GanttMobileView({
                     color: "var(--color-text-secondary)", background: "var(--color-bg-tertiary)",
                     borderRadius: "var(--radius-md)",
                   }}>
-                    <span style={{ flexShrink: 0 }}>◆</span>
+                    <span style={{ flexShrink: 0, color: milestoneGlyphColor(ms) }}>◆</span>
                     <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ms.name}</span>
                     <span style={{ flexShrink: 0, color: "var(--color-text-tertiary)" }}>{md(ms.date)}</span>
                   </div>

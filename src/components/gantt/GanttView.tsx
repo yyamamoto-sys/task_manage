@@ -18,6 +18,7 @@ import { v4 as uuidv4 } from "uuid";
 import { KEYS, active } from "../../lib/localData/localStore";
 import { TaskEditModal } from "../task/TaskEditModal";
 import { MilestoneEditModal } from "../milestone/MilestoneEditModal";
+import { milestoneFillColor, milestoneBorderColor } from "../../lib/milestoneColor";
 import { TaskSidePanel } from "../task/TaskSidePanel";
 import { isAssignedTo, suppressOverdue, isCompletedForProgress } from "../../lib/taskMeta";
 import { EmptyState } from "../common/EmptyState";
@@ -2032,8 +2033,8 @@ export function GanttView({
                     left: msX - 7,
                     top: "50%", transform: "translateY(-50%) rotate(45deg)",
                     width: 12, height: 12,
-                    background: MS_COLOR,
-                    border: `2px solid ${MS_BORDER}`,
+                    background: milestoneFillColor(ms),
+                    border: `2px solid ${milestoneBorderColor(ms)}`,
                     zIndex: 4,
                     pointerEvents: "auto",
                     cursor: isPreview ? "default" : "pointer",
@@ -2967,7 +2968,7 @@ export function GanttView({
           >
             <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: ms.description ? "4px" : 0 }}>
               <div style={{
-                width: 8, height: 8, background: MS_COLOR, border: `1.5px solid ${MS_BORDER}`,
+                width: 8, height: 8, background: milestoneFillColor(ms), border: `1.5px solid ${milestoneBorderColor(ms)}`,
                 transform: "rotate(45deg)", flexShrink: 0,
               }} />
               <span style={{ fontSize: "12px", fontWeight: "600", color: "var(--color-text-primary)", lineHeight: 1.3 }}>

@@ -30,6 +30,7 @@ import { formatErrorForUser } from "../../lib/errorMessage";
 import { getAssigneeIds, isActiveTaskStatus, suppressOverdue } from "../../lib/taskMeta";
 import { MilestoneAddForm } from "../milestone/MilestoneAddForm";
 import { MilestoneEditModal } from "../milestone/MilestoneEditModal";
+import { milestoneGlyphColor } from "../../lib/milestoneColor";
 import { confirmDialog } from "../../lib/dialog";
 import { GuestAiQuotaNotice } from "../common/GuestAiQuotaNotice";
 import { modalOverlayStyle, modalBoxStyle } from "../common/modalStyles";
@@ -656,6 +657,7 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
                 style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px", opacity: isPast ? 0.5 : 1, cursor: "pointer", borderRadius: "var(--radius-sm)" }}
               >
                 <span style={{ fontSize: "11px" }}>{isPast ? "✅" : isNext ? "🎯" : "•"}</span>
+                {m.color && <span aria-hidden style={{ fontSize: "10px", color: milestoneGlyphColor(m), flexShrink: 0 }}>◆</span>}
                 <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)", flexShrink: 0, width: "44px" }}>{formatMD(m.date)}</span>
                 <span style={{ fontSize: "11px", color: "var(--color-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
                   {m.name}{m.description ? " 📝" : ""}

@@ -712,4 +712,12 @@ export const SCHEMA_HEALTH_CHECKS: SchemaCheckDescriptor[] = [
     label: `ご意見・不具合：${label}（${name}）が見つかりません`,
     migration: "20261015b_app_feedback.sql",
   })),
+  {
+    id: "milestones_color_column",
+    kind: "column",
+    table: "milestones",
+    column: "color",
+    label: "マイルストーンの色（milestones.color）の列が見つかりません",
+    migration: "20261029_milestone_color.sql",
+  },
 ];
