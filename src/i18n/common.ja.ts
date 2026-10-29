@@ -76,6 +76,8 @@ export const commonJa = {
 
   // ----- InlineEditAssignee / InlineEditDate / InlineEditText -----
   "common.assignee.unassigned": "未担当",
+  "common.gantt.fitAll": "全体表示",
+  "common.gantt.fitAllTitle": "表示中のタスク全体が1画面に収まるよう、ガントの倍率を調整します",
   "common.assignee.editTitle": "クリックして担当者を変更",
   "common.date.dueUnset": "期日未設定",
   "common.date.clearTitle": "日付をクリア",

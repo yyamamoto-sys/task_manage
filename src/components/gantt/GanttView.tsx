@@ -25,7 +25,8 @@ import { EmptyState } from "../common/EmptyState";
 import { showToast } from "../common/Toast";
 import {
   DAY_WIDTH_DEFAULT, ZOOM_MIN, ZOOM_MAX, parseSavedZoom, stepZoom, clampDayWidth,
-  resolveZoomScrollLeft, wheelZoomTarget, wheelDeltaToPx, isDayTickLabelVisible, weekLabelForWidth,
+  resolveZoomScrollLeft, wheelZoomTarget, wheelDeltaToPx, isDayTickLabelVisible, weekHeaderLabel,
+  ganttRowScale, ganttRowMetrics, resolveZoomScrollTop, fitDayWidth,
   TODO_COLOR, MS_COLOR, MS_BORDER, CRITICAL_COLOR, OVERLOAD_COLOR,
   computeHBarHeight, GANTT_LABEL_HEADER_HEIGHT, GANTT_HEADER_MONTH_HEIGHT, GANTT_HEADER_WEEK_HEIGHT, GANTT_HEADER_DAY_TICK_HEIGHT,
   type GanttSortOrder, sortGanttTasks, isTaskStagnant, calcTaskBar, formatBarDateLabel, formatBarTooltipSuffix, resolveGanttBarColor,
@@ -39,6 +40,7 @@ import {
 } from "./ganttUtils";
 import { TaskBarRow, GanttPjLabelRow, GanttTodoLabelRow, GanttPersonLabelRow, GanttQuickAddTaskRow, ZoomIcon, type TaskBarLinkUi } from "./GanttParts";
 import { GanttMobileView } from "./GanttMobileView";
+import { useT } from "../../hooks/useT";
 import { ShortcutsPanel } from "../common/ShortcutsPanel";
 import { toggleTaskWithChildren, pruneSelection } from "../../lib/task/selectionWithChildren";
 import { shouldIgnoreCommandKey, isInteractiveTarget } from "../../lib/shortcuts/keys";
@@ -148,6 +150,7 @@ export function GanttView({
     [rawMilestones],
   );
   const isMobile = useIsMobile();
+  const t = useT();
   // ===== ショートカット一覧ポップアップ（凡例バー右端「⌨ ショートカット」） =====
   // 【設計意図】非モーダル・✕のみで閉じる・自動表示なしの3点が要件。セッション内state
   // のみで良く（既定=閉じ）、localStorage永続化は不要（「開いたままにしない」を優先）。
@@ -316,6 +319,11 @@ export function GanttView({
   });
 
   const totalWidth = days.length * dayWidth;
+
+  // 行スケール：ズーム（dayWidth）に連動して行の高さと中身が変わる。モバイル・プレビューはズーム自体が
+  // 無い経路なので1.0固定（従来どおり）。左右の列・行配列・各行の中身はすべてこの1つの値から導く
+  const rowScale = isPreview || isMobile ? 1 : ganttRowScale(dayWidth);
+  const rowMetrics = useMemo(() => ganttRowMetrics(rowScale), [rowScale]);
 
   // 今日のx座標（マウント時に固定。毎レンダーで new Date() しない）
   const today = useMemo(() => {
@@ -535,12 +543,14 @@ export function GanttView({
       return buildPersonViewGanttRows(
         personGroups.map(g => ({ member: g.member, tasks: g.tasks })),
         collapsed,
+        rowMetrics.heights,
       );
     }
     return buildPjViewGanttRows({
       visibleProjects, pjOrderedTasksMap, todoGroups, todoGroupSortedMap, collapsed, isPreview, sectionsByPj,
+      heights: rowMetrics.heights,
     });
-  }, [viewMode, personGroups, visibleProjects, pjOrderedTasksMap, todoGroups, todoGroupSortedMap, collapsed, isPreview, sectionsByPj]);
+  }, [viewMode, personGroups, visibleProjects, pjOrderedTasksMap, todoGroups, todoGroupSortedMap, collapsed, isPreview, sectionsByPj, rowMetrics]);
 
   // 現在の表示順（折りたたみ・ビューモード・グループの区切り反映後）に並んだタスクidの配列。Ctrl/Cmd+A（表示中の
   // 全選択）とShift+クリック（範囲選択）が共有する。行の組み立て（ganttRows）の結果そのものから作るので、
@@ -713,14 +723,18 @@ export function GanttView({
   const prevDayWidthRef = useRef(dayWidth);
 
   // ===== 拡大縮小（スライドバー／ボタン／+-キー／Ctrl・Cmd+ホイール） =====
-  // 1日あたりの幅は dayWidth（整数・8〜80）。スライドバーとホイールは1フレームに何度もイベントが来るため、
+  // 1日あたりの幅は dayWidth（整数・4〜80）。スライドバーとホイールは1フレームに何度もイベントが来るため、
   // 目標値を ref に溜めて requestAnimationFrame で1回だけ state に反映する（ガント全体の再描画を1フレーム1回に抑える）。
   const zoomTargetRef = useRef(dayWidth); // 目標値。ホイール積算のため小数のまま持つ
   const zoomAnchorXRef = useRef<number | null>(null); // 基準点＝スクロール領域の左端からのpx。nullなら表示領域の中央
   const zoomRafRef = useRef<number | null>(null);
   const sliderRef = useRef<HTMLInputElement>(null);
   // ズーム直前の表示位置（縮小でブラウザが scrollLeft を切り詰める前の値。resolveZoomScrollLeft 参照）
-  const zoomBeforeRef = useRef<{ scrollLeft: number; clientWidth: number } | null>(null);
+  const zoomBeforeRef = useRef<{ scrollLeft: number; clientWidth: number; scrollTop: number } | null>(null);
+  // 「全体表示」で、適用後に左端へ出したい日付（行の高さ・列幅が変わった描画の直後に scrollLeft へ反映する）
+  const fitScrollDateRef = useRef<Date | null>(null);
+  // 直前の描画での各行の高さ（ズームで行の高さが変わったとき、画面上端の行を保つための基準）
+  const prevRowHeightsRef = useRef<number[]>([]);
   // リサイズ・移動・新規作成・結線のドラッグ中は拡大縮小を受け付けない（宣言は各stateの後で更新する）
   const zoomBlockedRef = useRef(false);
 
@@ -744,7 +758,7 @@ export function GanttView({
     zoomRafRef.current = requestAnimationFrame(() => {
       zoomRafRef.current = null;
       const el = scrollRef.current;
-      zoomBeforeRef.current = el ? { scrollLeft: el.scrollLeft, clientWidth: el.clientWidth } : null;
+      zoomBeforeRef.current = el ? { scrollLeft: el.scrollLeft, clientWidth: el.clientWidth, scrollTop: el.scrollTop } : null;
       commitDayWidth(clampDayWidth(zoomTargetRef.current));
     });
   }, [commitDayWidth]);
@@ -774,18 +788,64 @@ export function GanttView({
     if (prevDayWidthRef.current === dayWidth) return;
     const el = scrollRef.current;
     if (el && scrollInitialized.current) {
-      el.scrollLeft = resolveZoomScrollLeft({
-        before: zoomBeforeRef.current,
-        current: { scrollLeft: el.scrollLeft, clientWidth: el.clientWidth },
-        anchorX: zoomAnchorXRef.current,
-        prevDayWidth: prevDayWidthRef.current,
-        nextDayWidth: dayWidth,
-      });
+      const fitDate = fitScrollDateRef.current;
+      el.scrollLeft = fitDate
+        ? Math.max(0, diffDays(rangeStart, fitDate) * dayWidth)
+        : resolveZoomScrollLeft({
+          before: zoomBeforeRef.current,
+          current: { scrollLeft: el.scrollLeft, clientWidth: el.clientWidth },
+          anchorX: zoomAnchorXRef.current,
+          prevDayWidth: prevDayWidthRef.current,
+          nextDayWidth: dayWidth,
+        });
+      // 行の高さもズームで変わる。画面上端の行（と行内の位置）が動かないよう縦位置を補正する
+      // （縮小で総高さが縮むとブラウザが scrollTop を切り詰めるため、ズーム直前に控えた値を基準にする）
+      const baseTop = zoomBeforeRef.current?.scrollTop ?? el.scrollTop;
+      const nextHeights = ganttRows.map(r => r.height);
+      const nextTop = resolveZoomScrollTop(baseTop, prevRowHeightsRef.current, nextHeights);
+      el.scrollTop = nextTop;
+      if (labelBodyRef.current) labelBodyRef.current.scrollTop = nextTop;
     }
+    fitScrollDateRef.current = null;
     zoomAnchorXRef.current = null;
     zoomBeforeRef.current = null;
     prevDayWidthRef.current = dayWidth;
-  }, [dayWidth]);
+  }, [dayWidth, ganttRows, rangeStart]);
+
+  // 描画のたびに各行の高さを控える（上のズーム補正が「ズーム前の行の高さ」として読む）。上の effect より後に宣言する
+  useLayoutEffect(() => {
+    prevRowHeightsRef.current = ganttRows.map(r => r.height);
+  }, [ganttRows]);
+
+  // 「全体表示」：表示中（フィルタ・完了非表示・折りたたみ反映後）のタスクの最早開始〜最遅終了が
+  // バー領域の幅に収まる dayWidth を求め、その範囲の先頭へスクロールする。対象が無ければ何もしない
+  const fitAll = useCallback(() => {
+    if (zoomBlockedRef.current) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    let minD: Date | null = null;
+    let maxD: Date | null = null;
+    for (const row of ganttRows) {
+      if (row.kind !== "task" && row.kind !== "todo-task" && row.kind !== "person-task") continue;
+      const eff = row.kind === "task" && row.depth === 0 ? parentEffectiveDates.get(row.task.id) : undefined;
+      const due = toDate(eff?.due_date ?? row.task.due_date);
+      const start = toDate(eff?.start_date ?? row.task.start_date ?? null) ?? due;
+      if (!due || !start) continue;
+      const lo = start <= due ? start : due;
+      const hi = start <= due ? due : start;
+      if (!minD || lo < minD) minD = lo;
+      if (!maxD || hi > maxD) maxD = hi;
+    }
+    if (!minD || !maxD) return;
+    const next = fitDayWidth(diffDays(minD, maxD) + 1, el.clientWidth);
+    if (next == null) return;
+    if (next === dayWidth) {
+      el.scrollLeft = Math.max(0, diffDays(rangeStart, minD) * dayWidth);
+      return;
+    }
+    fitScrollDateRef.current = minD;
+    scheduleZoom(next, null);
+  }, [ganttRows, parentEffectiveDates, dayWidth, rangeStart, scheduleZoom]);
 
   // Ctrl/Cmd+ホイール（トラックパッドのピンチはctrlKey付きwheelで届く）。ガントのバー領域の上でだけ
   // ブラウザ全体のズームを止める（preventDefault するため passive:false で登録。Reactのonwheelはpassiveで使えない）
@@ -1693,14 +1753,14 @@ export function GanttView({
             onKeyDown={editingPjNameId === pj.id ? undefined : (e => { if (e.key === "Enter" || e.key === " ") togglePJ(pj.id); })}
           >
             <span style={{
-              fontSize: "11px", color: "var(--color-text-secondary)",
+              fontSize: `${rowMetrics.nameFontPx}px`, color: "var(--color-text-secondary)",
               transition: "transform 0.15s",
               display: "inline-block",
               flexShrink: 0,
               transform: isCollapsed ? "rotate(-90deg)" : "rotate(0deg)",
             }}>▾</span>
             <div style={{
-              width: 8, height: 8, borderRadius: "50%",
+              width: rowMetrics.dotPx + 2, height: rowMetrics.dotPx + 2, borderRadius: "50%",
               background: pj.color_tag, flexShrink: 0,
             }} />
             {editingPjNameId === pj.id ? (
@@ -1716,8 +1776,9 @@ export function GanttView({
                 }}
                 onClick={e => e.stopPropagation()}
                 style={{
-                  flex: 1, minWidth: 0, fontSize: "11px", fontWeight: "500",
-                  padding: "2px 4px", border: "1px solid var(--color-brand)",
+                  flex: 1, minWidth: 0, fontSize: `${rowMetrics.nameFontPx}px`, fontWeight: "500",
+                  height: Math.max(14, row.height - 6), boxSizing: "border-box",
+                  padding: "0 4px", border: "1px solid var(--color-brand)",
                   borderRadius: "var(--radius-sm)",
                   background: "var(--color-bg-primary)",
                   color: "var(--color-text-primary)",
@@ -1727,14 +1788,14 @@ export function GanttView({
             ) : (
               <>
                 <span style={{
-                  fontSize: "11px", fontWeight: "500",
+                  fontSize: `${rowMetrics.nameFontPx}px`, fontWeight: "500",
                   color: "var(--color-text-primary)",
                   overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                   flex: 1,
                 }}>
                   {pj.name.length > 14 ? pj.name.slice(0, 14) + "…" : pj.name}
                 </span>
-                {!isPreview && (
+                {!isPreview && rowMetrics.showSecondary && (
                   <button
                     onClick={e => {
                       e.stopPropagation();
@@ -1760,6 +1821,7 @@ export function GanttView({
           <GanttPjLabelRow
             key={row.key}
             rowHeight={row.height}
+            scale={rowScale}
             task={task}
             isChild={depth > 0}
             childCount={childCount}
@@ -1822,13 +1884,13 @@ export function GanttView({
             )}
             <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", transition: "transform 0.15s", display: "inline-block", flexShrink: 0, transform: isCollapsed ? "rotate(-90deg)" : "rotate(0deg)" }}>▾</span>
             <span style={{
-              fontSize: "11px", fontWeight: 600, flex: 1, minWidth: 0,
+              fontSize: `${rowMetrics.nameFontPx}px`, fontWeight: 600, flex: 1, minWidth: 0,
               color: row.unsectioned ? "var(--color-text-tertiary)" : "var(--color-text-secondary)",
               overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
             }}>{row.name}</span>
             {isMovingSection && <SectionMovingBadge />}
-            <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", flexShrink: 0 }}>{row.taskCount}件</span>
-            {canDragHere && (
+            {rowMetrics.showSecondary && <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", flexShrink: 0 }}>{row.taskCount}件</span>}
+            {canDragHere && rowMetrics.showSecondary && (
               // メニューは Portal だが React のイベントは親へ伝わる＝行の折りたたみを誤発火させない
               // eslint-disable-next-line jsx-a11y/no-static-element-interactions
               <span style={{ display: "flex", flexShrink: 0 }} onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
@@ -1848,7 +1910,7 @@ export function GanttView({
         );
       }
       case "quick-add":
-        return <GanttQuickAddTaskRow key={row.key} height={row.height} onAdd={name => handleQuickAddTask(row.pj.id, name)} />;
+        return <GanttQuickAddTaskRow key={row.key} height={row.height} fontPx={rowMetrics.nameFontPx} onAdd={name => handleQuickAddTask(row.pj.id, name)} />;
       case "todo-header": {
         const isCollapsed = !!collapsed[`todo_${row.todoId}`];
         return (
@@ -1863,9 +1925,9 @@ export function GanttView({
             role="button" tabIndex={0}
             onKeyDown={e => { if (e.key === "Enter" || e.key === " ") togglePJ(`todo_${row.todoId}`); }}
           >
-            <span style={{ fontSize: "11px", color: "var(--color-text-secondary)", transition: "transform 0.15s", display: "inline-block", transform: isCollapsed ? "rotate(-90deg)" : "rotate(0deg)" }}>▾</span>
-            <div style={{ width: 8, height: 8, borderRadius: "50%", background: TODO_COLOR, flexShrink: 0 }} />
-            <span style={{ fontSize: "11px", fontWeight: "500", color: "var(--color-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
+            <span style={{ fontSize: `${rowMetrics.nameFontPx}px`, color: "var(--color-text-secondary)", transition: "transform 0.15s", display: "inline-block", transform: isCollapsed ? "rotate(-90deg)" : "rotate(0deg)" }}>▾</span>
+            <div style={{ width: rowMetrics.dotPx + 2, height: rowMetrics.dotPx + 2, borderRadius: "50%", background: TODO_COLOR, flexShrink: 0 }} />
+            <span style={{ fontSize: `${rowMetrics.nameFontPx}px`, fontWeight: "500", color: "var(--color-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
               {`[ToDo] ${(row.todo.title.split("\n")[0]).slice(0, 14)}${row.todo.title.length > 14 ? "…" : ""}`}
             </span>
           </div>
@@ -1876,6 +1938,7 @@ export function GanttView({
           <GanttTodoLabelRow
             key={row.key}
             rowHeight={row.height}
+            scale={rowScale}
             task={row.task}
             isHovered={hoveredTaskId === row.task.id}
             onEdit={guardedHandleRowEdit}
@@ -1907,39 +1970,41 @@ export function GanttView({
             onKeyDown={e => { if (e.key === "Enter" || e.key === " ") togglePJ(`person_${m.id}`); }}
           >
             <span style={{
-              fontSize: "11px", color: "var(--color-text-secondary)",
+              fontSize: `${rowMetrics.nameFontPx}px`, color: "var(--color-text-secondary)",
               transition: "transform 0.15s", display: "inline-block",
               transform: isCollapsed ? "rotate(-90deg)" : "rotate(0deg)",
             }}>▾</span>
             <div style={{
-              width: 20, height: 20, borderRadius: "50%",
+              width: Math.max(14, Math.round(20 * rowScale)), height: Math.max(14, Math.round(20 * rowScale)), borderRadius: "50%",
               background: m.color_bg, color: m.color_text,
               display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: "9px", fontWeight: "700", flexShrink: 0,
+              fontSize: rowMetrics.showSecondary ? "9px" : "7px", fontWeight: "700", flexShrink: 0,
             }}>
               {m.initials.slice(0, 2)}
             </div>
             <span style={{
-              fontSize: "11px", fontWeight: "600",
+              fontSize: `${rowMetrics.nameFontPx}px`, fontWeight: "600",
               color: "var(--color-text-primary)",
               overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
               flex: 1,
             }}>
               {m.short_name}
             </span>
-            <span style={{
-              fontSize: "9px", color: "var(--color-text-tertiary)",
-              flexShrink: 0,
-            }}>
-              {doneCount}/{tasks.length}
-            </span>
-            {inProgressCount > 0 && (
+            {rowMetrics.showSecondary && (
+              <span style={{
+                fontSize: "9px", color: "var(--color-text-tertiary)",
+                flexShrink: 0,
+              }}>
+                {doneCount}/{tasks.length}
+              </span>
+            )}
+            {inProgressCount > 0 && rowMetrics.showSecondary && (
               <div style={{
                 width: 6, height: 6, borderRadius: "50%",
                 background: "var(--color-text-info)", flexShrink: 0,
               }} />
             )}
-            {showOverload && overloadDayCount > 0 && (
+            {showOverload && overloadDayCount > 0 && rowMetrics.showSecondary && (
               <span style={{
                 fontSize: "9px", fontWeight: "600", color: OVERLOAD_COLOR,
                 flexShrink: 0, whiteSpace: "nowrap",
@@ -1959,6 +2024,7 @@ export function GanttView({
           <GanttPersonLabelRow
             key={row.key}
             rowHeight={row.height}
+            scale={rowScale}
             task={task}
             isHovered={hoveredTaskId === task.id}
             isOverdue={isOverdue}
@@ -1992,6 +2058,7 @@ export function GanttView({
         const done = pjTaskList.filter(t => isCompletedForProgress(t.status)).length;
         const pct = pjTaskList.length > 0 ? done / pjTaskList.length : 0;
         const pjMilestones = milestonesByPjId.get(pj.id) ?? [];
+        const msSize = Math.max(8, Math.round(12 * rowScale));
         return (
           <div key={row.key} style={{
             height: row.height, position: "relative",
@@ -2003,7 +2070,7 @@ export function GanttView({
                 position: "absolute",
                 left: pjBarX + 2, width: Math.max(pjBarW - 4, 8),
                 top: "50%", transform: "translateY(-50%)",
-                height: 14, borderRadius: 7,
+                height: Math.max(8, Math.round(14 * rowScale)), borderRadius: 7,
                 background: `${pj.color_tag}33`,
                 border: `1.5px solid ${pj.color_tag}`,
                 overflow: "hidden",
@@ -2030,9 +2097,9 @@ export function GanttView({
                   title={isPreview ? undefined : "クリックして編集"}
                   style={{
                     position: "absolute",
-                    left: msX - 7,
+                    left: msX - msSize / 2 - 1,
                     top: "50%", transform: "translateY(-50%) rotate(45deg)",
-                    width: 12, height: 12,
+                    width: msSize, height: msSize,
                     background: milestoneFillColor(ms),
                     border: `2px solid ${milestoneBorderColor(ms)}`,
                     zIndex: 4,
@@ -2077,10 +2144,11 @@ export function GanttView({
           <TaskBarRow
             key={row.key}
             rowHeight={row.height}
+            scale={rowScale}
             taskId={task.id}
             bar={bar}
             barColor={barColor}
-            barHeight={depth > 0 ? 12 : 18}
+            barHeight={depth > 0 ? rowMetrics.childBarHeight : rowMetrics.barHeight}
             borderRadius={depth > 0 ? "6px" : hasRange ? "4px" : "9px"}
             isDone={isDone}
             isStagnant={isStagnant}
@@ -2146,7 +2214,7 @@ export function GanttView({
             display: "flex", alignItems: "center", padding: "0 8px",
           }}>
             <div style={{
-              height: 8, borderRadius: 4,
+              height: Math.max(5, Math.round(8 * rowScale)), borderRadius: 4,
               background: `rgba(110,231,183,${0.2 + pct * 0.5})`,
               border: `1.5px solid ${TODO_COLOR}`,
               width: `${Math.max(pct * 100, 4)}%`,
@@ -2173,6 +2241,7 @@ export function GanttView({
           <TaskBarRow
             key={row.key}
             rowHeight={row.height}
+            scale={rowScale}
             taskId={task.id}
             bar={bar}
             barColor={resolveGanttBarColor(isDone, !!isOverdue, TODO_COLOR)}
@@ -2221,7 +2290,7 @@ export function GanttView({
                 position: "absolute",
                 left: spanX + 2, width: Math.max(spanW - 4, 8),
                 top: "50%", transform: "translateY(-50%)",
-                height: 6, borderRadius: 3,
+                height: Math.max(4, Math.round(6 * rowScale)), borderRadius: 3,
                 background: `${m.color_bg}`,
                 border: `1.5px solid ${m.color_text}`,
                 opacity: 0.6,
@@ -2250,6 +2319,7 @@ export function GanttView({
           <TaskBarRow
             key={row.key}
             rowHeight={row.height}
+            scale={rowScale}
             taskId={task.id}
             bar={bar}
             barColor={barColor}
@@ -2569,6 +2639,16 @@ export function GanttView({
               aria-hidden="true"
               style={{ fontSize: "10px", color: "var(--color-text-tertiary)", minWidth: 40, paddingRight: 6, textAlign: "right", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}
             >{dayWidth}px/日</span>
+            <button
+              onClick={fitAll}
+              title={t("common.gantt.fitAllTitle")}
+              aria-label={t("common.gantt.fitAllTitle")}
+              style={{
+                ...headerBtnStyle,
+                border: "none", borderLeft: "1px solid var(--color-border-primary)", borderRadius: 0,
+                padding: "4px 8px", fontSize: "11px", whiteSpace: "nowrap",
+              }}
+            >{t("common.gantt.fitAll")}</button>
           </div>
         )}
       </div>
@@ -2695,6 +2775,7 @@ export function GanttView({
                     position: "absolute", left: mg.startX, width: mg.width,
                     height: "100%", display: "flex", alignItems: "center",
                     paddingLeft: "6px", fontSize: "10px", fontWeight: "500",
+                    overflow: "hidden", whiteSpace: "nowrap", boxSizing: "border-box",
                     color: "var(--color-text-secondary)",
                     borderLeft: i > 0 ? "1px solid var(--color-border-primary)" : "none",
                   }}>
@@ -2718,7 +2799,7 @@ export function GanttView({
                     // 月の最初の週（W1）＝月境界。区切り線を少し強めて月の大局を掴めるようにする
                     borderLeft: wb.isMonthStart ? "1px solid var(--color-border-primary)" : "1px solid var(--color-border-secondary)",
                   }}>
-                    {weekLabelForWidth(wb.label, wb.width)}
+                    {weekHeaderLabel(wb.label, wb.width, dayWidth)}
                   </div>
                 ))}
               </div>

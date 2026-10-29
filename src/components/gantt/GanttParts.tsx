@@ -7,7 +7,7 @@ import { getAssigneeIds, TASK_STATUS_STYLE, isCompletedForProgress } from "../..
 import { InlineEditAssignee } from "../common/InlineEditAssignee";
 import { InlineEditText } from "../common/InlineEditText";
 import type { LinkSide } from "../../lib/dependencies/linkDirection";
-import { CRITICAL_COLOR, QUICK_ADD_ROW_HEIGHT, GANTT_TASK_ROW_HEIGHT, resizeHandleWidth } from "./ganttUtils";
+import { CRITICAL_COLOR, resizeHandleWidth, ganttRowMetrics } from "./ganttUtils";
 
 // ===== TaskBarLinkUi（B5：ドラッグ結線のハンドル用プロップ束） =====
 //
@@ -40,12 +40,15 @@ export interface TaskBarLinkUi {
 
 export interface TaskBarRowProps {
   taskId: string;
-  /** 行コンテナ自体の高さ（共有行モデル。CLAUDE.md v3.08）。既定はGANTT_TASK_ROW_HEIGHT(30)。
+  /** 行コンテナ自体の高さ（共有行モデル。CLAUDE.md v3.08）。既定は scale に応じたタスク行高。
       ラベル列側の対応する行コンポーネントと必ず同じ ganttRows[i].height を渡すことで、
       左右の行高さが構造的に一致する（barHeight＝バー本体の見た目の太さとは別物）。 */
   rowHeight?: number;
+  /** ズームに連動した行スケール（ganttRowScale）。行の中身（バー・文字）の大きさを決める。既定1.0 */
+  scale?: number;
   bar: { barX: number; barWidth: number } | null;
   barColor: string;
+  /** バー本体の太さ。省略時は scale に応じた通常バーの太さ */
   barHeight?: number;
   borderRadius?: string;
   isDone: boolean;
@@ -99,7 +102,7 @@ export interface TaskBarRowProps {
 }
 
 function TaskBarRowImpl({
-  taskId, rowHeight = GANTT_TASK_ROW_HEIGHT, bar, barColor, barHeight = 18, borderRadius = "9px",
+  taskId, rowHeight: rowHeightProp, scale = 1, bar, barColor, barHeight: barHeightProp, borderRadius = "9px",
   isDone, isStagnant, isChanged = false,
   isHovered, isPreview,
   dateLabel, tooltip, depBadgeLeftTitle, depBadgeRightTitle,
@@ -107,6 +110,9 @@ function TaskBarRowImpl({
   isCritical = false, progressFraction,
   onEdit, onResize, onResizeStart, onMoveStart, onMouseEnter, onMouseLeave, onEmptyDragStart,
 }: TaskBarRowProps) {
+  const m = ganttRowMetrics(scale);
+  const rowHeight = rowHeightProp ?? m.heights.task;
+  const barHeight = barHeightProp ?? m.barHeight;
   // 期日未登録タスク（bar===null）の空行ドラッグで期間を新規作成できるかどうか
   const canDragEmptyRow = !bar && !isPreview && !isDone && !!onEmptyDragStart;
   // 進捗フィル：0〜1にクランプ。0以下（未着手）は何も描画しない＝既存のバー表現を一切変えない
@@ -147,7 +153,7 @@ function TaskBarRowImpl({
     >
       {/* 期日未登録タスクの空行ヒント（ホバー時のみ。ドラッグ操作の当たり判定は行自身が担うため
           pointer-events:none で見た目だけ添える） */}
-      {canDragEmptyRow && isHovered && (
+      {canDragEmptyRow && isHovered && m.showSecondary && (
         <div aria-hidden="true" style={{
           position: "absolute", inset: "4px 8px",
           border: "1px dashed var(--color-border-primary)", borderRadius: "6px",
@@ -230,9 +236,9 @@ function TaskBarRowImpl({
                 }}
               />
             )}
-            {bar.barWidth > 52 && (
+            {bar.barWidth > 52 && m.showSecondary && (
               <span style={{
-                fontSize: "8px", color: "rgba(255,255,255,0.9)", fontWeight: "500",
+                fontSize: `${m.barLabelFontPx}px`, color: "rgba(255,255,255,0.9)", fontWeight: "500",
                 whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
                 padding: "0 4px", pointerEvents: "none",
               }}>{dateLabel}</span>
@@ -280,7 +286,7 @@ function TaskBarRowImpl({
                 position: "absolute",
                 left: bar.barX - resizeHandleWidth(bar.barWidth) / 2,
                 top: "50%", transform: "translateY(-50%)",
-                width: resizeHandleWidth(bar.barWidth), height: 22, cursor: "ew-resize", zIndex: 3,
+                width: resizeHandleWidth(bar.barWidth), height: m.handleHeight, cursor: "ew-resize", zIndex: 3,
               }}
             />
           )}
@@ -294,7 +300,7 @@ function TaskBarRowImpl({
                 position: "absolute",
                 left: bar.barX + bar.barWidth - resizeHandleWidth(bar.barWidth) / 2,
                 top: "50%", transform: "translateY(-50%)",
-                width: resizeHandleWidth(bar.barWidth), height: 22, cursor: "ew-resize", zIndex: 3,
+                width: resizeHandleWidth(bar.barWidth), height: m.handleHeight, cursor: "ew-resize", zIndex: 3,
               }}
             />
           )}
@@ -334,7 +340,7 @@ function TaskBarRowImpl({
         </>
       )}
       {/* B4：遅延/前倒しラベル。バー・ゴーストバーどちらか右端の外側に小さく表示 */}
-      {delayLabel && rightEdge > -Infinity && (
+      {delayLabel && m.showSecondary && rightEdge > -Infinity && (
         <div
           style={{
             position: "absolute",
@@ -353,7 +359,8 @@ function TaskBarRowImpl({
 function barRowPropsEqual(prev: TaskBarRowProps, next: TaskBarRowProps): boolean {
   return (
     prev.taskId === next.taskId &&
-    (prev.rowHeight ?? GANTT_TASK_ROW_HEIGHT) === (next.rowHeight ?? GANTT_TASK_ROW_HEIGHT) &&
+    (prev.rowHeight ?? null) === (next.rowHeight ?? null) &&
+    (prev.scale ?? 1) === (next.scale ?? 1) &&
     (prev.bar?.barX ?? null) === (next.bar?.barX ?? null) &&
     (prev.bar?.barWidth ?? null) === (next.bar?.barWidth ?? null) &&
     prev.barColor === next.barColor &&
@@ -425,9 +432,11 @@ export interface GanttPjLabelRowProps {
   isSelected?: boolean;
   onCheckboxClick?: (e: React.MouseEvent, taskId: string) => void;
   task: Task;
-  /** 行コンテナ自体の高さ（共有行モデル。CLAUDE.md v3.08）。既定はGANTT_TASK_ROW_HEIGHT(30)。
+  /** 行コンテナ自体の高さ（共有行モデル。CLAUDE.md v3.08）。既定は scale に応じたタスク行高。
       呼び出し側は対応する ganttRows[i].height（バー列側の TaskBarRow に渡す rowHeight と同じ値）を渡す。 */
   rowHeight?: number;
+  /** ズームに連動した行スケール（ganttRowScale）。文字・アイコンの大きさと副次要素の表示可否を決める。既定1.0 */
+  scale?: number;
   isChild: boolean;
   childCount: number;
   isHovered: boolean;
@@ -457,11 +466,13 @@ export interface GanttPjLabelRowProps {
 }
 
 export const GanttPjLabelRow = memo(function GanttPjLabelRow({
-  task, rowHeight = GANTT_TASK_ROW_HEIGHT, isChild, childCount, isHovered, isCollapsed, isSelected, onCheckboxClick,
+  task, rowHeight: rowHeightProp, scale = 1, isChild, childCount, isHovered, isCollapsed, isSelected, onCheckboxClick,
   onEdit, onHoverEnter, onHoverLeave, onToggleCollapse, onSaveAssignees,
   onSaveName, autoEditName, onInsertAfter,
   draggingId, dropZone, onDragHandleStart, onDragHandleEnd, onRowDragOver, onRowDragLeave, onRowDrop,
 }: GanttPjLabelRowProps) {
+  const m = ganttRowMetrics(scale);
+  const rowHeight = rowHeightProp ?? m.heights.task;
   const isDraggingSelf = draggingId === task.id;
   // 【バグ修正・CLAUDE.md v3.10】「＋」の表示はこのラベル行自身のローカルホバーだけに連動させる
   // （共有hoveredTaskId＝isHoveredはバー列側のホバーでも立つため、それに連動していると
@@ -535,14 +546,15 @@ export const GanttPjLabelRow = memo(function GanttPjLabelRow({
       ) : (
         <span style={{ flexShrink: 0, width: 14 }} />
       )}
-      <StatusDot status={task.status} />
+      <StatusDot status={task.status} size={m.dotPx} />
       {/* 行クリックでタスク編集モーダルが開くため、名前のインライン編集はそちらに伝播させない（クリックしても何も起きないラッパー） */}
       {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events */}
       <div
         onClick={e => e.stopPropagation()}
         style={{
           flex: 1, minWidth: 0,
-          fontSize: "11px",
+          fontSize: `${m.nameFontPx}px`,
+          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
           fontWeight: (!isChild && childCount > 0) ? "600" : "400",
           color: isChild ? "var(--color-text-tertiary)" : childCount > 0 ? "var(--color-text-primary)" : "var(--color-text-secondary)",
           textDecoration: isCompletedForProgress(task.status) ? "line-through" : "none",
@@ -556,7 +568,7 @@ export const GanttPjLabelRow = memo(function GanttPjLabelRow({
           autoEdit={autoEditName}
         />
       </div>
-      {childCount > 0 && (
+      {childCount > 0 && m.showSecondary && (
         <span style={{
           fontSize: "8px", fontWeight: "600", color: "var(--color-text-purple)",
           background: "var(--color-brand-light)", border: "1px solid var(--color-brand-border)",
@@ -566,21 +578,24 @@ export const GanttPjLabelRow = memo(function GanttPjLabelRow({
         </span>
       )}
       {/* 行クリックでタスク編集モーダルが開くため、アイコンクリックはそちらに伝播させない（クリックしても何も起きないラッパー） */}
-      {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events */}
-      <div onClick={e => e.stopPropagation()} style={{ flexShrink: 0 }}>
-        <InlineEditAssignee
-          assigneeIds={getAssigneeIds(task)}
-          projectId={task.project_id}
-          onSave={ids => onSaveAssignees(task, ids)}
-        />
-      </div>
+      {m.showSecondary && (
+        // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events
+        <div onClick={e => e.stopPropagation()} style={{ flexShrink: 0 }}>
+          <InlineEditAssignee
+            assigneeIds={getAssigneeIds(task)}
+            projectId={task.project_id}
+            onSave={ids => onSaveAssignees(task, ids)}
+            avatarSize={m.avatarPx}
+          />
+        </div>
+      )}
       {/* 行間挿入「＋」オーバーレイ（この行と下の行の「間」に新タスクを挿入。CLAUDE.md v3.06）。
           このラベル行自身のローカルホバー（isRowHovered）時のみ表示（CLAUDE.md v3.10。共有の
           isHoveredで判定するとバー列側のホバーでも出てしまうバグだったため、ローカルhoverに
           切り替えた）。position:absoluteのため行の高さ30pxには一切影響しない
           （①行ズレ修正の再発防止が最優先制約）。stopPropagationで行クリック（詳細を開く）・
           D&Dハンドル・InlineEditTextと競合しないようにする */}
-      {onInsertAfter && isRowHovered && (
+      {onInsertAfter && isRowHovered && m.showSecondary && (
         <button
           onClick={e => { e.stopPropagation(); onInsertAfter(task); }}
           onMouseDown={e => e.stopPropagation()}
@@ -609,8 +624,10 @@ export interface GanttTodoLabelRowProps {
   isSelected?: boolean;
   onCheckboxClick?: (e: React.MouseEvent, taskId: string) => void;
   task: Task;
-  /** 行コンテナ自体の高さ（共有行モデル。CLAUDE.md v3.08）。既定はGANTT_TASK_ROW_HEIGHT(30)。 */
+  /** 行コンテナ自体の高さ（共有行モデル。CLAUDE.md v3.08）。既定は scale に応じたタスク行高。 */
   rowHeight?: number;
+  /** ズームに連動した行スケール（ganttRowScale）。既定1.0 */
+  scale?: number;
   isHovered: boolean;
   onEdit: (taskId: string) => void;
   onHoverEnter: (taskId: string) => void;
@@ -620,9 +637,11 @@ export interface GanttTodoLabelRowProps {
 }
 
 export const GanttTodoLabelRow = memo(function GanttTodoLabelRow({
-  task, rowHeight = GANTT_TASK_ROW_HEIGHT, isHovered, onEdit, onHoverEnter, onHoverLeave, onSaveAssignees,
+  task, rowHeight: rowHeightProp, scale = 1, isHovered, onEdit, onHoverEnter, onHoverLeave, onSaveAssignees,
   onSaveName, isSelected, onCheckboxClick,
 }: GanttTodoLabelRowProps) {
+  const m = ganttRowMetrics(scale);
+  const rowHeight = rowHeightProp ?? m.heights.task;
   return (
     <div key={task.id} data-task-focus-id={task.id} onClick={() => onEdit(task.id)}
       onMouseEnter={() => onHoverEnter(task.id)}
@@ -637,13 +656,14 @@ export const GanttTodoLabelRow = memo(function GanttTodoLabelRow({
       cursor: "pointer", transition: "background 0.1s",
     }}>
       {onCheckboxClick && <GanttRowCheckbox task={task} checked={!!isSelected} onCheckboxClick={onCheckboxClick} />}
-      <StatusDot status={task.status} />
+      <StatusDot status={task.status} size={m.dotPx} />
       {/* 行クリックでタスク編集モーダルが開くため、名前のインライン編集はそちらに伝播させない（クリックしても何も起きないラッパー） */}
       {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events */}
       <div
         onClick={e => e.stopPropagation()}
         style={{
-          flex: 1, minWidth: 0, fontSize: "11px", color: "var(--color-text-secondary)",
+          flex: 1, minWidth: 0, fontSize: `${m.nameFontPx}px`, color: "var(--color-text-secondary)",
+          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
           textDecoration: isCompletedForProgress(task.status) ? "line-through" : "none",
           opacity: isCompletedForProgress(task.status) ? 0.6 : 1,
         }}
@@ -651,14 +671,17 @@ export const GanttTodoLabelRow = memo(function GanttTodoLabelRow({
         <InlineEditText value={task.name} onSave={name => onSaveName(task, name)} style={{ color: "inherit" }} />
       </div>
       {/* 行クリックでタスク編集モーダルが開くため、アイコンクリックはそちらに伝播させない（クリックしても何も起きないラッパー） */}
-      {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events */}
-      <div onClick={e => e.stopPropagation()} style={{ flexShrink: 0 }}>
-        <InlineEditAssignee
-          assigneeIds={getAssigneeIds(task)}
-          projectId={task.project_id}
-          onSave={ids => onSaveAssignees(task, ids)}
-        />
-      </div>
+      {m.showSecondary && (
+        // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events
+        <div onClick={e => e.stopPropagation()} style={{ flexShrink: 0 }}>
+          <InlineEditAssignee
+            assigneeIds={getAssigneeIds(task)}
+            projectId={task.project_id}
+            onSave={ids => onSaveAssignees(task, ids)}
+            avatarSize={m.avatarPx}
+          />
+        </div>
+      )}
     </div>
   );
 });
@@ -670,8 +693,10 @@ export interface GanttPersonLabelRowProps {
   isSelected?: boolean;
   onCheckboxClick?: (e: React.MouseEvent, taskId: string) => void;
   task: Task;
-  /** 行コンテナ自体の高さ（共有行モデル。CLAUDE.md v3.08）。既定はGANTT_TASK_ROW_HEIGHT(30)。 */
+  /** 行コンテナ自体の高さ（共有行モデル。CLAUDE.md v3.08）。既定は scale に応じたタスク行高。 */
   rowHeight?: number;
+  /** ズームに連動した行スケール（ganttRowScale）。既定1.0 */
+  scale?: number;
   isHovered: boolean;
   isOverdue: boolean;
   pj: Project | undefined;
@@ -682,9 +707,11 @@ export interface GanttPersonLabelRowProps {
 }
 
 export const GanttPersonLabelRow = memo(function GanttPersonLabelRow({
-  task, rowHeight = GANTT_TASK_ROW_HEIGHT, isHovered, isOverdue, pj, onEdit, onHoverEnter, onHoverLeave,
+  task, rowHeight: rowHeightProp, scale = 1, isHovered, isOverdue, pj, onEdit, onHoverEnter, onHoverLeave,
   onSaveName, isSelected, onCheckboxClick,
 }: GanttPersonLabelRowProps) {
+  const m = ganttRowMetrics(scale);
+  const rowHeight = rowHeightProp ?? m.heights.task;
   return (
     <div key={task.id} data-task-focus-id={task.id} onClick={() => onEdit(task.id)}
       onMouseEnter={() => onHoverEnter(task.id)}
@@ -699,10 +726,10 @@ export const GanttPersonLabelRow = memo(function GanttPersonLabelRow({
       cursor: "pointer", transition: "background 0.1s",
     }}>
       {onCheckboxClick && <GanttRowCheckbox task={task} checked={!!isSelected} onCheckboxClick={onCheckboxClick} />}
-      <StatusDot status={task.status} />
+      <StatusDot status={task.status} size={m.dotPx} />
       {pj && (
         <div style={{
-          width: 6, height: 6, borderRadius: "50%",
+          width: m.dotPx, height: m.dotPx, borderRadius: "50%",
           background: pj.color_tag, flexShrink: 0,
         }} />
       )}
@@ -711,7 +738,8 @@ export const GanttPersonLabelRow = memo(function GanttPersonLabelRow({
       <div
         onClick={e => e.stopPropagation()}
         style={{
-          flex: 1, minWidth: 0, fontSize: "11px",
+          flex: 1, minWidth: 0, fontSize: `${m.nameFontPx}px`,
+          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
           color: isOverdue ? "var(--color-text-danger)" : "var(--color-text-secondary)",
           textDecoration: isCompletedForProgress(task.status) ? "line-through" : "none",
           opacity: isCompletedForProgress(task.status) ? 0.6 : 1,
@@ -733,7 +761,7 @@ export const GanttPersonLabelRow = memo(function GanttPersonLabelRow({
 // 「保存後も編集状態を保つ」点が固有の要件のため、既存コンポーネントを流用せず専用実装にした）。
 // 空のままEscapeまたはフォーカスアウトで折りたたみに戻る。スコープはPJ別ビューのみ
 // （D&D並べ替えと同じスコープ方針。人別・ToDo別ビューは対象外）。
-export function GanttQuickAddTaskRow({ onAdd, height = QUICK_ADD_ROW_HEIGHT }: { onAdd: (name: string) => void; height?: number }) {
+export function GanttQuickAddTaskRow({ onAdd, height, fontPx = 11 }: { onAdd: (name: string) => void; height: number; fontPx?: number }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -760,7 +788,7 @@ export function GanttQuickAddTaskRow({ onAdd, height = QUICK_ADD_ROW_HEIGHT }: {
           height, display: "flex", alignItems: "center",
           padding: "0 8px 0 34px", cursor: "pointer",
           borderBottom: "1px solid var(--color-border-primary)",
-          color: "var(--color-text-tertiary)", fontSize: "11px",
+          color: "var(--color-text-tertiary)", fontSize: `${fontPx}px`, overflow: "hidden", whiteSpace: "nowrap",
         }}
       >＋ タスクを追加</div>
     );
@@ -782,8 +810,8 @@ export function GanttQuickAddTaskRow({ onAdd, height = QUICK_ADD_ROW_HEIGHT }: {
         onBlur={() => { if (!draft.trim()) setEditing(false); }}
         placeholder="タスク名を入力してEnter"
         style={{
-          flex: 1, minWidth: 0, fontSize: "11px",
-          padding: "2px 4px", border: "1px solid var(--color-brand)",
+          flex: 1, minWidth: 0, fontSize: `${fontPx}px`, height: Math.max(14, height - 6), boxSizing: "border-box",
+          padding: "0 4px", border: "1px solid var(--color-brand)",
           borderRadius: "var(--radius-sm)",
           background: "var(--color-bg-primary)", color: "var(--color-text-primary)",
           outline: "none",
@@ -795,10 +823,10 @@ export function GanttQuickAddTaskRow({ onAdd, height = QUICK_ADD_ROW_HEIGHT }: {
 
 // ===== StatusDot =====
 
-export function StatusDot({ status }: { status: Task["status"] }) {
+export function StatusDot({ status, size = 6 }: { status: Task["status"]; size?: number }) {
   return (
     <div style={{
-      width: 6, height: 6, borderRadius: "50%",
+      width: size, height: size, borderRadius: "50%",
       background: TASK_STATUS_STYLE[status].color, flexShrink: 0,
     }} />
   );

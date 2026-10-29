@@ -8564,3 +8564,11 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * 列が未適用の本番でも壊れないようにした：読み込みは select("*")。保存は milestoneColorPatch で、色を付けない（元も無し）ときは color キー自体を送らない。元の色を既定へ戻すときだけ null を送る。
 # * AIへ渡すマイルストーン情報（name/date/description）には color を足していない（分析に不要）。MilestoneEditModal は従来から computeFormDirty の対象外（明示保存だが未保存警告なし）で、今回も追加していない。
 # * 互換性：列追加のみ・後方互換のため MIN_CLIENT_VERSION は据え置き（3.152）。
+
+# v3.191（2026-10-29）：ガントのズームを「列幅＋行の高さ」に広げる・「全体表示」ボタン・ZOOM_MIN 8→4
+#
+# * ganttUtils.ts：ganttRowScale(dayWidth)（28で1.0・ZOOM_MINで0.6・ZOOM_MAXで1.2・間は dayWidth の対数で線形補間）／computeGanttRowHeights（group36・task30・section26・quickAdd26 の基準高×scale を四捨五入）／ganttRowMetrics（バー・つまみ・文字・アバター・ドットの寸法。タスク行高が20px未満で showSecondary=false）／resolveZoomScrollTop／fitDayWidth／weekHeaderMode・weekHeaderLabel。固定の行高定数は基準高としてここだけで使い、行配列の組み立て（buildPjViewGanttRows の heights・buildPersonViewGanttRows の第3引数）と描画は必ず computeGanttRowHeights を通す。
+# * GanttView：rowScale＝モバイル・プレビューは1.0固定／それ以外は ganttRowScale(dayWidth)。バー行・ラベル行・見出し行・◆・各種バーへ rowMetrics を渡す。ズーム時は resolveZoomScrollTop で画面上端の行を保つ（ズーム直前の scrollTop を rAF で控える）。依存矢印は DOM 実測のため自動追従。
+# * 「全体表示」：表示中の行（フィルタ・完了非表示・折りたたみ反映後）の最早開始〜最遅終了を fitDayWidth で収め、先頭へスクロール。対象なしは何もしない。i18n＝common.gantt.fitAll／fitAllTitle（ja/en）。
+# * ZOOM_MIN 8→4。週見出しは7×dayWidth が49px以上＝full／35〜48＝「W2」／35未満（dayWidth 4）＝週ラベルなしで月見出しに任せる。月見出しは overflow:hidden。parseSavedZoom は範囲を 4〜80 に（既存の保存値はそのまま有効）。
+# * テスト：ganttUtils.test.ts（スケール・高さ・メトリクス・縦補正・fit・見出し）、ganttRowScaleWiring.test.ts（ソース走査）。DB変更なし・MIN_CLIENT_VERSION 据え置き。

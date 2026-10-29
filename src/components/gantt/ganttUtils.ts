@@ -14,8 +14,9 @@ import { DEFAULT_MILESTONE_FILL, DEFAULT_MILESTONE_BORDER, milestoneFillColor } 
 export { computeRangeSelection };
 
 export const DAY_WIDTH_DEFAULT = 28;
-/** 1日あたりの幅（px）の範囲。スライドバーで連続的に調節できる（旧5段階 14〜48 は範囲内） */
-export const ZOOM_MIN = 8;
+/** 1日あたりの幅（px）の範囲。スライドバーで連続的に調節できる（旧5段階 14〜48・旧下限8 は範囲内）。
+ *  下限4は「全体を見渡す」ための値。このとき行の高さも0.6倍まで縮む（ganttRowScale） */
+export const ZOOM_MIN = 4;
 export const ZOOM_MAX = 80;
 export const ZOOM_STEP_RATIO = 1.25;
 export const STAGNANT_THRESHOLD_DAYS = 5;
@@ -427,7 +428,7 @@ export function computeBulkMoveShifts(tasks: Task[], deltaDays: number): BulkMov
 
 // ===== キーボードショートカット：ズーム / 全選択 / 範囲選択 =====
 
-// ===== ズーム（スライドバー式：1日あたり8〜80px。Ctrl/Cmd+ホイール・+/-キー・ボタンも同じ範囲に収める） =====
+// ===== ズーム（スライドバー式：1日あたり4〜80px。Ctrl/Cmd+ホイール・+/-キー・ボタンも同じ範囲に収める） =====
 
 /** 範囲内に収めて整数へ丸める（スライドバー・保存値の復元で共通） */
 export function clampDayWidth(v: number): number {
@@ -435,7 +436,7 @@ export function clampDayWidth(v: number): number {
 }
 
 /**
- * 「－」「＋」ボタンと +/- キーの1回分。×1.25／÷1.25 の等比で、必ず1px以上動かし、8〜80に収める。
+ * 「－」「＋」ボタンと +/- キーの1回分。×1.25／÷1.25 の等比で、必ず1px以上動かし、4〜80に収める。
  * 旧5段階（14/20/28/36/48）の1段あたりの変化（約1.25〜1.4倍）に近い感覚。
  */
 export function stepZoom(current: number, direction: "in" | "out"): number {
@@ -526,6 +527,41 @@ export function weekLabelForWidth(label: string, blockWidth: number): string {
   return "";
 }
 
+/**
+ * 週見出し行の表示段階。1週間分の幅（7×dayWidth）で決める。
+ *  full  : 49px以上（dayWidth 7〜）「10月W2」まで出せる
+ *  short : 35〜48px（dayWidth 5〜6）「W2」に縮める
+ *  month : 35px未満（dayWidth 4）週ラベルは出さず、上段の月見出しに任せる
+ */
+export type WeekHeaderMode = "full" | "short" | "month";
+export function weekHeaderMode(dayWidth: number): WeekHeaderMode {
+  const week = dayWidth * 7;
+  if (week >= 49) return "full";
+  if (week >= 35) return "short";
+  return "month";
+}
+
+/** 週見出し行のラベル。month 段階では空（月見出しだけで読ませる）。それ以外は weekLabelForWidth 準拠 */
+export function weekHeaderLabel(label: string, blockWidth: number, dayWidth: number): string {
+  const mode = weekHeaderMode(dayWidth);
+  if (mode === "month") return "";
+  if (mode === "short") return blockWidth >= 20 ? label.replace(/^\d+月/, "") : "";
+  return weekLabelForWidth(label, blockWidth);
+}
+
+/** 「全体表示」で表示幅の左右に残す余白（px） */
+export const FIT_VIEWPORT_MARGIN_PX = 24;
+
+/**
+ * 「全体表示」用の dayWidth。表示幅に spanDays 日がちょうど収まる整数を、ZOOM_MIN〜ZOOM_MAX に収めて返す。
+ * 日数・幅が不正なら null（呼び出し側は何もしない）。
+ */
+export function fitDayWidth(spanDays: number, viewportWidth: number): number | null {
+  if (!Number.isFinite(spanDays) || !Number.isFinite(viewportWidth) || spanDays <= 0 || viewportWidth <= 0) return null;
+  const usable = Math.max(1, viewportWidth - FIT_VIEWPORT_MARGIN_PX);
+  return clampDayWidth(Math.floor(usable / spanDays));
+}
+
 /** Ctrl/Cmd+A・Shift+クリック範囲選択の対象となる「現在の表示順」を組み立てるための入力データ */
 export interface VisibleOrderInput {
   viewMode: "pj" | "person";
@@ -601,13 +637,120 @@ export function computeDragCreateRange(dateA: string, dateB: string): { start: s
 // 左右それぞれで1回ずつ map するだけにする（表示条件の分岐を二重に書かない）ことで、
 // 行数・各行の高さが構造的に必ず一致する（ズレが原理的に起きない）。
 
-/** PJ別ビュー・人別ビュー共通のグループ見出し行の高さ（PJ行／ToDoグループ行／担当者行）。 */
+// 以下の3定数と QUICK_ADD_ROW_HEIGHT は「ズーム既定（DAY_WIDTH_DEFAULT）での基準高」。
+// 描画・行組み立てでは直接使わず、必ず computeGanttRowHeights(dayWidth) を通す（ズームで行の高さが変わるため）。
+/** PJ別ビュー・人別ビュー共通のグループ見出し行の基準高（PJ行／ToDoグループ行／担当者行）。 */
 export const GANTT_GROUP_ROW_HEIGHT = 36;
-/** タスク1件を表す行の高さ（PJ別／ToDo別／人別、全ビュー共通）。 */
+/** タスク1件を表す行の基準高（PJ別／ToDo別／人別、全ビュー共通）。 */
 export const GANTT_TASK_ROW_HEIGHT = 30;
 
-/** PJ内のグループ見出し行の高さ（PJ見出しより低く、タスク行より少し低い） */
+/** PJ内のグループ見出し行の基準高（PJ見出しより低く、タスク行より少し低い） */
 export const GANTT_SECTION_ROW_HEIGHT = 26;
+
+/** 行スケールの両端（ZOOM_MIN で最小・DAY_WIDTH_DEFAULT で1.0・ZOOM_MAX で最大） */
+export const ROW_SCALE_MIN = 0.6;
+export const ROW_SCALE_MAX = 1.2;
+/** タスク行の高さがこの値（px）未満になったら、バー内ラベル・アバター等の副次要素を隠す */
+export const ROW_SECONDARY_MIN_HEIGHT = 20;
+
+/**
+ * ズーム（dayWidth）→ 行のスケール。DAY_WIDTH_DEFAULT で 1.0、ZOOM_MIN で 0.6、ZOOM_MAX で 1.2。
+ * 間は dayWidth の対数で線形補間する（ズーム操作が等比なので、1操作あたりの見た目の変化が均一になる）。
+ */
+export function ganttRowScale(dayWidth: number): number {
+  const w = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, dayWidth));
+  if (w <= DAY_WIDTH_DEFAULT) {
+    const t = Math.log(w / ZOOM_MIN) / Math.log(DAY_WIDTH_DEFAULT / ZOOM_MIN);
+    return ROW_SCALE_MIN + (1 - ROW_SCALE_MIN) * t;
+  }
+  const t = Math.log(w / DAY_WIDTH_DEFAULT) / Math.log(ZOOM_MAX / DAY_WIDTH_DEFAULT);
+  return 1 + (ROW_SCALE_MAX - 1) * t;
+}
+
+export interface GanttRowHeights {
+  /** PJ行／ToDoグループ行／担当者行 */
+  group: number;
+  /** タスク行（全ビュー共通） */
+  task: number;
+  /** PJ内グループ見出し行 */
+  section: number;
+  /** 簡易タスク追加行 */
+  quickAdd: number;
+}
+
+/** スケールから各行の高さ（整数px）を求める。左右の列は必ず同じ値を使う */
+export function ganttRowHeightsForScale(scale: number): GanttRowHeights {
+  return {
+    group: Math.round(GANTT_GROUP_ROW_HEIGHT * scale),
+    task: Math.round(GANTT_TASK_ROW_HEIGHT * scale),
+    section: Math.round(GANTT_SECTION_ROW_HEIGHT * scale),
+    quickAdd: Math.round(QUICK_ADD_ROW_HEIGHT * scale),
+  };
+}
+
+/** dayWidth から各行の高さを求める（行配列の組み立て・全参照箇所はここを通す） */
+export function computeGanttRowHeights(dayWidth: number): GanttRowHeights {
+  return ganttRowHeightsForScale(ganttRowScale(dayWidth));
+}
+
+/** 行の中身（バー・文字・アイコン等）の寸法。行の高さと同じスケールで揃える */
+export interface GanttRowMetrics {
+  scale: number;
+  heights: GanttRowHeights;
+  /** 親タスク・通常バーの太さ（基準18） */
+  barHeight: number;
+  /** 子タスクバーの太さ（基準12） */
+  childBarHeight: number;
+  /** バー端のリサイズつまみの高さ（基準22） */
+  handleHeight: number;
+  /** ラベル列のタスク名・見出しの文字サイズ（基準11。下限10） */
+  nameFontPx: number;
+  /** バー内ラベル・日付などの小さい文字（基準8） */
+  barLabelFontPx: number;
+  /** 担当者アバター（基準16） */
+  avatarPx: number;
+  /** 状態ドット（基準6） */
+  dotPx: number;
+  /** バー内ラベル・アバター・子件数バッジ・遅延ラベル等の副次要素を出すか（タスク行高が20px未満で false） */
+  showSecondary: boolean;
+}
+
+export function ganttRowMetrics(scale: number): GanttRowMetrics {
+  const heights = ganttRowHeightsForScale(scale);
+  return {
+    scale,
+    heights,
+    barHeight: Math.max(8, Math.round(18 * scale)),
+    childBarHeight: Math.max(6, Math.round(12 * scale)),
+    handleHeight: Math.max(10, Math.round(22 * scale)),
+    nameFontPx: Math.max(10, Math.round(11 * scale)),
+    barLabelFontPx: Math.max(8, Math.round(8 * scale)),
+    avatarPx: Math.max(12, Math.round(16 * scale)),
+    dotPx: Math.max(5, Math.round(6 * scale)),
+    showSecondary: heights.task >= ROW_SECONDARY_MIN_HEIGHT,
+  };
+}
+
+/**
+ * ズームで行の高さが変わったとき、画面上端の行（とその行内の位置）が動かないよう新しい scrollTop を返す。
+ * prevHeights／nextHeights は同じ行並びの高さ配列（行数が違うときは scrollTop をそのまま返す）。
+ * 縮小で総高さが縮むとブラウザが scrollTop を切り詰めるため、呼び出し側はズーム直前の scrollTop を渡す。
+ */
+export function resolveZoomScrollTop(scrollTop: number, prevHeights: number[], nextHeights: number[]): number {
+  if (prevHeights.length === 0 || prevHeights.length !== nextHeights.length) return scrollTop;
+  let y = 0;
+  let nextY = 0;
+  for (let i = 0; i < prevHeights.length; i++) {
+    const h = prevHeights[i];
+    if (scrollTop < y + h) {
+      const frac = h > 0 ? (scrollTop - y) / h : 0;
+      return Math.max(0, Math.round(nextY + frac * nextHeights[i]));
+    }
+    y += h;
+    nextY += nextHeights[i];
+  }
+  return Math.max(0, Math.round(nextY + (scrollTop - y)));
+}
 
 /** グループの折りたたみ状態のキー（collapsed のキー。PJ id・親タスク id と衝突しない接頭辞） */
 export function ganttSectionCollapseKey(pjId: string, sectionKey: string): string {
@@ -661,6 +804,8 @@ export interface BuildPjViewGanttRowsInput {
   isPreview: boolean;
   /** PJ.id → そのPJの有効なグループ（並び順どおり）。グループが1つでもあるPJだけ見出しで区切る（v3.149） */
   sectionsByPj?: Map<string, { id: string; name: string }[]>;
+  /** 各行の高さ（ズームで変わる。computeGanttRowHeights(dayWidth)）。省略時は既定ズームの高さ */
+  heights?: GanttRowHeights;
 }
 
 /**
@@ -670,16 +815,17 @@ export interface BuildPjViewGanttRowsInput {
  */
 export function buildPjViewGanttRows(input: BuildPjViewGanttRowsInput): GanttRow[] {
   const { visibleProjects, pjOrderedTasksMap, todoGroups, todoGroupSortedMap, collapsed, isPreview, sectionsByPj } = input;
+  const H = input.heights ?? computeGanttRowHeights(DAY_WIDTH_DEFAULT);
   const rows: GanttRow[] = [];
   for (const pj of visibleProjects) {
     const isCollapsed = !!collapsed[pj.id];
-    rows.push({ kind: "pj-header", key: `pjh_${pj.id}`, height: GANTT_GROUP_ROW_HEIGHT, blockKey: pj.id, pj });
+    rows.push({ kind: "pj-header", key: `pjh_${pj.id}`, height: H.group, blockKey: pj.id, pj });
     if (!isCollapsed) {
       const ordered = pjOrderedTasksMap.get(pj.id) ?? [];
       const secs = sectionsByPj?.get(pj.id) ?? [];
       const pushTask = (task: Task, depth: number, childCount: number) => {
         if (depth > 0 && task.parent_task_id && collapsed[task.parent_task_id]) return;
-        rows.push({ kind: "task", key: `${pj.id}_${task.id}`, height: GANTT_TASK_ROW_HEIGHT, blockKey: pj.id, task, depth, childCount, pj });
+        rows.push({ kind: "task", key: `${pj.id}_${task.id}`, height: H.task, blockKey: pj.id, task, depth, childCount, pj });
       };
       if (secs.length === 0) {
         for (const { task, depth, childCount } of ordered) pushTask(task, depth, childCount);
@@ -694,7 +840,7 @@ export function buildPjViewGanttRows(input: BuildPjViewGanttRowsInput): GanttRow
           const items = ordered.filter(o => b.match(o.task));
           const collapseKey = ganttSectionCollapseKey(pj.id, b.key);
           rows.push({
-            kind: "section-header", key: `sech_${pj.id}_${b.key}`, height: GANTT_SECTION_ROW_HEIGHT, blockKey: pj.id,
+            kind: "section-header", key: `sech_${pj.id}_${b.key}`, height: H.section, blockKey: pj.id,
             pj, sectionKey: b.key, name: b.name, unsectioned: b.unsectioned, taskCount: items.length, collapseKey,
           });
           if (collapsed[collapseKey]) continue;
@@ -702,18 +848,18 @@ export function buildPjViewGanttRows(input: BuildPjViewGanttRowsInput): GanttRow
         }
       }
       if (!isPreview) {
-        rows.push({ kind: "quick-add", key: `qa_${pj.id}`, height: QUICK_ADD_ROW_HEIGHT, blockKey: pj.id, pj });
+        rows.push({ kind: "quick-add", key: `qa_${pj.id}`, height: H.quickAdd, blockKey: pj.id, pj });
       }
     }
   }
   for (const g of todoGroups) {
     const blockKey = `todo_${g.todoId}`;
     const isCollapsed = !!collapsed[blockKey];
-    rows.push({ kind: "todo-header", key: `todoh_${g.todoId}`, height: GANTT_GROUP_ROW_HEIGHT, blockKey, todo: g.todo, todoId: g.todoId, tasks: g.tasks });
+    rows.push({ kind: "todo-header", key: `todoh_${g.todoId}`, height: H.group, blockKey, todo: g.todo, todoId: g.todoId, tasks: g.tasks });
     if (!isCollapsed) {
       const sorted = todoGroupSortedMap.get(g.todoId) ?? g.tasks;
       for (const task of sorted) {
-        rows.push({ kind: "todo-task", key: `${blockKey}_${task.id}`, height: GANTT_TASK_ROW_HEIGHT, blockKey, task, todoId: g.todoId });
+        rows.push({ kind: "todo-task", key: `${blockKey}_${task.id}`, height: H.task, blockKey, task, todoId: g.todoId });
       }
     }
   }
@@ -727,15 +873,17 @@ export function buildPjViewGanttRows(input: BuildPjViewGanttRowsInput): GanttRow
 export function buildPersonViewGanttRows(
   personGroups: { member: Member; tasks: Task[] }[],
   collapsed: Record<string, boolean>,
+  heights: GanttRowHeights = computeGanttRowHeights(DAY_WIDTH_DEFAULT),
 ): GanttRow[] {
+  const H = heights;
   const rows: GanttRow[] = [];
   for (const { member, tasks } of personGroups) {
     const blockKey = `person_${member.id}`;
     const isCollapsed = !!collapsed[blockKey];
-    rows.push({ kind: "person-header", key: `personh_${member.id}`, height: GANTT_GROUP_ROW_HEIGHT, blockKey, member, tasks });
+    rows.push({ kind: "person-header", key: `personh_${member.id}`, height: H.group, blockKey, member, tasks });
     if (!isCollapsed) {
       for (const task of tasks) {
-        rows.push({ kind: "person-task", key: `${blockKey}_${task.id}`, height: GANTT_TASK_ROW_HEIGHT, blockKey, task, member });
+        rows.push({ kind: "person-task", key: `${blockKey}_${task.id}`, height: H.task, blockKey, task, member });
       }
     }
   }

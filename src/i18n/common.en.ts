@@ -64,6 +64,8 @@ export const commonEn: Record<keyof typeof commonJa, string> = {
   "common.fileAttach.dropHint": "📎 Drop file to attach",
 
   "common.assignee.unassigned": "Unassigned",
+  "common.gantt.fitAll": "Fit all",
+  "common.gantt.fitAllTitle": "Adjust the zoom so all visible tasks fit on one screen",
   "common.assignee.editTitle": "Click to change the assignee",
   "common.date.dueUnset": "No due date",
   "common.date.clearTitle": "Clear the date",

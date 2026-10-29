@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.190
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.191
 #
-最終更新：2026-10-29（v3.190）
+最終更新：2026-10-29（v3.191）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -145,7 +145,7 @@
 | 71 | 71. メンバー・PJ・タスクの表示と担当者の候補を「表示部署」単位に絞る | メンバー・PJ・タスク・担当者候補を「表示部署」単位に絞る | docs/dev/sections/s71_display-group-scope.md |
 | 72 | 72. ガイドの表示部品・削除のUndo・メンション確定の共通化 | ガイドの表示部品・削除のUndo・メンション確定の共通化 | docs/dev/sections/s72_guide-undo-mention.md |
 | 73 | 73. AIに送るPJ・タスクの範囲：「対象PJ」と aiTarget.ts | AIに送るPJ・タスクの範囲：対象PJ と aiTarget.ts | docs/dev/sections/s73_ai-target-scope.md |
-| 74 | 74. ガントの拡大縮小：スライドバー（1日あたり8〜80px）・Ctrl/Cmd＋ホイール | ガントの拡大縮小：スライドバー・Ctrl/Cmd＋ホイール | docs/dev/sections/s74_gantt-zoom.md |
+| 74 | 74. ガントの拡大縮小：スライドバー（1日あたり4〜80px。行の高さも連動）・Ctrl/Cmd＋ホイール・全体表示 | ガントの拡大縮小：スライドバー・Ctrl/Cmd＋ホイール | docs/dev/sections/s74_gantt-zoom.md |
 | 75 | 75. AI相談に資料を添付する | AI相談に資料を添付する | docs/dev/sections/s75_ai-attachment.md |
 | 76 | 76. 長く使うと重くなる問題・黙った再読み込みの対策 | 長く使うと重くなる問題・黙った再読み込みの対策（realtime・再同期） | docs/dev/sections/s76_realtime-resync.md |
 | 77 | 77. リストの中でその場でタスクを追加する | リストの中でその場でタスクを追加する | docs/dev/sections/s77_inline-add.md |

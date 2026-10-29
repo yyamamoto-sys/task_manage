@@ -8,6 +8,8 @@ import {
   stepZoom, clampDayWidth, parseSavedZoom, computeZoomScrollLeft, wheelZoomTarget,
   resolveZoomScrollLeft, resizeHandleWidth, wheelDeltaToPx, calcTaskBar,
   isDayTickLabelVisible, weekLabelForWidth, DAY_WIDTH_DEFAULT, ZOOM_MIN, ZOOM_MAX,
+  ganttRowScale, computeGanttRowHeights, ganttRowMetrics, resolveZoomScrollTop, fitDayWidth,
+  weekHeaderMode, weekHeaderLabel, ROW_SECONDARY_MIN_HEIGHT,
   computeVisibleOrderedTaskIds,
   xToDate, computeDragCreateRange,
   buildPjViewGanttRows, buildPersonViewGanttRows, computeGanttBlockRanges, computeGanttRowsTotalHeight,
@@ -487,9 +489,9 @@ describe("clampStartDate", () => {
   });
 });
 
-describe("ズーム（スライドバー式・8〜80px/日）", () => {
-  it("範囲は8〜80・既定は28のまま", () => {
-    expect(ZOOM_MIN).toBe(8);
+describe("ズーム（スライドバー式・4〜80px/日）", () => {
+  it("範囲は4〜80・既定は28のまま", () => {
+    expect(ZOOM_MIN).toBe(4);
     expect(ZOOM_MAX).toBe(80);
     expect(DAY_WIDTH_DEFAULT).toBe(28);
   });
@@ -497,7 +499,7 @@ describe("ズーム（スライドバー式・8〜80px/日）", () => {
   it("clampDayWidth：範囲内は整数に丸め、範囲外は端に収める", () => {
     expect(clampDayWidth(28)).toBe(28);
     expect(clampDayWidth(28.6)).toBe(29);
-    expect(clampDayWidth(3)).toBe(8);
+    expect(clampDayWidth(3)).toBe(4);
     expect(clampDayWidth(500)).toBe(80);
   });
 
@@ -507,11 +509,13 @@ describe("ズーム（スライドバー式・8〜80px/日）", () => {
     expect(stepZoom(20, "in")).toBe(25);
   });
 
-  it("stepZoom：8〜80に収まり、端では動かない", () => {
+  it("stepZoom：4〜80に収まり、端では動かない", () => {
     expect(stepZoom(80, "in")).toBe(80);
     expect(stepZoom(70, "in")).toBe(80);
-    expect(stepZoom(8, "out")).toBe(8);
-    expect(stepZoom(9, "out")).toBe(8);
+    expect(stepZoom(4, "out")).toBe(4);
+    expect(stepZoom(5, "out")).toBe(4);
+    expect(stepZoom(8, "out")).toBe(6);
+    expect(stepZoom(4, "in")).toBe(5);
   });
 
   it("stepZoom：端以外では必ず1px以上動く（ボタンが効かなくならない）", () => {
@@ -522,12 +526,14 @@ describe("ズーム（スライドバー式・8〜80px/日）", () => {
   it("parseSavedZoom：範囲内の数値はそのまま復元（旧5段階の値も有効）", () => {
     for (const v of [14, 20, 28, 36, 48]) expect(parseSavedZoom(String(v))).toBe(v);
     expect(parseSavedZoom("8")).toBe(8);
+    expect(parseSavedZoom("4")).toBe(4);
+    expect(parseSavedZoom("7")).toBe(7);
     expect(parseSavedZoom("80")).toBe(80);
     expect(parseSavedZoom("33")).toBe(33);
   });
 
   it("parseSavedZoom：範囲外・非数値・未保存は既定値", () => {
-    expect(parseSavedZoom("7")).toBe(DAY_WIDTH_DEFAULT);
+    expect(parseSavedZoom("3")).toBe(DAY_WIDTH_DEFAULT);
     expect(parseSavedZoom("81")).toBe(DAY_WIDTH_DEFAULT);
     expect(parseSavedZoom("0")).toBe(DAY_WIDTH_DEFAULT);
     expect(parseSavedZoom("-20")).toBe(DAY_WIDTH_DEFAULT);
@@ -557,7 +563,7 @@ describe("ズーム（スライドバー式・8〜80px/日）", () => {
     expect(wheelZoomTarget(28, 100)).toBeLessThan(28);
     expect(wheelZoomTarget(28, -100)).toBeCloseTo(35, 0);
     expect(wheelZoomTarget(79, -10000)).toBe(80);
-    expect(wheelZoomTarget(9, 10000)).toBe(8);
+    expect(wheelZoomTarget(5, 10000)).toBe(4);
     expect(wheelZoomTarget(28, 0)).toBe(28);
   });
 
@@ -988,5 +994,148 @@ describe("sortGanttTasks", () => {
       makeTask({ id: "new", name: "同名", display_order: 1 }),
     ];
     expect(sortGanttTasks(tasks, "name").map(t => t.id)).toEqual(["a", "new", "c"]);
+  });
+});
+
+describe("ズーム連動の行スケール（行の高さ＋中身）", () => {
+  it("ganttRowScale：既定で1.0・下限で0.6・上限で1.2・範囲外は端に収まる", () => {
+    expect(ganttRowScale(DAY_WIDTH_DEFAULT)).toBe(1);
+    expect(ganttRowScale(ZOOM_MIN)).toBeCloseTo(0.6, 10);
+    expect(ganttRowScale(ZOOM_MAX)).toBeCloseTo(1.2, 10);
+    expect(ganttRowScale(1)).toBeCloseTo(0.6, 10);
+    expect(ganttRowScale(500)).toBeCloseTo(1.2, 10);
+  });
+
+  it("ganttRowScale：dayWidth の対数で線形補間（等比ズームで体感が均一）＝単調増加", () => {
+    // 4→28 の中間（幾何平均 sqrt(4*28)）は 0.8（縮小側の中点）
+    expect(ganttRowScale(Math.sqrt(ZOOM_MIN * DAY_WIDTH_DEFAULT))).toBeCloseTo(0.8, 6);
+    // 28→80 の中間（幾何平均）は 1.1
+    expect(ganttRowScale(Math.sqrt(DAY_WIDTH_DEFAULT * ZOOM_MAX))).toBeCloseTo(1.1, 6);
+    for (let w = ZOOM_MIN; w < ZOOM_MAX; w++) expect(ganttRowScale(w + 1)).toBeGreaterThan(ganttRowScale(w));
+  });
+
+  it("computeGanttRowHeights：既定は従来の固定値（36/30/26/26）・ズームで変わる", () => {
+    expect(computeGanttRowHeights(DAY_WIDTH_DEFAULT)).toEqual({
+      group: GANTT_GROUP_ROW_HEIGHT, task: GANTT_TASK_ROW_HEIGHT, section: 26, quickAdd: QUICK_ADD_ROW_HEIGHT,
+    });
+    expect(computeGanttRowHeights(4)).toEqual({ group: 22, task: 18, section: 16, quickAdd: 16 });
+    expect(computeGanttRowHeights(80)).toEqual({ group: 43, task: 36, section: 31, quickAdd: 31 });
+  });
+
+  it("computeGanttRowHeights：全ズームで整数・拡大するほど低くならない（縮小側で必ず低い）", () => {
+    let prev = 0;
+    for (let w = ZOOM_MIN; w <= ZOOM_MAX; w++) {
+      const h = computeGanttRowHeights(w);
+      for (const v of Object.values(h)) expect(Number.isInteger(v)).toBe(true);
+      expect(h.task).toBeGreaterThanOrEqual(prev);
+      prev = h.task;
+    }
+    expect(computeGanttRowHeights(ZOOM_MIN).task).toBeLessThan(GANTT_TASK_ROW_HEIGHT);
+  });
+
+  it("ganttRowMetrics：副次要素はタスク行高が20px未満（dayWidth 4〜5）で隠れ、6以上で出る", () => {
+    expect(ROW_SECONDARY_MIN_HEIGHT).toBe(20);
+    expect(ganttRowMetrics(ganttRowScale(4)).showSecondary).toBe(false);
+    expect(ganttRowMetrics(ganttRowScale(5)).showSecondary).toBe(false);
+    expect(ganttRowMetrics(ganttRowScale(6)).showSecondary).toBe(true);
+    expect(ganttRowMetrics(1).showSecondary).toBe(true);
+  });
+
+  it("ganttRowMetrics：既定は従来の寸法（バー18/12・つまみ22・文字11・アバター16）・縮小しても文字は10px以上", () => {
+    const m = ganttRowMetrics(1);
+    expect([m.barHeight, m.childBarHeight, m.handleHeight, m.nameFontPx, m.avatarPx]).toEqual([18, 12, 22, 11, 16]);
+    for (let w = ZOOM_MIN; w <= ZOOM_MAX; w++) {
+      const x = ganttRowMetrics(ganttRowScale(w));
+      expect(x.nameFontPx).toBeGreaterThanOrEqual(10);
+      // バーは常に行に収まる（行高−バー高が正）
+      expect(x.heights.task).toBeGreaterThan(x.barHeight);
+    }
+  });
+
+  it("行配列の構築は heights を使う：全行がズームの高さになり、左右の合計高さも一致する", () => {
+    const heights = computeGanttRowHeights(4);
+    const rows = buildPersonViewGanttRows(
+      [{ member: { id: "m1" } as Member, tasks: [makeTask({ id: "a" }), makeTask({ id: "b" })] }],
+      {}, heights,
+    );
+    expect(rows.map(r => r.height)).toEqual([heights.group, heights.task, heights.task]);
+    expect(computeGanttRowsTotalHeight(rows)).toBe(heights.group + heights.task * 2);
+  });
+
+  it("resolveZoomScrollTop：画面上端の行と行内の位置が保たれる", () => {
+    const prev = [36, 30, 30, 30];
+    const next = [22, 18, 18, 18];
+    // 2行目（y=36〜66）の中ほど（+15）が上端 → 新しい2行目（22〜40）の中ほど（+9）
+    expect(resolveZoomScrollTop(51, prev, next)).toBe(31);
+    expect(resolveZoomScrollTop(0, prev, next)).toBe(0);
+    // 末尾を越えた分はそのまま足す
+    expect(resolveZoomScrollTop(126 + 10, prev, next)).toBe(76 + 10);
+    // 行数が違う（折りたたみ等と同時）／空なら動かさない
+    expect(resolveZoomScrollTop(51, prev, [22, 18])).toBe(51);
+    expect(resolveZoomScrollTop(51, [], [])).toBe(51);
+  });
+});
+
+describe("全体表示 fitDayWidth", () => {
+  it("表示幅に収まる整数の dayWidth（余白24px分を引く）", () => {
+    // (1000-24)/90 = 10.84 → 10
+    expect(fitDayWidth(90, 1000)).toBe(10);
+    // (1000-24)/30 = 32.5 → 32
+    expect(fitDayWidth(30, 1000)).toBe(32);
+  });
+
+  it("収めた結果は必ず表示幅以内（切り捨て）", () => {
+    for (const span of [7, 31, 90, 180, 365]) {
+      const w = fitDayWidth(span, 1200);
+      expect(w).not.toBeNull();
+      if (w! > ZOOM_MIN) expect(w! * span).toBeLessThanOrEqual(1200);
+    }
+  });
+
+  it("上限・下限に収める（短い期間は80まで・長い期間は4まで）", () => {
+    expect(fitDayWidth(3, 1000)).toBe(ZOOM_MAX);
+    expect(fitDayWidth(2000, 1000)).toBe(ZOOM_MIN);
+  });
+
+  it("日数・幅が不正なら null（何もしない）", () => {
+    expect(fitDayWidth(0, 1000)).toBeNull();
+    expect(fitDayWidth(-5, 1000)).toBeNull();
+    expect(fitDayWidth(NaN, 1000)).toBeNull();
+    expect(fitDayWidth(30, 0)).toBeNull();
+    expect(fitDayWidth(30, NaN)).toBeNull();
+  });
+
+  it("極端に狭い幅でも下限に収まる", () => {
+    expect(fitDayWidth(30, 10)).toBe(ZOOM_MIN);
+  });
+});
+
+describe("狭い幅の見出し（dayWidth 4〜）", () => {
+  it("weekHeaderMode：1週間の幅で full(49px〜)／short(35〜48)／month(35未満)", () => {
+    expect(weekHeaderMode(28)).toBe("full");
+    expect(weekHeaderMode(7)).toBe("full");
+    expect(weekHeaderMode(6)).toBe("short");
+    expect(weekHeaderMode(5)).toBe("short");
+    expect(weekHeaderMode(4)).toBe("month");
+  });
+
+  it("weekHeaderLabel：month 段階は週ラベルを出さない（月見出しに任せる）", () => {
+    expect(weekHeaderLabel("10月W2", 28, 4)).toBe("");
+    expect(weekHeaderLabel("10月W2", 12, 4)).toBe("");
+  });
+
+  it("weekHeaderLabel：short は「W2」に縮め、半端な週（20px未満）は空・full は従来どおり", () => {
+    expect(weekHeaderLabel("10月W2", 35, 5)).toBe("W2");
+    expect(weekHeaderLabel("10月W2", 15, 5)).toBe("");
+    expect(weekHeaderLabel("10月W2", 196, 28)).toBe("10月W2");
+    expect(weekHeaderLabel("10月W2", 21, 7)).toBe("W2");
+  });
+
+  it("月曜だけの日目盛り（12px未満）は4px/日でも月曜の間隔(28px)が数字2桁(約12px)より広い", () => {
+    const mon = new Date(2026, 9, 12);
+    const tue = new Date(2026, 9, 13);
+    expect(isDayTickLabelVisible(4, mon)).toBe(true);
+    expect(isDayTickLabelVisible(4, tue)).toBe(false);
+    expect(7 * ZOOM_MIN).toBeGreaterThanOrEqual(24);
   });
 });

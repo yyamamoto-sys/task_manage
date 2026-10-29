@@ -37,9 +37,11 @@ interface Props {
   /** タスクのPJ。既存PJならその参加者を候補に足す（独立タスクは null） */
   projectId: string | null;
   onSave: (ids: string[]) => void;
+  /** トリガー（行内の担当者アイコン）のアバター径。ガントのズーム連動用。既定16 */
+  avatarSize?: number;
 }
 
-export function InlineEditAssignee({ assigneeIds, projectId, onSave }: Props) {
+export function InlineEditAssignee({ assigneeIds, projectId, onSave, avatarSize = 16 }: Props) {
   const t = useT();
   const [open, setOpen] = useState(false);
   const allMembers = useAppStore(s => s.members);
@@ -109,7 +111,7 @@ export function InlineEditAssignee({ assigneeIds, projectId, onSave }: Props) {
       >
         {assignees.length > 0 ? (
           <>
-            {assignees.slice(0, 3).map(m => <Avatar key={m.id} member={m} size={16} />)}
+            {assignees.slice(0, 3).map(m => <Avatar key={m.id} member={m} size={avatarSize} />)}
             {assignees.length > 3 && (
               <span style={{ fontSize: "9px", color: "var(--color-text-tertiary)" }}>+{assignees.length - 3}</span>
             )}
