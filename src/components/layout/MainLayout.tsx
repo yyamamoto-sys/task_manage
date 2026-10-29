@@ -2593,6 +2593,8 @@ function Sidebar({
         {/* ラボ サブメニュー（🧪ボタンで開閉）。activeプロップはNAV_ITEMSと同じNavItemを使い、
             現在開いているラボビューを強調表示する（CLAUDE.md Section 20・v3.34）。 */}
         {labOpen && (
+          // 子のボタンのクリックを拾って閉じるだけの包み（キーボード操作は子のボタンが受ける）
+          // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
           <div ref={labMenuRef} onClick={() => { if (!tourRunning) setLabOpen(false); }} style={{ borderTop: "1px solid var(--color-border-primary)", padding: c ? "4px 0" : "4px 6px" }}>
             <NavItem active={activeLabView === "structure"} icon={<span style={{ fontSize: "13px" }}>🏢</span>} label={t("layout.lab.structure.label")} tooltip={t("layout.lab.structure.desc")} onClick={onOpenStructure} collapsed={c} />
             <NavItem active={activeLabView === "graph"} icon={<GraphIcon />} label={t("layout.lab.graph.label")} tooltip={t("layout.lab.graph.tooltip")} onClick={onOpenGraph} collapsed={c} />
@@ -2613,6 +2615,8 @@ function Sidebar({
           「その他」を開くと項目がこの行の上に積まれる（独立した見出し行は持たない）。 */}
       <div style={{ borderTop: "1px solid var(--color-border-primary)", padding: c ? "6px 4px" : "4px", flexShrink: 0 }}>
         {(!showMiscGroup || miscOpen) && (
+        // 子のボタンのクリックを拾って閉じるだけの包み（キーボード操作は子のボタンが受ける）
+        // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
         <div ref={miscItemsRef} onClick={() => { if (showMiscGroup && !tourRunning) setMiscOpen(false); }}>
         {/* 📖 ガイド（全モード共通・全画面オーバーレイ） */}
         <button
