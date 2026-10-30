@@ -59,7 +59,8 @@ import { formatErrorForUser } from "../../lib/errorMessage";
 import { showToast } from "../common/Toast";
 import { CustomSelect, type SelectOption } from "../common/CustomSelect";
 import { todayStr, formatMD } from "../../lib/date";
-import { childrenOf } from "../../lib/taskHierarchy";
+import { orderTasksAsTree, sortTasksByOrder, indentLevelOf } from "../../lib/taskHierarchy";
+import { saveTasksInDepthOrder } from "../../lib/task/saveInDepthOrder";
 import { TASK_STATUS_LABEL, TASK_STATUS_STYLE } from "../../lib/taskMeta";
 import {
   defaultCheckedTaskIds, buildInheritedTasks, buildInheritedDependencies, buildInheritedMilestones,
@@ -161,8 +162,9 @@ export function ProjectCreateModal({ currentUser, onClose, onCreated }: Props) {
     [mode, originProjectId, rawTasksAll],
   );
 
-  const topLevelOriginTasks = useMemo(
-    () => originTasks.filter(t => !t.parent_task_id).sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0)),
+  // 引き継ぎ元PJのタスクを任意の深さの木順に並べる（親→その子孫。兄弟は display_order 順）
+  const originTaskTree = useMemo(
+    () => orderTasksAsTree(originTasks, ts => [...ts].sort(sortTasksByOrder)),
     [originTasks],
   );
 
@@ -317,22 +319,8 @@ export function ProjectCreateModal({ currentUser, onClose, onCreated }: Props) {
     let failedDeps = 0;
     let depPairsLength = 0;
     if (tasks.length > 0) {
-      const topLevel = tasks.filter(t => !t.parent_task_id);
-      const children = tasks.filter(t => t.parent_task_id);
-
-      const topResults = await Promise.allSettled(
-        topLevel.map(t => state.saveTask(t, { skipCascade: true })),
-      );
-      const succeededIds = new Set<string>();
-      topLevel.forEach((t, i) => { if (topResults[i].status === "fulfilled") succeededIds.add(t.id); });
-
-      const childrenToSave = children.map(c =>
-        c.parent_task_id && !succeededIds.has(c.parent_task_id) ? { ...c, parent_task_id: null } : c,
-      );
-      const childResults = await Promise.allSettled(
-        childrenToSave.map(t => state.saveTask(t, { skipCascade: true })),
-      );
-      childrenToSave.forEach((t, i) => { if (childResults[i].status === "fulfilled") succeededIds.add(t.id); });
+      // 深さの浅い順に段ごと保存する（親が先。親の保存が失敗した子は親なしに落とす。FK制約対応）
+      const succeededIds = await saveTasksInDepthOrder(tasks, t => state.saveTask(t, { skipCascade: true }));
 
       const successfulIdMap = new Map([...idMap].filter(([, newId]) => succeededIds.has(newId)));
       const depPairs = buildInheritedDependencies(liveOriginDeps, successfulIdMap);
@@ -588,13 +576,11 @@ export function ProjectCreateModal({ currentUser, onClose, onCreated }: Props) {
                   </div>
                 ) : (
                   <div style={checklistBoxStyle}>
-                    {topLevelOriginTasks.map(t => (
-                      <div key={t.id}>
-                        <TaskCheckRow task={t} checked={checkedTaskIds.has(t.id)} onToggle={toggleTask} members={members} offsetDays={dateOffsetDays} />
-                        {childrenOf(originTasks, t.id).map(c => (
-                          <TaskCheckRow key={c.id} task={c} checked={checkedTaskIds.has(c.id)} onToggle={toggleTask} members={members} offsetDays={dateOffsetDays} indent />
-                        ))}
-                      </div>
+                    {originTaskTree.map(({ task: t, depth }) => (
+                      <TaskCheckRow
+                        key={t.id} task={t} checked={checkedTaskIds.has(t.id)} onToggle={toggleTask}
+                        members={members} offsetDays={dateOffsetDays} indent={indentLevelOf(depth)}
+                      />
                     ))}
                   </div>
                 )}
@@ -820,7 +806,8 @@ function TaskCheckRow({ task, checked, onToggle, members, indent, offsetDays }: 
   checked: boolean;
   onToggle: (id: string) => void;
   members: Member[];
-  indent?: boolean;
+  /** 木の深さ（0=最上位）。深さぶんインデントして「↳」を出す */
+  indent?: number;
   offsetDays: number | null;
 }) {
   const assignee = members.find(m => m.id === task.assignee_member_id);
@@ -830,7 +817,7 @@ function TaskCheckRow({ task, checked, onToggle, members, indent, offsetDays }: 
     <label
       style={{
         display: "flex", alignItems: "center", gap: "7px", padding: "4px 0",
-        paddingLeft: indent ? "20px" : 0, cursor: "pointer", fontSize: "12px",
+        paddingLeft: indent ? `${20 * indent}px` : 0, cursor: "pointer", fontSize: "12px",
         color: "var(--color-text-primary)", borderBottom: "1px solid var(--color-border-primary)",
       }}
     >

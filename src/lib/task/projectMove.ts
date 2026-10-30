@@ -9,6 +9,7 @@
 //  - すでに移動先PJに居るタスクは対象外（件数にも含めない）
 
 import type { Task } from "../localData/types";
+import { ancestorsOf, buildChildrenMap, descendantsOf } from "../taskHierarchy";
 
 export interface ProjectMovePatch {
   id: string;
@@ -62,8 +63,21 @@ export function planProjectMove(
     display_order: t.display_order ?? 0,
   });
 
-  // 親（最上位）：選択された親と、その子（選択の有無を問わず）
-  for (const t of selected) {
+  // 移動の起点＝祖先に選択されたものが居ないタスク。起点が動くと、その子孫（選択の有無を問わず・何段でも）が連れて動く
+  const childrenMap = buildChildrenMap(live);
+  const roots = selected.filter(t => !ancestorsOf(t, byId).some(a => selectedIds.has(a.id)));
+  const carry = (root: Task) => {
+    for (const c of descendantsOf(root.id, childrenMap)) {
+      if (c.project_id === targetProjectId || planned.has(c.id)) continue;
+      moves.push({
+        id: c.id, kind: selectedIds.has(c.id) ? "selectedChild" : "carriedChild", prev: prevOf(c),
+        patch: { project_id: targetProjectId, section_id: null },
+      });
+      planned.add(c.id);
+    }
+  };
+  // 最上位の起点：選択された親と、その子孫
+  for (const t of roots) {
     if (!isTop(t) || t.parent_task_id) continue;
     if (t.project_id !== targetProjectId) {
       moves.push({
@@ -72,27 +86,19 @@ export function planProjectMove(
       });
       planned.add(t.id);
     }
-    for (const c of live.filter(x => x.parent_task_id === t.id)) {
-      if (c.project_id === targetProjectId || planned.has(c.id)) continue;
-      moves.push({
-        id: c.id, kind: selectedIds.has(c.id) ? "selectedChild" : "carriedChild", prev: prevOf(c),
-        patch: { project_id: targetProjectId, section_id: null },
-      });
-      planned.add(c.id);
-    }
+    carry(t);
   }
-  // 子だけ選ばれている（親は選ばれていない）／親が見当たらない子：親から外して最上位にする
-  for (const t of selected) {
+  // 子だけ選ばれている（親は選ばれていない）／親が見当たらない子：親から外して最上位にする（子孫は連れて動く）
+  for (const t of roots) {
     if (planned.has(t.id)) continue;
-    const parent = t.parent_task_id ? byId.get(t.parent_task_id) : undefined;
-    if (!parent && t.parent_task_id == null) continue; // 親タスクはここまでに処理済み
-    if (parent && selectedIds.has(parent.id)) continue; // 親ごと処理済み
+    if (t.parent_task_id == null) continue; // 最上位はここまでに処理済み
     if (t.project_id === targetProjectId) continue;
     moves.push({
       id: t.id, kind: "detached", prev: prevOf(t),
       patch: { project_id: targetProjectId, section_id: null, parent_task_id: null, display_order: nextOrder++ },
     });
     planned.add(t.id);
+    carry(t);
   }
 
   const detachedCount = moves.filter(m => m.kind === "detached").length;

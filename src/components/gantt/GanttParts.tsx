@@ -8,6 +8,7 @@ import { InlineEditAssignee } from "../common/InlineEditAssignee";
 import { InlineEditText } from "../common/InlineEditText";
 import type { LinkSide } from "../../lib/dependencies/linkDirection";
 import { CRITICAL_COLOR, resizeHandleWidth, ganttRowMetrics } from "./ganttUtils";
+import { indentLevelOf } from "../../lib/taskHierarchy";
 
 // ===== TaskBarLinkUi（B5：ドラッグ結線のハンドル用プロップ束） =====
 //
@@ -438,6 +439,8 @@ export interface GanttPjLabelRowProps {
   /** ズームに連動した行スケール（ganttRowScale）。文字・アイコンの大きさと副次要素の表示可否を決める。既定1.0 */
   scale?: number;
   isChild: boolean;
+  /** 木の深さ（最上位=0）。インデントに使う（MAX_INDENT_LEVEL で頭打ち）。省略時は isChild から 0/1 */
+  depth?: number;
   childCount: number;
   isHovered: boolean;
   isCollapsed: boolean;
@@ -466,7 +469,7 @@ export interface GanttPjLabelRowProps {
 }
 
 export const GanttPjLabelRow = memo(function GanttPjLabelRow({
-  task, rowHeight: rowHeightProp, scale = 1, isChild, childCount, isHovered, isCollapsed, isSelected, onCheckboxClick,
+  task, rowHeight: rowHeightProp, scale = 1, isChild, depth: depthProp, childCount, isHovered, isCollapsed, isSelected, onCheckboxClick,
   onEdit, onHoverEnter, onHoverLeave, onToggleCollapse, onSaveAssignees,
   onSaveName, autoEditName, onInsertAfter,
   draggingId, dropZone, onDragHandleStart, onDragHandleEnd, onRowDragOver, onRowDragLeave, onRowDrop,
@@ -484,7 +487,7 @@ export const GanttPjLabelRow = memo(function GanttPjLabelRow({
   // （ListTaskRowと同じ理由：レイアウト自体が動くとドラッグ中のdragover/dragleaveが
   // 高頻度で往復し、カクつき・フリーズの原因になる）
   const shadowLayers: string[] = [];
-  if (!isChild && childCount > 0) shadowLayers.push("inset 3px 0 0 var(--color-brand)");
+  if (childCount > 0) shadowLayers.push("inset 3px 0 0 var(--color-brand)");
   else if (isChild) shadowLayers.push("inset 2px 0 0 var(--color-brand-border)");
   if (dropZone === "before") shadowLayers.push("inset 0 2px 0 var(--color-brand)");
   if (dropZone === "after") shadowLayers.push("inset 0 -2px 0 var(--color-brand)");
@@ -499,12 +502,11 @@ export const GanttPjLabelRow = memo(function GanttPjLabelRow({
       onKeyDown={e => { if (e.key === "Enter" || e.key === " ") onEdit(task.id); }}
       style={{
       height: rowHeight, display: "flex", alignItems: "center",
-      gap: "5px", padding: isChild ? "0 8px 0 40px" : "0 8px 0 10px",
+      gap: "5px", padding: isChild ? `0 8px 0 ${10 + 30 * indentLevelOf(depthProp ?? 1)}px` : "0 8px 0 10px",
       borderBottom: "1px solid var(--color-border-primary)",
       borderTop: (!isChild && childCount > 0) ? "2px solid var(--color-border-primary)" : undefined,
       background: isHovered
         ? "var(--color-bg-secondary)"
-        : isChild ? "var(--color-bg-primary)"
         : childCount > 0 ? "var(--color-bg-secondary)"
         : "var(--color-bg-primary)",
       boxShadow: shadowLayers.length > 0 ? shadowLayers.join(", ") : "none",
@@ -527,7 +529,7 @@ export const GanttPjLabelRow = memo(function GanttPjLabelRow({
         style={{ width: 10, textAlign: "center", flexShrink: 0, cursor: "grab", color: "var(--color-text-tertiary)", fontSize: "11px", lineHeight: 1, userSelect: "none" }}
       >⠿</span>
       {onCheckboxClick && <GanttRowCheckbox task={task} checked={!!isSelected} onCheckboxClick={onCheckboxClick} />}
-      {isChild ? (
+      {isChild && childCount === 0 ? (
         <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", flexShrink: 0, marginLeft: "-10px" }}>↳</span>
       ) : childCount > 0 ? (
         <span
@@ -555,8 +557,8 @@ export const GanttPjLabelRow = memo(function GanttPjLabelRow({
           flex: 1, minWidth: 0,
           fontSize: `${m.nameFontPx}px`,
           overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-          fontWeight: (!isChild && childCount > 0) ? "600" : "400",
-          color: isChild ? "var(--color-text-tertiary)" : childCount > 0 ? "var(--color-text-primary)" : "var(--color-text-secondary)",
+          fontWeight: childCount > 0 ? "600" : "400",
+          color: childCount > 0 ? "var(--color-text-primary)" : isChild ? "var(--color-text-tertiary)" : "var(--color-text-secondary)",
           textDecoration: isCompletedForProgress(task.status) ? "line-through" : "none",
           opacity: isCompletedForProgress(task.status) ? 0.6 : 1,
         }}
@@ -689,6 +691,8 @@ export const GanttTodoLabelRow = memo(function GanttTodoLabelRow({
 // ===== GanttPersonLabelRow（人別ビュー・ラベル列のタスク行） =====
 
 export interface GanttPersonLabelRowProps {
+  /** 名前の前に出す「↳」（深さぶん）。省略時は親を持てば「↳ 」1つ */
+  arrowPrefix?: string;
   /** 一括選択チェックボックス（v3.160）。onCheckboxClick が無ければ（AI提案プレビュー）描かない */
   isSelected?: boolean;
   onCheckboxClick?: (e: React.MouseEvent, taskId: string) => void;
@@ -708,7 +712,7 @@ export interface GanttPersonLabelRowProps {
 
 export const GanttPersonLabelRow = memo(function GanttPersonLabelRow({
   task, rowHeight: rowHeightProp, scale = 1, isHovered, isOverdue, pj, onEdit, onHoverEnter, onHoverLeave,
-  onSaveName, isSelected, onCheckboxClick,
+  onSaveName, isSelected, onCheckboxClick, arrowPrefix,
 }: GanttPersonLabelRowProps) {
   const m = ganttRowMetrics(scale);
   const rowHeight = rowHeightProp ?? m.heights.task;
@@ -745,7 +749,7 @@ export const GanttPersonLabelRow = memo(function GanttPersonLabelRow({
           opacity: isCompletedForProgress(task.status) ? 0.6 : 1,
         }}
       >
-        {task.parent_task_id ? "↳ " : ""}
+        {arrowPrefix ?? (task.parent_task_id ? "↳ " : "")}
         <InlineEditText value={task.name} onSave={name => onSaveName(task, name)} style={{ color: "inherit" }} />
       </div>
     </div>

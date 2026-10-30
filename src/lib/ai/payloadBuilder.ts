@@ -18,7 +18,7 @@ import { deliverableForAi } from "../task/deliverable";
 import { dateToQuarter, currentQuarter, getMondayAnchors, toDateStr } from "../date";
 import { effectiveTfQuarter } from "../okr/tfQuarter";
 import { getAssigneeIds } from "../taskMeta";
-import { isParentTask } from "../taskHierarchy";
+import { isParentTask, ancestorsOf, buildTaskById } from "../taskHierarchy";
 import { computeMemberWorkloadRows } from "../workload/computeWorkload";
 
 // ===== 型定義 =====
@@ -276,6 +276,14 @@ export function buildPayload(opts: BuildOptions): BuildPayloadResult {
 
   // parent_task_name の解決用：全タスクの UUID → name マップ（プロジェクトまたぎで参照できる）
   const taskNameByUuid = new Map(activeTasks.map(t => [t.id, t.name]));
+  const taskByIdActive = buildTaskById(activeTasks);
+  // 親の上にさらに親が居る（3段以上の）タスクだけ、祖先の経路「A > B」を足す
+  const ancestorPathOf = (t: { id: string; parent_task_id?: string | null }): string | undefined => {
+    const full = taskByIdActive.get(t.id);
+    if (!full) return undefined;
+    const anc = ancestorsOf(full, taskByIdActive);
+    return anc.length >= 2 ? anc.map(a => a.name).reverse().join(" > ") : undefined;
+  };
 
   // PJ内のグループ名（削除済みは引かない）
   const sectionNameById = new Map((opts.projectSections ?? []).filter(s => !s.is_deleted).map(s => [s.id, s.name]));
@@ -312,6 +320,7 @@ export function buildPayload(opts: BuildOptions): BuildPayloadResult {
         // completed_atはYYYY-MM-DD形式の日付部分のみ渡す（時刻は不要）
         completed_at: task.completed_at ? task.completed_at.slice(0, 10) : null,
         parent_task_name: task.parent_task_id ? (taskNameByUuid.get(task.parent_task_id) ?? null) : null,
+        ...(ancestorPathOf(task) ? { parent_task_path: ancestorPathOf(task) } : {}),
         tags: task.tags ?? [],
       };
     });

@@ -19,7 +19,7 @@ import { calcProgressPct } from "./stats";
 import { isCompletedForProgress } from "./taskMeta";
 
 /** display_order（未設定は0）→ created_at の昇順で安定ソートする内部ヘルパー */
-function sortByOrder(a: Task, b: Task): number {
+export function sortTasksByOrder(a: Task, b: Task): number {
   const oa = a.display_order ?? 0;
   const ob = b.display_order ?? 0;
   if (oa !== ob) return oa - ob;
@@ -35,7 +35,7 @@ function sortByOrder(a: Task, b: Task): number {
 export function childrenOf(tasks: Task[], parentId: string, dependencies?: TaskDependency[]): Task[] {
   const base = tasks
     .filter(t => !t.is_deleted && t.parent_task_id === parentId)
-    .sort(sortByOrder);
+    .sort(sortTasksByOrder);
   return dependencies ? orderSiblingsWithDependencies(base, dependencies) : base;
 }
 
@@ -154,18 +154,14 @@ function allChildrenTerminal(children: Task[]): boolean {
 }
 
 /**
- * 子から親ステータスを算出：
+ * 子から親ステータスを算出（末端まで再帰。子が孫を持つなら、その子の実効ステータスを使う）：
  * - 子0件 → そのタスク自身の status（フラット/葉タスクは従来どおり手動値）
  * - 全員 done または cancelled → "done"
  * - 全todo → "todo"
  * - それ以外（in_progress混在・on_hold混在・done/todo混在など）→ "in_progress"
  */
 export function rollupStatus(task: Task, tasks: Task[]): Task["status"] {
-  const children = childrenOf(tasks, task.id);
-  if (children.length === 0) return task.status;
-  if (allChildrenTerminal(children)) return "done";
-  if (children.every(c => c.status === "todo")) return "todo";
-  return "in_progress";
+  return computeRollups(tasks).get(task.id)?.status ?? task.status;
 }
 
 /**
@@ -187,14 +183,14 @@ export function computeParentAutoStatus(parent: Task, children: Task[]): Task["s
   return null;
 }
 
-/** 子の完了集計（calcProgressPct 使用） */
+/** 完了集計（calcProgressPct 使用）。数えるのは「末端（子を持たない）タスク」の完了数／総数。 */
 export function parentProgress(
   tasks: Task[],
   parentId: string,
 ): { done: number; total: number; pct: number } {
-  const children = childrenOf(tasks, parentId);
-  const total = children.length;
-  const done = children.filter(c => c.status === "done").length;
+  const r = computeRollups(tasks).get(parentId);
+  const total = r?.total ?? 0;
+  const done = r?.done ?? 0;
   return { done, total, pct: calcProgressPct(done, total) };
 }
 
@@ -205,31 +201,224 @@ export interface ParentDerived {
   pct: number;
 }
 
-/**
- * 全親タスクのステータス・進捗を1パス（O(n)）で一括算出する。
- * rollupStatus/parentProgress を一覧の行ごとに呼ぶと、呼ぶたびに childrenOf() が
- * 全タスクを走査するため実質 O(件数²) になる（一覧・カンバン等で多数の親を扱う場合に問題化）。
- * ロジックは rollupStatus/parentProgress と完全に同一・同じ結果を返す。
- * 単発でよい呼び出し（1タスクだけ知りたい）は従来どおり rollupStatus/parentProgress を使う。
- */
-export function buildParentDerivedMap(tasks: Task[]): Map<string, ParentDerived> {
-  const childrenByParent = new Map<string, Task[]>();
+/** 階層の深さの打ち切り（循環・異常データでも止まるための上限。DB トリガーの上限と揃える） */
+export const MAX_TASK_DEPTH = 32;
+/** 画面のインデントに使う深さの上限（これ以上深くても横にはみ出さない） */
+export const MAX_INDENT_LEVEL = 8;
+
+/** 非削除タスクの親ID→子の配列（入力順を保つ。並べ替えは呼び出し側） */
+export function buildChildrenMap(tasks: Task[]): Map<string, Task[]> {
+  const map = new Map<string, Task[]>();
   for (const t of tasks) {
     if (t.is_deleted || !t.parent_task_id) continue;
-    const arr = childrenByParent.get(t.parent_task_id) ?? [];
+    const arr = map.get(t.parent_task_id) ?? [];
     arr.push(t);
-    childrenByParent.set(t.parent_task_id, arr);
+    map.set(t.parent_task_id, arr);
   }
-  const result = new Map<string, ParentDerived>();
-  for (const [parentId, children] of childrenByParent) {
-    const total = children.length;
-    const done  = children.filter(c => c.status === "done").length;
-    const status: Task["status"] = allChildrenTerminal(children) ? "done"
-      : children.every(c => c.status === "todo") ? "todo"
+  return map;
+}
+
+export function buildTaskById(tasks: Task[]): Map<string, Task> {
+  return new Map(tasks.map(t => [t.id, t]));
+}
+
+/** 祖先タスク列（直近の親が先頭）。byId に無い・循環・MAX_TASK_DEPTH 超で打ち切る。 */
+export function ancestorsOf(task: Task, byId: Map<string, Task>): Task[] {
+  const out: Task[] = [];
+  const seen = new Set<string>([task.id]);
+  let cur = task.parent_task_id ? byId.get(task.parent_task_id) : undefined;
+  while (cur && !seen.has(cur.id) && out.length < MAX_TASK_DEPTH) {
+    out.push(cur);
+    seen.add(cur.id);
+    cur = cur.parent_task_id ? byId.get(cur.parent_task_id) : undefined;
+  }
+  return out;
+}
+
+/** 最上位=0 の深さ。byId に親が居なければ 0 扱い。 */
+export function taskDepthOf(task: Task, byId: Map<string, Task>): number {
+  return ancestorsOf(task, byId).length;
+}
+
+/** 子孫タスク列（幅優先・root 自身は含まない）。循環があっても各タスクは1回だけ。 */
+export function descendantsOf(rootId: string, childrenMap: Map<string, Task[]>): Task[] {
+  const out: Task[] = [];
+  const seen = new Set<string>([rootId]);
+  let frontier = [rootId];
+  for (let level = 0; level < MAX_TASK_DEPTH && frontier.length > 0; level++) {
+    const next: string[] = [];
+    for (const id of frontier) {
+      for (const c of childrenMap.get(id) ?? []) {
+        if (seen.has(c.id)) continue;
+        seen.add(c.id);
+        out.push(c);
+        next.push(c.id);
+      }
+    }
+    frontier = next;
+  }
+  return out;
+}
+
+/** taskId の親を newParentId にすると循環するか（自分自身・自分の子孫を親にする場合に true） */
+export function wouldCreateParentCycle(tasks: Task[], taskId: string, newParentId: string | null | undefined): boolean {
+  if (!newParentId) return false;
+  if (newParentId === taskId) return true;
+  const byId = buildTaskById(tasks);
+  const np = byId.get(newParentId);
+  if (!np) return false;
+  return ancestorsOf(np, byId).some(a => a.id === taskId);
+}
+
+/** task から親をたどって、同じタスクに戻る（循環している）か。親が居ない・上限に達するまでに終われば false。 */
+export function hasParentCycle(task: Task, byId: Map<string, Task>): boolean {
+  const seen = new Set<string>([task.id]);
+  let cur = task.parent_task_id ? byId.get(task.parent_task_id) : undefined;
+  for (let i = 0; cur && i < MAX_TASK_DEPTH * 2; i++) {
+    if (seen.has(cur.id)) return true;
+    seen.add(cur.id);
+    cur = cur.parent_task_id ? byId.get(cur.parent_task_id) : undefined;
+  }
+  return false;
+}
+
+/** 「↳」の接頭辞。親を持つタスクは深さぶんの矢印（最大 MAX_INDENT_LEVEL）＋空白、持たなければ空文字。 */
+export function parentArrowPrefix(task: Task, byId: Map<string, Task>): string {
+  if (!task.parent_task_id) return "";
+  const d = Math.max(1, ancestorsOf(task, byId).length);
+  return "↳".repeat(Math.min(d, MAX_INDENT_LEVEL)) + " ";
+}
+
+/** インデント用の段数（MAX_INDENT_LEVEL で頭打ち） */
+export function indentLevelOf(depth: number): number {
+  return Math.max(0, Math.min(depth, MAX_INDENT_LEVEL));
+}
+
+export interface TreeRow {
+  task: Task;
+  depth: number;
+  /** 直下の子の件数（この集合内。子を持つ＝親タスク） */
+  childCount: number;
+}
+
+/**
+ * タスクを「親→その子孫…」の木順（深さ優先）に並べ、深さと直下の子件数を付ける。
+ * 親がこの集合に居ないタスクは最上位扱い。循環・上限超で最上位から辿れないタスクは
+ * 末尾に最上位として足す（落とさない・無限ループしない）。
+ * 兄弟の並びは呼び出し側の規則（sortTops／sortKids。依存順など）をそのまま使う。
+ */
+export function orderTasksAsTree(
+  tasks: Task[],
+  sortTops: (ts: Task[]) => Task[],
+  sortKids: (ts: Task[]) => Task[] = sortTops,
+): TreeRow[] {
+  const ids = new Set(tasks.map(t => t.id));
+  const childrenByParent = new Map<string, Task[]>();
+  const tops: Task[] = [];
+  for (const t of tasks) {
+    if (t.parent_task_id && ids.has(t.parent_task_id) && t.parent_task_id !== t.id) {
+      const arr = childrenByParent.get(t.parent_task_id) ?? [];
+      arr.push(t);
+      childrenByParent.set(t.parent_task_id, arr);
+    } else {
+      tops.push(t);
+    }
+  }
+  const out: TreeRow[] = [];
+  const visited = new Set<string>();
+  const walk = (root: Task) => {
+    const stack: { t: Task; d: number }[] = [{ t: root, d: 0 }];
+    while (stack.length > 0) {
+      const { t, d } = stack.pop()!;
+      if (visited.has(t.id)) continue;
+      visited.add(t.id);
+      const kids = (childrenByParent.get(t.id) ?? []).filter(k => !visited.has(k.id));
+      out.push({ task: t, depth: d, childCount: kids.length });
+      const ordered = sortKids(kids);
+      for (let i = ordered.length - 1; i >= 0; i--) stack.push({ t: ordered[i], d: d + 1 });
+    }
+  };
+  for (const top of sortTops(tops)) walk(top);
+  if (visited.size < tasks.length) {
+    for (const t of sortTops(tasks.filter(x => !visited.has(x.id)))) walk(t);
+  }
+  return out;
+}
+
+interface RollupInfo {
+  status: Task["status"];
+  done: number;
+  total: number;
+  start?: string;
+  due?: string;
+}
+
+/**
+ * 全親タスクの派生値（実効ステータス・末端の完了数/総数・期間の巻き上げ）を1パス（O(n)）で算出する。
+ * 子が孫を持つ場合は再帰して末端まで集計する。循環・MAX_TASK_DEPTH 超は葉として打ち切る。
+ * 戻り値には「子を持つタスク」だけが入る（葉は含まない）。
+ */
+function computeRollups(tasks: Task[]): Map<string, RollupInfo> {
+  const kidsMap = buildChildrenMap(tasks);
+  const result = new Map<string, RollupInfo>();
+  const visiting = new Set<string>();
+  const leaf = (t: Task): RollupInfo => ({
+    status: t.status,
+    done: t.status === "done" ? 1 : 0,
+    total: 1,
+    start: t.start_date || undefined,
+    due: t.due_date || undefined,
+  });
+  const calc = (t: Task, depth: number): RollupInfo => {
+    const kids = kidsMap.get(t.id);
+    if (!kids || kids.length === 0 || visiting.has(t.id) || depth >= MAX_TASK_DEPTH) return leaf(t);
+    const cached = result.get(t.id);
+    if (cached) return cached;
+    visiting.add(t.id);
+    const infos = kids.map(k => calc(k, depth + 1));
+    visiting.delete(t.id);
+    const statuses = infos.map(i => i.status);
+    const status: Task["status"] = statuses.every(s => s === "done" || s === "cancelled") ? "done"
+      : statuses.every(s => s === "todo") ? "todo"
       : "in_progress";
-    result.set(parentId, { status, done, total, pct: calcProgressPct(done, total) });
+    const starts = infos.map(i => i.start).filter((s): s is string => !!s).sort();
+    const dues = infos.map(i => i.due).filter((s): s is string => !!s).sort();
+    const info: RollupInfo = {
+      status,
+      done: infos.reduce((n, i) => n + i.done, 0),
+      total: infos.reduce((n, i) => n + i.total, 0),
+      start: starts[0],
+      due: dues[dues.length - 1],
+    };
+    result.set(t.id, info);
+    return info;
+  };
+  for (const t of tasks) {
+    if (!t.is_deleted && kidsMap.has(t.id)) calc(t, 0);
   }
   return result;
+}
+
+/**
+ * 全親タスクのステータス・進捗を1パス（O(n)）で一括算出する。
+ * 進捗は「末端（子を持たない）タスクの完了数／末端の総数」。2段の木では従来（直下の子の数）と同じ結果になる。
+ * 単発でよい呼び出し（1タスクだけ知りたい）は rollupStatus/parentProgress でもよい（内部は同じ計算）。
+ */
+export function buildParentDerivedMap(tasks: Task[]): Map<string, ParentDerived> {
+  const result = new Map<string, ParentDerived>();
+  for (const [id, r] of computeRollups(tasks)) {
+    result.set(id, { status: r.status, done: r.done, total: r.total, pct: calcProgressPct(r.done, r.total) });
+  }
+  return result;
+}
+
+/** 親タスクごとの実効期間（末端タスクの最早開始〜最遅期日）。子を持たないタスクは含まない。 */
+export function buildEffectiveDatesMap(
+  tasks: Task[],
+): Map<string, { start_date: string | undefined; due_date: string | undefined }> {
+  const map = new Map<string, { start_date: string | undefined; due_date: string | undefined }>();
+  for (const [id, r] of computeRollups(tasks)) map.set(id, { start_date: r.start, due_date: r.due });
+  return map;
 }
 
 /**
@@ -248,7 +437,7 @@ export function parentTaskCandidates(
       t.parent_task_id == null &&   // 最上位のみ（小タスクは親になれない＝孫禁止）
       t.id !== forTaskId,           // 自分自身を除外
     )
-    .sort(sortByOrder);
+    .sort(sortTasksByOrder);
   // 同一PJを先頭グループ、その後は他PJ。各グループ内は sortByOrder の並びを保つ（安定）。
   const same = tops.filter(t => t.project_id === currentProjectId);
   const other = tops.filter(t => t.project_id !== currentProjectId);
@@ -271,7 +460,7 @@ export function eligibleChildTasks(tasks: Task[], parent: Task): Task[] {
       (t.project_id ?? null) === (parent.project_id ?? null) &&
       !isParentTask(t, tasks),
     )
-    .sort(sortByOrder);
+    .sort(sortTasksByOrder);
 }
 
 /** 葉タスクの慣例的な進捗率（0〜1）。0〜100%の実測フィールドが無いための代替表現

@@ -47,6 +47,7 @@ import { showToast } from "../common/Toast";
 import { alertDialog } from "../../lib/dialog";
 import { formatErrorForUser } from "../../lib/errorMessage";
 import { countHiddenTargets, hiddenIncludedNote } from "../../lib/task/hiddenSelection";
+import { saveTasksInDepthOrder } from "../../lib/task/saveInDepthOrder";
 
 interface Props {
   /** 複製対象として選択されたタスク（呼び出し側でselectedIdsから解決済み） */
@@ -174,19 +175,8 @@ export function DuplicateTasksModal({ selectedTasks, allTasks, currentUser, onCl
       const state = useAppStore.getState();
       const { tasks, idMap } = preview;
 
-      const topLevel = tasks.filter(t => !t.parent_task_id);
-      const children = tasks.filter(t => t.parent_task_id);
-
-      const topResults = await Promise.allSettled(topLevel.map(t => state.saveTask(t, { skipCascade: true })));
-      const succeededIds = new Set<string>();
-      topLevel.forEach((t, i) => { if (topResults[i].status === "fulfilled") succeededIds.add(t.id); });
-
-      // 親の保存が失敗した子は親なしに落として保存を試みる（FK制約対応。ProjectCreateModalと同じ方式）
-      const childrenToSave = children.map(c =>
-        c.parent_task_id && !succeededIds.has(c.parent_task_id) ? { ...c, parent_task_id: null } : c,
-      );
-      const childResults = await Promise.allSettled(childrenToSave.map(t => state.saveTask(t, { skipCascade: true })));
-      childrenToSave.forEach((t, i) => { if (childResults[i].status === "fulfilled") succeededIds.add(t.id); });
+      // 深さの浅い順に段ごと保存する（親が先。親の保存が失敗した子は親なしに落とす。FK制約対応）
+      const succeededIds = await saveTasksInDepthOrder(tasks, t => state.saveTask(t, { skipCascade: true }));
 
       const successfulIdMap = new Map([...idMap].filter(([, newId]) => succeededIds.has(newId)));
 

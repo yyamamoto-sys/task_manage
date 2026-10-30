@@ -56,6 +56,8 @@ export interface AITask {
   completed_at: string | null;
   /** 親タスク名（子タスクの場合のみ設定。階層構造の把握に使う） */
   parent_task_name: string | null;
+  /** 祖先の経路（最上位 > … > 直近の親）。親の上にさらに親が居る（3段以上の）タスクのみ設定する */
+  parent_task_path?: string;
   /** タスクに付いたタグ（自由入力）。テーマ・種別の分類に使う */
   tags: string[];
 }

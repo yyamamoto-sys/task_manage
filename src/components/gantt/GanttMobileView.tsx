@@ -1,6 +1,7 @@
 // src/components/gantt/GanttMobileView.tsx
 // モバイル向けガント代替ビュー（縦スクロールカードリスト）
 
+import { useMemo } from "react";
 import type { Member, Project, Task, ToDo, Milestone, TaskDependency } from "../../lib/localData/types";
 import { toDateStr } from "../../lib/date";
 import { milestoneGlyphColor } from "../../lib/milestoneColor";
@@ -8,7 +9,7 @@ import { TaskEditModal } from "../task/TaskEditModal";
 import { getAssigneeIds, TASK_STATUS_STYLE, suppressOverdue } from "../../lib/taskMeta";
 import { EmptyState } from "../common/EmptyState";
 import { InlineEditAssignee } from "../common/InlineEditAssignee";
-import { applyDependencyOrderWithinSiblings, taskProgressFraction } from "../../lib/taskHierarchy";
+import { applyDependencyOrderWithinSiblings, taskProgressFraction, buildTaskById, parentArrowPrefix } from "../../lib/taskHierarchy";
 
 interface GanttMobileViewProps {
   today: Date;
@@ -58,6 +59,8 @@ export function GanttMobileView({
     return "期日未定";
   };
 
+  const taskById = useMemo(() => buildTaskById(allTasks), [allTasks]);
+
   const renderCard = (task: Task) => {
     const pj = task.project_id ? projectById.get(task.project_id) : undefined;
     const isDone = task.status === "done" || task.status === "cancelled";
@@ -93,7 +96,7 @@ export function GanttMobileView({
             fontSize: "13px", fontWeight: 500, color: "var(--color-text-primary)",
             lineHeight: 1.4, textDecoration: isDone ? "line-through" : "none",
             overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-          }}>{task.parent_task_id ? "↳ " : ""}{task.name}</div>
+          }}>{parentArrowPrefix(task, taskById)}{task.name}</div>
           <div style={{
             fontSize: "11px", marginTop: "3px",
             color: isOverdue ? "var(--color-text-danger)" : "var(--color-text-tertiary)",

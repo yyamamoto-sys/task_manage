@@ -9,6 +9,7 @@
 //  - PJ なし／別PJのグループ／削除済みのグループを指していたら未分類へ戻す
 
 import type { Task, ProjectSection } from "../localData/types";
+import { buildChildrenMap, descendantsOf } from "../taskHierarchy";
 
 /** 未分類を表すグループ見出しのキー（グループ id と衝突しない固定文字列） */
 export const UNSECTIONED_KEY = "__unsectioned__";
@@ -116,11 +117,12 @@ export function normalizeTaskSection(
   return want === cur ? task : { ...task, section_id: want };
 }
 
-/** 親のグループが変わったとき、子タスクの state を同じグループへ揃える（DB は cascade トリガーが同じことをする） */
+/** 親のグループが変わったとき、子孫タスク全体の state を同じグループへ揃える（DB は cascade トリガーが同じことをする） */
 export function followParentSection(tasks: Task[], parentId: string, sectionId: string | null): Task[] {
   let changed = false;
+  const descendantIds = new Set(descendantsOf(parentId, buildChildrenMap(tasks)).map(d => d.id));
   const next = tasks.map(t => {
-    if (t.parent_task_id === parentId && !t.is_deleted && sectionIdOf(t) !== sectionId) {
+    if (descendantIds.has(t.id) && !t.is_deleted && sectionIdOf(t) !== sectionId) {
       changed = true;
       return { ...t, section_id: sectionId };
     }

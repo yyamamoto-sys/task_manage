@@ -61,7 +61,10 @@ import {
 } from "./ganttDependencyArrows";
 import { resolveLinkDirection, type LinkSide } from "../../lib/dependencies/linkDirection";
 import { canAddDependency } from "../../lib/dependencies/cycleCheck";
-import { orderSiblingsWithDependencies, applyDependencyOrderWithinSiblings, filterHideCompletedTasks, buildProgressFractionMap } from "../../lib/taskHierarchy";
+import {
+  orderSiblingsWithDependencies, applyDependencyOrderWithinSiblings, filterHideCompletedTasks, buildProgressFractionMap,
+  orderTasksAsTree, buildEffectiveDatesMap, buildTaskById, parentArrowPrefix,
+} from "../../lib/taskHierarchy";
 import { computeCriticalTaskIds } from "../../lib/gantt/criticalPath";
 import { computeOverloadRanges } from "../../lib/gantt/overload";
 import { getMemberActiveTasks } from "../../lib/workload/computeWorkload";
@@ -397,54 +400,22 @@ export function GanttView({
   // 日付/名前ソートより優先される（orderSiblingsWithDependencies。表示のみの非破壊処理・
   // 依存が無いペアは sortTasks の並びをそのまま保つ）。トップレベルの並びは変えない。
   const orderTasksHierarchically = useCallback((tasks: Task[]): { task: Task; depth: number; childCount: number }[] => {
-    const ids = new Set(tasks.map(t => t.id));
-    const childrenByParent = new Map<string, Task[]>();
-    const tops: Task[] = [];
-    for (const t of tasks) {
-      if (t.parent_task_id && ids.has(t.parent_task_id)) {
-        const arr = childrenByParent.get(t.parent_task_id) ?? [];
-        arr.push(t);
-        childrenByParent.set(t.parent_task_id, arr);
-      } else {
-        tops.push(t);
-      }
-    }
-    const result: { task: Task; depth: number; childCount: number }[] = [];
-    for (const top of sortTasks(tops)) {
-      const kids = childrenByParent.get(top.id) ?? [];
-      result.push({ task: top, depth: 0, childCount: kids.length });
-      for (const c of orderSiblingsWithDependencies(sortTasks(kids), scopedTaskDependencies)) {
-        result.push({ task: c, depth: 1, childCount: 0 });
-      }
-    }
-    return result;
+    // 任意の深さの木順（orderTasksAsTree）。親がこの集合に居ないタスクは最上位扱い。
+    return orderTasksAsTree(
+      tasks,
+      sortTasks,
+      kids => orderSiblingsWithDependencies(sortTasks(kids), scopedTaskDependencies),
+    );
   }, [sortTasks, scopedTaskDependencies]);
 
   // 各親タスクの実効期間：子タスクの最早 start_date〜最遅 due_date を計算する。
   // ガントのバー描画でこれを使い、親バーが常に子の範囲を包むように表示する（DB は変更しない）。
   // 旧実装は親ごとに allTasks.filter を呼ぶ O(n²)。
   // ここでは 1パス目で子を親ID別 Map に集め、2パス目で min/max を算出する O(n) に改善。
-  const parentEffectiveDates = useMemo(() => {
-    // 1パス目：子タスクを親ID別にグループ化
-    const childrenByParent = new Map<string, Task[]>();
-    for (const t of allTasks) {
-      if (!t.parent_task_id) continue;
-      const arr = childrenByParent.get(t.parent_task_id) ?? [];
-      arr.push(t);
-      childrenByParent.set(t.parent_task_id, arr);
-    }
-    // 2パス目：親ごとに最早 start / 最遅 due を算出
-    const map = new Map<string, { start_date: string | undefined; due_date: string | undefined }>();
-    for (const [parentId, children] of childrenByParent) {
-      const starts = children.map(c => c.start_date).filter((s): s is string => !!s);
-      const dues   = children.map(c => c.due_date).filter((d): d is string => !!d);
-      map.set(parentId, {
-        start_date: starts.length > 0 ? [...starts].sort()[0] : undefined,
-        due_date:   dues.length   > 0 ? [...dues].sort()[dues.length - 1] : undefined,
-      });
-    }
-    return map;
-  }, [allTasks]);
+  const parentEffectiveDates = useMemo(() => buildEffectiveDatesMap(allTasks), [allTasks]);
+
+  // 人別ビュー・モバイル等のフラット表示で「↳」を深さぶん出すための引き当て
+  const taskByIdAll = useMemo(() => buildTaskById(allTasks), [allTasks]);
 
   // タスクごとの進捗率（0〜1）：親=子からのロールアップ・葉=ステータス由来（taskHierarchy.ts参照）。
   // バー内の進捗フィルは常時表示（トグルなし）。O(n)の一括版を使う（行ごとに個別関数を呼ぶとO(n²)）
@@ -823,7 +794,7 @@ export function GanttView({
     let maxD: Date | null = null;
     for (const row of ganttRows) {
       if (row.kind !== "task" && row.kind !== "todo-task" && row.kind !== "person-task") continue;
-      const eff = row.kind === "task" && row.depth === 0 ? parentEffectiveDates.get(row.task.id) : undefined;
+      const eff = row.kind === "task" && row.childCount > 0 ? parentEffectiveDates.get(row.task.id) : undefined;
       const due = toDate(eff?.due_date ?? row.task.due_date);
       const start = toDate(eff?.start_date ?? row.task.start_date ?? null) ?? due;
       if (!due || !start) continue;
@@ -1820,6 +1791,7 @@ export function GanttView({
             scale={rowScale}
             task={task}
             isChild={depth > 0}
+            depth={depth}
             childCount={childCount}
             isHovered={hoveredTaskId === task.id}
             isCollapsed={!!collapsed[task.id]}
@@ -2019,6 +1991,7 @@ export function GanttView({
         return (
           <GanttPersonLabelRow
             key={row.key}
+            arrowPrefix={parentArrowPrefix(task, taskByIdAll)}
             rowHeight={row.height}
             scale={rowScale}
             task={task}
@@ -2110,11 +2083,11 @@ export function GanttView({
         );
       }
       case "task": {
-        const { task, depth, pj } = row;
+        const { task, depth, pj, childCount } = row;
         const preview = resizePreviewDates[task.id];
-        // 親タスク（depth===0）のバーは子の最早開始〜最遅期日に合わせる
+        // 親タスク（子を持つタスク。深さは問わない）のバーは末端の最早開始〜最遅期日に合わせる
         let effectiveTask = applyResizePreview(task, preview);
-        if (depth === 0 && !preview) {
+        if (childCount > 0 && !preview) {
           const eff = parentEffectiveDates.get(task.id);
           if (eff && (eff.start_date || eff.due_date)) {
             effectiveTask = {
@@ -2144,8 +2117,8 @@ export function GanttView({
             taskId={task.id}
             bar={bar}
             barColor={barColor}
-            barHeight={depth > 0 ? rowMetrics.childBarHeight : rowMetrics.barHeight}
-            borderRadius={depth > 0 ? "6px" : hasRange ? "4px" : "9px"}
+            barHeight={depth > 0 && childCount === 0 ? rowMetrics.childBarHeight : rowMetrics.barHeight}
+            borderRadius={depth > 0 && childCount === 0 ? "6px" : hasRange ? "4px" : "9px"}
             isDone={isDone}
             isStagnant={isStagnant}
             isChanged={isChanged}

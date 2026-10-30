@@ -15,7 +15,7 @@
 import { useState, useCallback } from "react";
 import { useAppStore } from "../stores/appStore";
 import type { Task } from "../lib/localData/types";
-import { isParentTask } from "../lib/taskHierarchy";
+import { isParentTask, wouldCreateParentCycle } from "../lib/taskHierarchy";
 import { computeSiblingReorderIds, type DropZone } from "../lib/dragReorder";
 import { computeMultiReorder, type MultiDropPosition } from "../lib/task/multiReorder";
 import { showToast } from "../components/common/Toast";
@@ -56,6 +56,8 @@ export function useTaskDragReorder(
         showToast("子タスクを持つタスクは子にできません（先に子タスクを別の親に移動するか、解除してください）", "error");
         return;
       }
+      // 祖先全体をたどった循環防止（自分の子孫の下へは入れない）
+      if (wouldCreateParentCycle(allTasks, dragged.id, target.id)) return;
       try {
         await saveTask({ ...dragged, parent_task_id: target.id, project_id: target.project_id, updated_by: currentUserId });
         onReordered?.();
@@ -71,6 +73,7 @@ export function useTaskDragReorder(
       showToast("子タスクを持つタスクは子にできません（先に子タスクを別の親に移動するか、解除してください）", "error");
       return;
     }
+    if (wouldCreateParentCycle(allTasks, draggedId, newParentId)) return;
     const ids = computeSiblingReorderIds(allTasks, visibleTasks, draggedId, targetId, zone);
     if (!ids) return;
     // グループ（v3.149）：最上位として並ぶときはドロップ先と同じグループへ移る。子として並ぶときは親のグループ

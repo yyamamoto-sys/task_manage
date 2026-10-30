@@ -8594,3 +8594,12 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 * WBSインポート：サイドバーの📥を撤去し、MainLayout の showImportWbsButton（計画モード・ゲスト以外・ガント/リスト・設定/ガイド/ラボを開いていない）のとき、PC は固定ベルの箱の中でベルの直前、モバイルはヘッダーのベルの直前に📥を出す。--app-bell-reserve をボタン分広げる。PJ行「⋮」のインポートは従来どおり。
 * BulkActionBar：position:fixed（zIndex 40）の下部フローティングに変更。PC は下端中央・maxWidth=100vw-2*(FAB右余白+FAB幅+隙間)で右下FAB・ショートカットと重ならない。モバイルはボトムナビ＋FABの上。リスト・カンバンの高さ可変ラッパーを撤去。選択中だけスクロール領域末尾に BULK_BAR_SCROLL_PAD_PX(120) の余白（ガントは左右同じ値＝Section 80）。
 * テスト：sidebarHeaderAndBulkBar.test.ts 新設。topRightBell.test.ts の reserve 検査を更新。DB変更なし・MIN_CLIENT_VERSION 据え置き。
+
+# v3.195（2026-10-30）：タスクの親子を任意の深さにする Phase A（表示）＋A'（下回り）
+
+* taskHierarchy.ts に汎用関数（buildChildrenMap・ancestorsOf・descendantsOf・taskDepthOf・orderTasksAsTree・wouldCreateParentCycle・hasParentCycle・indentLevelOf・parentArrowPrefix）。循環に強く上限 MAX_TASK_DEPTH(32)。集計を再帰化（computeRollups）：進捗＝末端の完了数／末端の総数、状態＝子の実効状態から派生、期間＝末端の最小開始〜最大期日（buildEffectiveDatesMap）。2段の木の結果は不変。
+* ListView.buildRows・GanttView.orderTasksHierarchically・ganttUtils（hasCollapsedAncestor・computeVisibleOrderedTaskIds）を N 段対応。ガントは childCount>0 の行を親のバー（期間は巻き上げ）、末端のみ細い子のバー。行の高さ・行数は不変（Section 80）。GanttParts／GanttMobileView の「↳」・インデントを深さ対応。
+* selectionWithChildren・projectMove・sections.followParentSection を子孫全体に。複製・PJ引き継ぎの保存は saveTasksInDepthOrder（lib/task/saveInDepthOrder.ts）で深さ順の波ごとに直列保存。ProjectCreateModal の引き継ぎ元チェックリストも木順・N段。
+* appStore の親の自動完了：段ごとに直列で最上位へ伝播（循環データでは伝播しない）。useTaskDragReorder の循環判定を祖先全体に。payloadBuilder に parent_task_path（3段以上のみ）。
+* マイグレーション 20261030_task_parent_cycle_guard.sql（idx_tasks_parent・prevent_task_parent_cycle・trg_tasks_parent_cycle）を新規作成（山本さんが手動適用。未適用でもアプリは動く）。schema.sql 同期・schemaChecks に関数の検査を追加（索引の kind は無いため対象外）。
+* テスト：taskHierarchyDeep.test.ts 新設（3〜5段・折りたたみ・集計・移動/選択/複製/保存順・循環）。設計＝docs/dev/sections/s88_task-tree-depth.md。MIN_CLIENT_VERSION は据え置き（Phase B で引き上げ）。

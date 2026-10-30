@@ -57,7 +57,7 @@ import { canAddDependency } from "../lib/dependencies/cycleCheck";
 import { getIncompletePredecessors, formatBlockerNames } from "../lib/dependencies/gate";
 import { resolveBaselineFields } from "../lib/baseline/baselineCapture";
 import { computeCascadeShifts, computeCascadeShiftsMulti } from "../lib/dependencies/reschedule";
-import { computeParentAutoStatus } from "../lib/taskHierarchy";
+import { computeParentAutoStatus, buildTaskById, hasParentCycle } from "../lib/taskHierarchy";
 import { normalizeTaskSection, followParentSection, computeSectionReorder } from "../lib/section/sections";
 import { computeBulkMoveShifts } from "../components/gantt/ganttUtils";
 import { pickCurrentObjectiveForGroup } from "../lib/okr/deptScope";
@@ -1225,11 +1225,14 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
     // ===== 親タスクの自動完了／自動差し戻し（子から算出）=====
     // 子タスクの status が変化するたびに、兄弟（同じ parent_task_id を持つ他の子）を
-    // 含めて親の完了状態を再判定する。2階層固定（孫なし）のため、ここで親を
-    // saveTask する再帰呼び出し自体が「親の親」を探すことはなく連鎖は1段で止まる。
+    // 含めて親の完了状態を再判定する。階層は任意の深さのため、親を saveTask する
+    // 再帰呼び出しが同じ判定で「親の親」…と最上位まで1段ずつ直列に伝わる（各段で
+    // status が変わらなければそこで止まる）。親をたどると自分に戻る循環データでは
+    // 伝播しない（status の往復による無限ループの防止。通常は DB トリガーが循環を拒否する）。
     // { skipCascade: true } を必ず付け、親の自動更新自体が新たなB3連鎖判定を
     // 誘発しないようにする（B3のcascade適用パターンを踏襲）。
-    if (taskToSave.parent_task_id && existing?.status !== taskToSave.status) {
+    if (taskToSave.parent_task_id && existing?.status !== taskToSave.status
+      && !hasParentCycle(taskToSave, buildTaskById(get().tasks))) {
       const parent = get().tasks.find(t => t.id === taskToSave.parent_task_id);
       if (parent && !parent.is_deleted) {
         const siblings = get().tasks.filter(t => !t.is_deleted && t.parent_task_id === parent.id);

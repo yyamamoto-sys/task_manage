@@ -720,4 +720,13 @@ export const SCHEMA_HEALTH_CHECKS: SchemaCheckDescriptor[] = [
     label: "マイルストーンの色（milestones.color）の列が見つかりません",
     migration: "20261029_milestone_color.sql",
   },
+  // タスク階層の下回り（v3.195）。親子の循環を DB 側でも拒否する関数。未適用でもアプリは動く（循環はアプリ側でも防ぐ）。
+  // 索引 idx_tasks_parent は check_schema_health が索引の種別を持たないため検査対象外（同じマイグレーションで入る）。
+  {
+    id: "fn_prevent_task_parent_cycle",
+    kind: "function",
+    name: "prevent_task_parent_cycle",
+    label: "タスクの親子の循環を拒否するトリガー関数（prevent_task_parent_cycle）が見つかりません",
+    migration: "20261030_task_parent_cycle_guard.sql",
+  },
 ];

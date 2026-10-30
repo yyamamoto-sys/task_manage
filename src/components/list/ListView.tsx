@@ -11,7 +11,10 @@ import { InlineEditDate } from "../common/InlineEditDate";
 import { InlineEditAssignee } from "../common/InlineEditAssignee";
 import { todayStr, addDaysFromToday } from "../../lib/date";
 import { KEYS, active } from "../../lib/localData/localStore";
-import { childrenOf, isParentTask, buildParentDerivedMap, type ParentDerived } from "../../lib/taskHierarchy";
+import {
+  buildParentDerivedMap, buildTaskById, ancestorsOf, orderTasksAsTree, orderSiblingsWithDependencies,
+  sortTasksByOrder, indentLevelOf, type ParentDerived,
+} from "../../lib/taskHierarchy";
 import { computeGroupSummary } from "../../lib/list/groupSummary";
 import { Avatar } from "../auth/UserSelectScreen";
 import { TaskEditModal } from "../task/TaskEditModal";
@@ -540,55 +543,53 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, my
     return allTasks.find(p => p.id === task.parent_task_id)?.name;
   }, [allTasks]);
 
-  type RenderRow = { task: Task; depth: 0 | 1; parentNote?: string; isParent: boolean };
+  type RenderRow = { task: Task; depth: number; parentNote?: string; isParent: boolean };
 
   // グループ内タスク配列 → 描画順の行配列（ネスト or フラット）に変換する。
   // group.tasks は既存のソート順を保持しているのでその順序を尊重しつつ、
   // ネスト時のみ親直下に子（display_order 順）を差し込む。
   const buildRows = useCallback((groupTasks: Task[]): RenderRow[] => {
-    const idsInGroup = new Set(groupTasks.map(t => t.id));
+    // 子を持つか（親が別グループ・フィルタ除外でも、フィルタ後の全タスクで判定する）
+    const parentIdsAll = new Set<string>();
+    for (const t of filteredTasks) if (!t.is_deleted && t.parent_task_id) parentIdsAll.add(t.parent_task_id);
     if (!nestTree) {
-      // フラット（担当/状態/タグ別）：同一グループに親子が揃う場合のみネスト・トグルを有効化。
-      // 別グループに散った子は従来どおり parentNote（↳ 親名）で注記表示のみ。
+      // フラット（担当/状態/タグ別）：並びは変えない。同一グループ内の祖先の段数をインデントにし、
+      // 祖先のどれかが折りたたみ中なら隠す。別グループに散った子は従来どおり parentNote（↳ 親名）で注記のみ。
+      const byId = buildTaskById(groupTasks);
       const rows: RenderRow[] = [];
       for (const t of groupTasks) {
-        // 同一グループに親がいて折りたたみ中の場合はスキップ
-        if (t.parent_task_id && idsInGroup.has(t.parent_task_id) && collapsedIds.has(t.parent_task_id)) {
-          continue;
-        }
-        const parentInGroup = !!(t.parent_task_id && idsInGroup.has(t.parent_task_id));
-        const isParentHere = groupTasks.some(g => g.parent_task_id === t.id);
+        const anc = ancestorsOf(t, byId);
+        if (anc.some(a => collapsedIds.has(a.id))) continue;
+        const parentInGroup = anc.length > 0;
         rows.push({
           task: t,
-          depth: (parentInGroup ? 1 : 0) as 0 | 1,
+          depth: anc.length,
           parentNote: parentInGroup ? undefined : parentNameOf(t),
-          isParent: isParentHere,
+          isParent: groupTasks.some(g => g.parent_task_id === t.id),
         });
       }
       return rows;
     }
-    // ネスト：このグループ内の子IDを把握し、親の直下に寄せる。
+    // ネスト：グループ内の木順（最上位の並びは group.tasks のまま・子は display_order＋依存順）。
+    // 親がこのグループに居ない（フィルタ除外/別PJ）タスクは最上位行＋注記で出す。
+    const tree = orderTasksAsTree(
+      groupTasks,
+      ts => ts,
+      ts => orderSiblingsWithDependencies([...ts].sort(sortTasksByOrder), taskDependencies),
+    );
     const rows: RenderRow[] = [];
-    for (const t of groupTasks) {
-      if (t.parent_task_id) {
-        // 親が同じグループ内に居る子は、親の直下で描画するのでここではスキップ。
-        // 親がこのグループに居ない（フィルタ除外/別PJ）孤児の子は最上位行＋注記で出す。
-        if (idsInGroup.has(t.parent_task_id)) continue;
-        rows.push({ task: t, depth: 0, parentNote: parentNameOf(t), isParent: false });
-        continue;
-      }
-      // 最上位タスク
-      const parent = t;
-      const childrenHere = isParentTask(parent, filteredTasks);
-      rows.push({ task: parent, depth: 0, isParent: childrenHere });
-      // 子（フィルタ後に表示対象として残っているもののみ）を display_order 順で差し込む
-      if (childrenHere && !collapsedIds.has(parent.id)) {
-        for (const c of childrenOf(filteredTasks, parent.id, taskDependencies)) {
-          if (idsInGroup.has(c.id)) {
-            rows.push({ task: c, depth: 1, isParent: false });
-          }
-        }
-      }
+    let hiddenBelow: number | null = null;
+    for (const { task: t, depth } of tree) {
+      if (hiddenBelow !== null && depth > hiddenBelow) continue;
+      hiddenBelow = null;
+      const isParent = parentIdsAll.has(t.id);
+      rows.push({
+        task: t,
+        depth,
+        parentNote: depth === 0 && t.parent_task_id ? parentNameOf(t) : undefined,
+        isParent,
+      });
+      if (isParent && collapsedIds.has(t.id)) hiddenBelow = depth;
     }
     return rows;
   }, [nestTree, parentNameOf, filteredTasks, collapsedIds, taskDependencies]);
@@ -959,7 +960,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, my
                 {(() => {
                   let rowIdx = 0;
                   const renderRows = (rows: RenderRow[]) => rows.map(({ task, depth, parentNote, isParent }, ri) => {
-                        const closesGroup = depth === 1 && (!rows[ri + 1] || rows[ri + 1].depth === 0);
+                        const closesGroup = depth > 0 && (!rows[ri + 1] || rows[ri + 1].depth === 0);
                         const isEven = rowIdx % 2 === 0;
                         rowIdx++;
                         const pj = task.project_id ? projectById.get(task.project_id) : undefined;
@@ -1263,7 +1264,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, my
 
 interface ListMobileTaskRowProps {
   task: Task;
-  depth: 0 | 1;
+  depth: number;
   parentNote?: string;
   isParent: boolean;
   pj?: Project;
@@ -1292,7 +1293,7 @@ const ListMobileTaskRow = memo(function ListMobileTaskRow({
       onKeyDown={e => { if (e.key === "Enter" || e.key === " ") onOpen(task.id); }}
       style={{
         display: "flex", alignItems: "center", gap: "10px",
-        marginLeft: depth === 1 ? 18 : 0,
+        marginLeft: indentLevelOf(depth) * 18,
         background: isChecked ? "var(--color-brand-light)" : "var(--color-bg-primary)",
         border: isChecked
           ? "1px solid var(--color-brand-border)"
@@ -1331,7 +1332,7 @@ const ListMobileTaskRow = memo(function ListMobileTaskRow({
           lineHeight: 1.4, textDecoration: isDone ? "line-through" : "none",
           overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
         }}>
-          {depth === 1 && !parentNote && <span style={{ color: "var(--color-text-tertiary)", marginRight: 3 }}>↳</span>}
+          {depth > 0 && !parentNote && <span style={{ color: "var(--color-text-tertiary)", marginRight: 3 }}>↳</span>}
           {task.name}
         </div>
         {isParent && prog && (
@@ -1377,7 +1378,7 @@ const ListMobileTaskRow = memo(function ListMobileTaskRow({
 
 interface ListTaskRowProps {
   task: Task;
-  depth: 0 | 1;
+  depth: number;
   parentNote?: string;
   isParent: boolean;
   closesGroup: boolean;
@@ -1432,7 +1433,7 @@ const ListTaskRow = memo(function ListTaskRow({
   const shadowLayers: string[] = [];
   if (myZone === "nest") shadowLayers.push("inset 0 0 0 2px var(--color-brand)");
   if (isChecked || isSelected || isParent) shadowLayers.push("inset 3px 0 0 var(--color-brand)");
-  else if (depth === 1) shadowLayers.push("inset 2px 0 0 var(--color-brand-border)");
+  else if (depth > 0) shadowLayers.push("inset 2px 0 0 var(--color-brand-border)");
   if (myZone === "before") shadowLayers.push("inset 0 2px 0 var(--color-brand)");
   else if (isParent && depth === 0) shadowLayers.push("inset 0 2px 0 var(--color-border-primary)");
   if (myZone === "after") shadowLayers.push("inset 0 -2px 0 var(--color-brand)");
@@ -1522,7 +1523,7 @@ const ListTaskRow = memo(function ListTaskRow({
         </td>
       )}
       {/* タスク名（depth に応じたインデント＋親トグル＋子注記） */}
-      <td style={{ padding: ROW_TD_PADDING, paddingLeft: depth === 1 ? 10 + 22 : 10 }}>
+      <td style={{ padding: ROW_TD_PADDING, paddingLeft: 10 + indentLevelOf(depth) * 22 }}>
         <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
           {/* 折りたたみトグル（子を持つ親のみ） */}
           {isParent ? (
@@ -1536,7 +1537,7 @@ const ListTaskRow = memo(function ListTaskRow({
                 fontSize: "9px", color: "var(--color-text-tertiary)",
               }}
             >{isCollapsed ? "▶" : "▼"}</button>
-          ) : depth === 1 && (
+          ) : depth > 0 && (
             <span style={{ flexShrink: 0, width: 12, color: "var(--color-text-tertiary)", fontSize: "10px" }}>↳</span>
           )}
           {/* 行クリックでタスク詳細が開くため、名前部分のインライン編集はそちらに伝播させない（クリックしても何も起きないラッパー） */}

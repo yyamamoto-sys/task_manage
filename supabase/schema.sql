@@ -2848,6 +2848,7 @@ CREATE INDEX IF NOT EXISTS idx_tasks_todo_id             ON tasks(todo_id)      
 CREATE INDEX IF NOT EXISTS idx_tasks_assignee_member_id  ON tasks(assignee_member_id) WHERE is_deleted = false;
 CREATE INDEX IF NOT EXISTS idx_tasks_due_date            ON tasks(due_date)           WHERE is_deleted = false;
 CREATE INDEX IF NOT EXISTS idx_tasks_start_date          ON tasks(start_date)         WHERE is_deleted = false;
+CREATE INDEX IF NOT EXISTS idx_tasks_parent              ON public.tasks(parent_task_id) WHERE parent_task_id IS NOT NULL;  -- migration 20261030
 
 -- task_forces / key_results / todos / projects
 CREATE INDEX IF NOT EXISTS idx_task_forces_kr_id              ON task_forces(kr_id)              WHERE is_deleted = false;
@@ -4645,6 +4646,51 @@ CREATE TRIGGER trg_project_sections_release_tasks
   FOR EACH ROW
   WHEN (NEW.is_deleted = true AND OLD.is_deleted = false)
   EXECUTE FUNCTION public.release_tasks_on_section_delete();
+
+-- (d) タスクの親子の循環（自分が自分の祖先になる）を拒否する（migration 20261030・v3.195）。
+CREATE OR REPLACE FUNCTION public.prevent_task_parent_cycle()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $fn_prevent_task_parent_cycle$
+DECLARE
+  v_cycle boolean;
+BEGIN
+  IF NEW.parent_task_id IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  IF NEW.parent_task_id = NEW.id THEN
+    RAISE EXCEPTION 'task parent cycle: a task cannot be its own parent (%)', NEW.id
+      USING ERRCODE = '23514';
+  END IF;
+
+  WITH RECURSIVE anc(id, parent_task_id, depth) AS (
+    SELECT t.id, t.parent_task_id, 1
+      FROM public.tasks t
+     WHERE t.id = NEW.parent_task_id
+    UNION ALL
+    SELECT t.id, t.parent_task_id, a.depth + 1
+      FROM public.tasks t
+      JOIN anc a ON t.id = a.parent_task_id
+     WHERE a.depth < 32
+  )
+  SELECT EXISTS (SELECT 1 FROM anc WHERE anc.id = NEW.id) INTO v_cycle;
+
+  IF v_cycle THEN
+    RAISE EXCEPTION 'task parent cycle: setting parent % on task % would create a cycle', NEW.parent_task_id, NEW.id
+      USING ERRCODE = '23514';
+  END IF;
+
+  RETURN NEW;
+END;
+$fn_prevent_task_parent_cycle$;
+
+DROP TRIGGER IF EXISTS trg_tasks_parent_cycle ON public.tasks;
+CREATE TRIGGER trg_tasks_parent_cycle
+  BEFORE INSERT OR UPDATE OF parent_task_id ON public.tasks
+  FOR EACH ROW EXECUTE FUNCTION public.prevent_task_parent_cycle();
 
 -- ------------------------------------------------------------
 -- ④ RLS（milestones と同じ＝PJ の可視範囲に従う。FOR ALL には WITH CHECK も明示する）

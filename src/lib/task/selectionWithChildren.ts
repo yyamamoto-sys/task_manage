@@ -2,7 +2,7 @@
 //
 // 【設計意図】
 // 「親タスクを選択したら子タスクも一括で選択に加わる」を実現する純粋関数（CLAUDE.md v3.108）。
-// 階層は最大2階層（親→子。孫は存在しない。実データで確認済み）ため、直下の子だけを見れば足りる。
+// 階層は任意の深さ（v3.195〜）。親を選ぶと子孫すべて（子・孫…）が対象になる。
 //
 // - 親を選択 → 直下の子も選択に加わる（addTaskWithChildren）
 // - 親を解除 → 直下の子も選択から外れる（removeTaskWithChildren）
@@ -14,12 +14,11 @@
 // addTaskWithChildren・選択解除時は removeTaskWithChildren を呼ぶことで3画面共通の挙動にする。
 
 import type { Task } from "../localData/types";
+import { buildChildrenMap, descendantsOf } from "../taskHierarchy";
 
-/** taskId を直接の親（parent_task_id）に持つ、論理削除されていない子タスクのidを返す */
+/** taskId の子孫（子・孫…）の、論理削除されていないタスクのidを返す（循環でも止まる） */
 function childIdsOf(taskId: string, allTasks: Task[]): string[] {
-  return allTasks
-    .filter(t => !t.is_deleted && t.parent_task_id === taskId)
-    .map(t => t.id);
+  return descendantsOf(taskId, buildChildrenMap(allTasks)).map(t => t.id);
 }
 
 /**

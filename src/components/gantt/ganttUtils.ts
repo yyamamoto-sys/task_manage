@@ -7,6 +7,7 @@ import { calendarWeekNumber } from "../../lib/date/monthWeeks";
 import type { OverloadRange } from "../../lib/gantt/overload";
 import { computeRangeSelection } from "../../lib/selectionRange";
 import { isCompletedForProgress } from "../../lib/taskMeta";
+import { MAX_TASK_DEPTH } from "../../lib/taskHierarchy";
 import { DEFAULT_MILESTONE_FILL, DEFAULT_MILESTONE_BORDER, milestoneFillColor } from "../../lib/milestoneColor";
 
 // computeRangeSelection は src/lib/selectionRange.ts に集約（ListView と共有するため）。
@@ -573,6 +574,23 @@ export interface VisibleOrderInput {
 }
 
 /**
+ * 祖先（親→祖父→…）のどれかが折りたたみ中か。parentOf は「タスクid→親id」。
+ * 循環・MAX_TASK_DEPTH 超でも止まる。N 段の階層で「祖先のどれかが閉じていたら隠す」判定の唯一の実装。
+ */
+export function hasCollapsedAncestor(
+  parentId: string | null | undefined,
+  parentOf: Map<string, string | null | undefined>,
+  collapsed: Record<string, boolean>,
+): boolean {
+  let cur = parentId;
+  for (let i = 0; cur && i < MAX_TASK_DEPTH; i++) {
+    if (collapsed[cur]) return true;
+    cur = parentOf.get(cur);
+  }
+  return false;
+}
+
+/**
  * 現在画面に表示されているタスクバーのidを、表示順（PJ別ビュー＝PJ→親→子→ToDoグループ／
  * 人別ビュー＝担当者→タスク）で並べた配列にする（純粋関数）。GanttView本体のJSXレンダー順と
  * 完全に対応させる必要があるため、折りたたみ（PJ／ToDoグループ／担当者／親タスク）を全て考慮する。
@@ -590,8 +608,9 @@ export function computeVisibleOrderedTaskIds(input: VisibleOrderInput): string[]
   }
   for (const g of pjGroups) {
     if (collapsed[g.pjId]) continue;
+    const parentOf = new Map<string, string | null>(g.rows.map(r => [r.taskId, r.parentTaskId]));
     for (const row of g.rows) {
-      if (row.depth > 0 && row.parentTaskId && collapsed[row.parentTaskId]) continue;
+      if (hasCollapsedAncestor(row.parentTaskId, parentOf, collapsed)) continue;
       ids.push(row.taskId);
     }
   }
@@ -823,8 +842,9 @@ export function buildPjViewGanttRows(input: BuildPjViewGanttRowsInput): GanttRow
     if (!isCollapsed) {
       const ordered = pjOrderedTasksMap.get(pj.id) ?? [];
       const secs = sectionsByPj?.get(pj.id) ?? [];
+      const parentOf = new Map<string, string | null | undefined>(ordered.map(o => [o.task.id, o.task.parent_task_id]));
       const pushTask = (task: Task, depth: number, childCount: number) => {
-        if (depth > 0 && task.parent_task_id && collapsed[task.parent_task_id]) return;
+        if (depth > 0 && hasCollapsedAncestor(task.parent_task_id, parentOf, collapsed)) return;
         rows.push({ kind: "task", key: `${pj.id}_${task.id}`, height: H.task, blockKey: pj.id, task, depth, childCount, pj });
       };
       if (secs.length === 0) {
