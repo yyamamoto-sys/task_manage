@@ -40,6 +40,7 @@ const RESPONSE_FORMAT = `
       "new_subtasks": [
         { "name": "子タスク名", "suggested_assignee": "メンバーのshort_name", "suggested_start_date": "YYYY-MM-DD", "suggested_due_date": "YYYY-MM-DD", "suggested_description": "タスクの詳細メモ（任意）" }
       ],
+      "parent_task": "既存タスクのID（task_001等）または名前（add_task専用・任意。作るタスクをそのタスクの子にする）",
       "find": "置換前の文字列（bulk_rename専用）",
       "replace": "置換後の文字列（bulk_rename専用）",
       "new_status": "todo" | "in_progress" | "done" | "on_hold" | "cancelled"
@@ -71,7 +72,7 @@ const RESPONSE_FORMAT = `
   suggested_start_date と suggested_date が両方ある場合、suggested_start_date <= suggested_date を必ず守ること。
   date_certaintyは"exact"（期日確定）または"unknown"（期日未定）を使う。
   **【曜日の確認必須】** 日付を設定するときは context.monday_anchors（月曜日リスト）を参照すること。リスト内の日付は全て月曜日。+1=火、+2=水、+3=木、+4=金、+5=土、+6=日。土日は稼働日ではないため、タスクの開始日・期日に土日を充てないこと。
-  **タスクの階層化（大分類＋子タスク）**：ユーザーが「タスクを分類して子タスクに分けたい」「大分類ごとに整理したい」等と言ったら、add_task を「親タスク（＝大分類）」として使い、その下に new_subtasks（子タスクの配列。各要素は {name（必須）, suggested_assignee（任意・short_name）, suggested_start_date（任意・YYYY-MM-DD）, suggested_due_date（任意・YYYY-MM-DD）, suggested_description（任意・タスクの詳細メモ）}）を付ける。これで確認後に「親タスク＋その子タスク」が一括作成される（このアプリは2階層固定なので、子の下にさらに子は作らない）。
+  **タスクの階層化（大分類＋子タスク）**：ユーザーが「タスクを分類して子タスクに分けたい」「大分類ごとに整理したい」等と言ったら、add_task を「親タスク（＝大分類）」として使い、その下に new_subtasks（子タスクの配列。各要素は {name（必須）, suggested_assignee（任意・short_name）, suggested_start_date（任意・YYYY-MM-DD）, suggested_due_date（任意・YYYY-MM-DD）, suggested_description（任意・タスクの詳細メモ）}）を付ける。これで確認後に「親タスク＋その子タスク」が一括作成される。このアプリは親子を何段でも入れ子にできる。既存のタスク（何段目のタスクでもよい）の下に作りたいときは、add_task の parent_task にそのタスクのID（task_001 等）または名前を入れる（名前が複数のタスクと重なる可能性があるときはIDで指定する）。1回の提案で作るのは「親＋その直下の子」まで。さらに下の段が必要なら、提案を分けて parent_task で指定する。
   大分類が複数あるときは、add_task 提案を分類の数だけ複数返す（1提案＝1親＋その子たち）。各提案の target_pj_ids に対象PJの shortId を必ず入れる。
   info で「こう分類すると良い」と説明して終わるのではなく、反映可能な add_task（new_subtasks 付き）として返すこと。
 - add_project: 新しいプロジェクトを作る提案。ユーザーが「新しいプロジェクトを作りたい/立ち上げたい」等のときに使う。
@@ -227,8 +228,9 @@ const BASE_SYSTEM = `あなたはチームのプロジェクト管理とOKR推�
 - **task.start_date**：作業開始予定日（YYYY-MM-DD）。due_date との差がタスクの所要期間。
   スケジュールの余裕・詰まり具合を判断するときに due_date と合わせて参照すること。
   null の場合は開始日未設定（まだ着手時期が決まっていない）を意味する。
-- **task.parent_task_name**：この値が存在する場合、そのタスクは親タスクの子（サブタスク）である。
-  サブタスクを参照・提案するときは「〇〇（〇〇の子タスク）」のように親名を添えて区別すること。
+- **task.parent_task_name**：この値が存在する場合、そのタスクは親タスクの子（子タスク）である。
+  子タスクを参照・提案するときは「〇〇（〇〇の子タスク）」のように親名を添えて区別すること。
+  3段以上の入れ子のタスクには task.parent_task_path（「A > B」＝祖先を上から順に並べたパス）も付く。
   null の場合はトップレベルのタスク。
 - **task.deliverable**：そのタスクの成果物の説明（何を成果物とするか）。URL は含まれない（送信前に除去している）。空文字は未記入。
   「成果物は何ですか」「成果物が未記入のタスクは？」などの質問で参照すること。

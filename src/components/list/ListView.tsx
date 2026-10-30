@@ -12,7 +12,7 @@ import { InlineEditAssignee } from "../common/InlineEditAssignee";
 import { todayStr, addDaysFromToday } from "../../lib/date";
 import { KEYS, active } from "../../lib/localData/localStore";
 import {
-  buildParentDerivedMap, buildTaskById, ancestorsOf, orderTasksAsTree, orderSiblingsWithDependencies,
+  buildParentDerivedMap, buildTaskById, ancestorsOf, buildChildrenMap, descendantsOf, orderTasksAsTree, orderSiblingsWithDependencies,
   sortTasksByOrder, indentLevelOf, type ParentDerived,
 } from "../../lib/taskHierarchy";
 import { computeGroupSummary } from "../../lib/list/groupSummary";
@@ -63,12 +63,12 @@ const PRIO: Record<string, number> = { high: 0, mid: 1, low: 2, "": 3 };
 const STATUS_ORDER: Record<Task["status"], number> = { in_progress: 0, todo: 1, on_hold: 2, done: 3, cancelled: 4 };
 
 /** 行のうち上30%/下30%＝before/after（並び替え）、中央40%＝nest（子にする）。
- *  ドロップ先が既に子タスクの場合は「孫禁止」のため中央帯を作らず上下半分でbefore/afterのみにする。
+ *  どの深さの行でも中央帯を出す（任意の深さに入れ子にできる）。循環になる行は呼び出し側で受け付けない。
  *  判定そのものは src/lib/dragReorder.ts の computeDropZoneFromRatio（純粋関数・GanttViewと共有）。 */
-function computeDropZone(e: React.DragEvent, target: Task): DropZone {
+function computeDropZone(e: React.DragEvent): DropZone {
   const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
   const ratio = rect.height > 0 ? (e.clientY - rect.top) / rect.height : 0.5;
-  return computeDropZoneFromRatio(ratio, !target.parent_task_id);
+  return computeDropZoneFromRatio(ratio, true);
 }
 
 function exportCSV(tasks: Task[], projects: Project[], members: Member[], sections: ProjectSection[]) {
@@ -235,7 +235,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, my
   }, [sortKey]);
   const {
     draggingId, setDraggingId, dropZone, setDropZone,
-    handleTaskDrop: dragReorderTaskDrop, handleMultiTaskDrop, handleUnparentDrop, handleSectionDrop: dragSectionDrop,
+    handleTaskDrop: dragReorderTaskDrop, handleMultiTaskDrop, handleIndentOutdent, handleUnparentDrop, handleSectionDrop: dragSectionDrop,
   } = useTaskDragReorder(allTasks, currentUser.id, handleReordered);
 
   // 一括操作用：複数選択
@@ -720,6 +720,34 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, my
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [isMobile, selectedTaskId, editingTaskId, quickAddParentId, detailAdd, filteredTasks, clearSelection]);
 
+  // ドラッグ中：落とせない行（ドラッグ中のタスクと、その子孫＝循環になる行。複数選択のドラッグは選択すべて）
+  const dragBlockedIds = useMemo(() => {
+    if (!draggingId) return null;
+    const roots = selectedIds.size > 1 && selectedIds.has(draggingId) ? Array.from(selectedIds) : [draggingId];
+    const kidsMap = buildChildrenMap(allTasks);
+    const set = new Set<string>(roots);
+    for (const id of roots) for (const d of descendantsOf(id, kidsMap)) set.add(d.id);
+    return set;
+  }, [draggingId, selectedIds, allTasks]);
+
+  // Tab／Shift+Tab：選択中（チェック）のタスク、無ければ注目中の1件を1段下げる／上げる。PJ別の表示のときだけ
+  const canEditTasks = canGuestEdit(isGuestMember(currentUser), "task");
+  const handleIndentKey = useCallback((dir: 1 | -1, focusedId: string | null): boolean => {
+    if (groupBy !== "project" || !canEditTasks) return false;
+    const targets = selectedIds.size > 0 ? Array.from(selectedIds) : focusedId ? [focusedId] : [];
+    if (targets.length === 0) return false;
+    void handleIndentOutdent(dir, targets, visibleOrderedTaskIdsRef.current, parentIds => {
+      setCollapsedIds(prev => {
+        if (!parentIds.some(id => prev.has(id))) return prev;
+        const next = new Set(prev);
+        parentIds.forEach(id => next.delete(id));
+        lsSet("collapsedParents", Array.from(next));
+        return next;
+      });
+    });
+    return true;
+  }, [groupBy, canEditTasks, selectedIds, handleIndentOutdent]);
+
   // J/K・Enter・E・A・D（注目中のタスクの操作。v3.162）。Ctrl+A の選択（selectedIds）とは別の「注目」
   useTaskKeyboardNav({
     enabled: !isMobile,
@@ -728,6 +756,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, my
     onOpen: setSelectedTaskId,
     currentUserId: currentUser.id,
     canEdit: canGuestEdit(isGuestMember(currentUser), "task"),
+    onIndent: handleIndentKey,
   });
 
   const SortIcon = ({ k }: { k: SortKey }) => sortKey === k
@@ -968,8 +997,8 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, my
                         // 親行のステータス・進捗は derivedByParentId から引く（参照安定＝React.memo が効く）
                         const derived = isParent ? derivedByParentId.get(task.id) : undefined;
                         const dispStatus = derived?.status ?? task.status;
-                        // ＋子タスクを出せるのは最上位タスク（親を持たない）のみ。孤児の子（depth0だが parent あり）は除外。
-                        const canAddChild = !task.parent_task_id;
+                        // ＋子タスクはどの深さの行にも出す
+                        const canAddChild = true;
                         // PJ別表示中は全行がドラッグ元・ドロップ先の両方になれる（並び替え・親子変更とも可能）
                         const canDrag = groupBy === "project";
                         const showHandleCol = groupBy === "project";
@@ -994,6 +1023,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, my
                             canDrag={canDrag}
                             showHandleCol={showHandleCol}
                             myZone={myZone}
+                            dropBlocked={dragBlockedIds !== null && dragBlockedIds.has(task.id)}
                             density={density}
                             groupBy={groupBy}
                             currentUser={currentUser}
@@ -1394,6 +1424,8 @@ interface ListTaskRowProps {
   canDrag: boolean;
   showHandleCol: boolean;
   myZone: DropZone | null;
+  /** ドラッグ中のタスク（と子孫）の行＝ここへは落とせない（循環になる） */
+  dropBlocked: boolean;
   density: "simple" | "detailed";
   groupBy: GroupBy;
   currentUser: Member;
@@ -1416,7 +1448,7 @@ const ROW_TD_PADDING_FIRST = "3px 6px 3px 12px";
 const ListTaskRow = memo(function ListTaskRow({
   task, depth, parentNote, isParent, closesGroup, isEven, pj, todoItem,
   dispStatus, isSelected, isChecked, canAddChild, isCollapsed, prog,
-  canDrag, showHandleCol, myZone, density, groupBy, currentUser,
+  canDrag, showHandleCol, myZone, dropBlocked, density, groupBy, currentUser,
   draggingId, saveTask, onRowClick, onCheckboxClick, toggleCollapse,
   openAddChild, setDraggingId, setDropZone, handleTaskDrop,
 }: ListTaskRowProps) {
@@ -1444,9 +1476,9 @@ const ListTaskRow = memo(function ListTaskRow({
       data-task-focus-id={task.id}
       onClick={e => onRowClick(e, task.id)}
       onDragOver={canDrag ? (e => {
-        if (!draggingId || draggingId === task.id) return;
+        if (!draggingId || draggingId === task.id || dropBlocked) return;
         e.preventDefault();
-        const zone = computeDropZone(e, task);
+        const zone = computeDropZone(e);
         setDropZone(z => (z && z.id === task.id && z.zone === zone) ? z : { id: task.id, zone });
       }) : undefined}
       onDragLeave={canDrag ? (() => setDropZone(z => (z?.id === task.id ? null : z))) : undefined}
@@ -1464,7 +1496,7 @@ const ListTaskRow = memo(function ListTaskRow({
         ? "var(--color-brand-light)"
         : isSelected ? "var(--color-brand-light)"
         : isDone ? "var(--color-bg-secondary)" : zebraBg,
-      cursor: "pointer", opacity: isDone ? 0.65 : 1, transition: "background 0.1s",
+      cursor: draggingId && dropBlocked ? "not-allowed" : "pointer", opacity: isDone ? 0.65 : 1, transition: "background 0.1s",
       boxShadow: shadowLayers.length > 0 ? shadowLayers.join(", ") : "none",
     }}>
       {/* チェックボックス（行選択）＋ 手動順時はドラッグハンドル */}
@@ -1568,8 +1600,8 @@ const ListTaskRow = memo(function ListTaskRow({
             <span title="メモあり" style={{ fontSize: "11px", opacity: 0.45, flexShrink: 0 }}>💬</span>
           )}
           <DeliverableLink deliverable={task.deliverable} />
-          {/* ＋子タスク（最上位行のみ・親を固定して追加モーダルを開く＝親タスク追加と同じUI）。
-              名前の下にブロックで置くと canAddChild=全最上位タスクのため1行ぶん（約14px）
+          {/* ＋子タスク（どの深さの行にも出す・親を固定して追加モーダルを開く＝親タスク追加と同じUI）。
+              名前の下にブロックで置くと全行に出るため1行ぶん（約14px）
               余計に高くなる。名前行のflexコンテナ内に収めて行の縦を詰める。 */}
           {canAddChild && (
             <button

@@ -4,6 +4,7 @@
 //   J / ↓ = 次のタスクへ注目を動かす ／ K / ↑ = 前へ ／ Enter = 詳細を開く
 //   E = 完了↔未完了（Undoトースト付き）／ A = 詳細を開いて担当欄へ ／ D = 詳細を開いて期限欄へ
 //   Esc = 注目を外す
+//   Tab = 1段下げる（直前の兄弟の子にする）／Shift+Tab = 1段上げる（親の次の兄弟にする）：onIndent を渡した画面（リスト）だけ
 // 各ビューは「今の表示順のタスクid配列」と「詳細を開く関数」を渡すだけでよい。
 // 発火条件は shouldIgnoreSingleKey（入力中・IME・モーダル・修飾キー）に統一。↑↓は注目中のタスクが
 // あるときだけ効かせ、無いときはページのスクロールを奪わない。選択（Ctrl+A のチェック状態）には触れない。
@@ -32,14 +33,18 @@ interface Options {
   currentUserId: string;
   /** ゲストの編集可否。E はこれが false なら何もしない */
   canEdit: boolean;
+  /** Tab(dir=1)／Shift+Tab(dir=-1)。注目中のタスクid（無ければ null）を渡す。true を返したときだけ Tab の既定動作を止める。未指定の画面では Tab に触れない */
+  onIndent?: (dir: 1 | -1, focusedId: string | null) => boolean;
 }
 
-export function useTaskKeyboardNav({ enabled, blocked, orderedIds, onOpen, currentUserId, canEdit }: Options): void {
+export function useTaskKeyboardNav({ enabled, blocked, orderedIds, onOpen, currentUserId, canEdit, onIndent }: Options): void {
   const focusedId = useTaskFocusStore(s => s.focusedTaskId);
   const setFocused = useTaskFocusStore(s => s.setFocusedTaskId);
   const saveTask = useAppStore(s => s.saveTask);
   const idsRef = useRef(orderedIds);
   idsRef.current = orderedIds;
+  const onIndentRef = useRef(onIndent);
+  onIndentRef.current = onIndent;
 
   useEffect(() => {
     applyTaskFocusRing(focusedId);
@@ -73,6 +78,14 @@ export function useTaskKeyboardNav({ enabled, blocked, orderedIds, onOpen, curre
 
       if (e.key === "Escape") {
         if (current !== null) setFocused(null);
+        return;
+      }
+      if (e.key === "Tab" && onIndentRef.current) {
+        // ボタン・リンクにフォーカスがあるときの Tab は、ブラウザ標準のフォーカス移動に任せる（キーボード操作を壊さない）
+        const el = document.activeElement as HTMLElement | null;
+        const tag = (el?.tagName ?? "").toUpperCase();
+        if (tag === "BUTTON" || tag === "A" || tag === "SUMMARY") return;
+        if (onIndentRef.current(e.shiftKey ? -1 : 1, hasFocus ? current : null)) e.preventDefault();
         return;
       }
       if (isPlainLetter(e, "j") || (e.key === "ArrowDown" && hasFocus && !e.shiftKey)) {

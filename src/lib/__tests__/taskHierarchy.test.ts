@@ -6,6 +6,7 @@ import {
   rollupStatus,
   parentProgress,
   parentTaskCandidates,
+  taskPathLabel,
   buildParentDerivedMap,
   computeParentAutoStatus,
   orderSiblingsWithDependencies,
@@ -288,34 +289,37 @@ describe("buildParentDerivedMap：rollupStatus/parentProgressの一括版", () =
   });
 });
 
-describe("parentTaskCandidates：同一PJ優先・他PJも候補・最上位のみ", () => {
+describe("parentTaskCandidates：同じPJの任意のタスク（自分と子孫は除く）", () => {
   const tasks: Task[] = [
     mk({ id: "top1", project_id: "pj1", display_order: 2 }),
     mk({ id: "top2", project_id: "pj1", display_order: 1 }),
     mk({ id: "child1", project_id: "pj1", parent_task_id: "top1" }),
+    mk({ id: "grand1", project_id: "pj1", parent_task_id: "child1" }),
     mk({ id: "otherA", project_id: "pj2", display_order: 2 }),
-    mk({ id: "otherB", project_id: "pj2", display_order: 1 }),
     mk({ id: "del", project_id: "pj1", is_deleted: true }),
   ];
 
-  it("同一PJの最上位を先頭に、その後に他PJの最上位を返す（各グループ内は order 順）", () => {
-    // 同一PJ(pj1)：top2(order1)→top1(order2)、その後 他PJ(pj2)：otherB(order1)→otherA(order2)
+  it("同じPJのタスクだけを、木の順（親→子孫）で返す。子持ち・孫も候補になる", () => {
     expect(parentTaskCandidates(tasks, "pj1").map(t => t.id))
-      .toEqual(["top2", "top1", "otherB", "otherA"]);
+      .toEqual(["top2", "top1", "child1", "grand1"]);
   });
 
-  it("自分自身を除外し、小タスク（親持ち）・削除済みは候補に含めない", () => {
+  it("自分と自分の子孫を除外する（循環を作らない）。削除済み・他PJも含めない", () => {
     const ids = parentTaskCandidates(tasks, "pj1", "top1").map(t => t.id);
-    expect(ids).not.toContain("top1");   // 自分自身
-    expect(ids).not.toContain("child1"); // 小タスク（最上位でない）
-    expect(ids).not.toContain("del");    // 削除済み
-    expect(ids).toEqual(["top2", "otherB", "otherA"]);
+    expect(ids).toEqual(["top2"]);
+    expect(parentTaskCandidates(tasks, "pj1", "child1").map(t => t.id)).toEqual(["top2", "top1"]);
+    expect(ids).not.toContain("del");
+    expect(ids).not.toContain("otherA");
   });
 
-  it("currentProjectId が null でも他PJ最上位を全件（order 順）返す", () => {
-    // null と一致するPJがないので全件「他PJ」グループ＝全体を order 順で返す
-    expect(parentTaskCandidates(tasks, null).map(t => t.id))
-      .toEqual(["top2", "otherB", "top1", "otherA"]);
+  it("PJなし(null)ならPJなしのタスクだけ", () => {
+    expect(parentTaskCandidates([...tasks, mk({ id: "free", project_id: null })], null).map(t => t.id)).toEqual(["free"]);
+  });
+
+  it("taskPathLabel は祖先→自分を「 > 」でつなぐ", () => {
+    const byId = new Map(tasks.map(t => [t.id, t]));
+    expect(taskPathLabel(byId.get("grand1")!, byId)).toBe("top1 > child1 > grand1");
+    expect(taskPathLabel(byId.get("top2")!, byId)).toBe("top2");
   });
 });
 

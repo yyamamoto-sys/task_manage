@@ -1,7 +1,7 @@
 // src/lib/taskHierarchy.ts
 //
 // 【設計意図】
-// タスク階層（PJ > 大タスク > 小タスク・2階層固定）の「唯一の真実」。
+// タスク階層（PJ > タスク > 子タスク > …・任意の深さ）の「唯一の真実」。
 // 親のステータス・進捗は子から都度算出する派生値であり、DB には保存しない
 // （CLAUDE.md / docs/dev/task-hierarchy-design.md §5.5「派生値は state に保存しない」方針）。
 // List・Dashboard・ProjectKarte・payloadBuilder・AI・DnD は必ずこのヘルパーを使い、
@@ -421,46 +421,31 @@ export function buildEffectiveDatesMap(
   return map;
 }
 
+/** 「A > B > C」形式のパス（祖先→自分）。byId に居ない祖先・循環は打ち切る。 */
+export function taskPathLabel(task: Task, byId: Map<string, Task>): string {
+  const names = ancestorsOf(task, byId).map(a => a.name).reverse();
+  names.push(task.name);
+  return names.join(" > ");
+}
+
 /**
- * 親タスク選択用の候補。全PJの最上位タスク（parent_task_id 無し・非削除・自分以外）を、
- * currentProjectId と同じPJのものを先頭に、その後は他PJ、という順で返す。
- * （子を選ぶと子は親のPJに揃うため、他PJ親も許容。同一PJを優先表示する目的のヘルパー）
+ * 親タスク選択用の候補。currentProjectId と同じPJの非削除タスクのうち、
+ * 自分（forTaskId）と自分の子孫を除いたすべて（子持ちのタスクも親にできる）。
+ * 木の順（親→その子孫…）で返す。自分の子孫を除くのは循環を作らないため。
  */
 export function parentTaskCandidates(
   tasks: Task[],
   currentProjectId: string | null,
   forTaskId?: string,
 ): Task[] {
-  const tops = tasks
-    .filter(t =>
-      !t.is_deleted &&
-      t.parent_task_id == null &&   // 最上位のみ（小タスクは親になれない＝孫禁止）
-      t.id !== forTaskId,           // 自分自身を除外
-    )
-    .sort(sortTasksByOrder);
-  // 同一PJを先頭グループ、その後は他PJ。各グループ内は sortByOrder の並びを保つ（安定）。
-  const same = tops.filter(t => t.project_id === currentProjectId);
-  const other = tops.filter(t => t.project_id !== currentProjectId);
-  return [...same, ...other];
-}
-
-/**
- * ある親タスクの「子タスクにできる候補」（親側から子を複数選ぶUI用）。
- * - 親タスクと同一 project_id（親子は同一PJ内に限定）
- * - 親タスク自身は除外
- * - 既に子を持つタスク（=親）は除外（2階層固定・孫禁止）
- * - 既に他タスクの子であるタスクも候補に含む（選ぶと付け替え。呼び出し側で現在の親を併記してよい）
- * 親タスクは最上位（parent_task_id 無し）である前提（呼び出し側で担保すること）。
- */
-export function eligibleChildTasks(tasks: Task[], parent: Task): Task[] {
-  return tasks
-    .filter(t =>
-      !t.is_deleted &&
-      t.id !== parent.id &&
-      (t.project_id ?? null) === (parent.project_id ?? null) &&
-      !isParentTask(t, tasks),
-    )
-    .sort(sortTasksByOrder);
+  const live = tasks.filter(t => !t.is_deleted);
+  const excluded = new Set<string>();
+  if (forTaskId) {
+    excluded.add(forTaskId);
+    for (const d of descendantsOf(forTaskId, buildChildrenMap(live))) excluded.add(d.id);
+  }
+  const pool = live.filter(t => !excluded.has(t.id) && (t.project_id ?? null) === currentProjectId);
+  return orderTasksAsTree(pool, ts => ts.slice().sort(sortTasksByOrder)).map(r => r.task);
 }
 
 /** 葉タスクの慣例的な進捗率（0〜1）。0〜100%の実測フィールドが無いための代替表現

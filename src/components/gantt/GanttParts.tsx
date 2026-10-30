@@ -457,10 +457,12 @@ export interface GanttPjLabelRowProps {
   /** 行の下端の「＋」オーバーレイ（この行と下の行の「間」に新タスクを挿入。CLAUDE.md v3.06）。
       undefinedなら「＋」自体を描画しない（PJ別ビューのみで配線する想定のスコープ制御はGanttView側） */
   onInsertAfter?: (task: Task) => void;
+  /** 行の下端の「子」ボタン（この行の子タスクを追加。どの深さの行にも出す）。undefined なら描画しない */
+  onAddChild?: (task: Task) => void;
   /** ドラッグ並べ替え（依存の無い兄弟同士のみ有効。依存で縛られたペアは再描画で依存順に
       戻る＝v2.39の仕様どおり。CLAUDE.md v3.01） */
   draggingId: string | null;
-  dropZone: "before" | "after" | null;
+  dropZone: "before" | "after" | "nest" | null;
   onDragHandleStart: (taskId: string) => void;
   onDragHandleEnd: () => void;
   onRowDragOver: (e: React.DragEvent, taskId: string) => void;
@@ -471,7 +473,7 @@ export interface GanttPjLabelRowProps {
 export const GanttPjLabelRow = memo(function GanttPjLabelRow({
   task, rowHeight: rowHeightProp, scale = 1, isChild, depth: depthProp, childCount, isHovered, isCollapsed, isSelected, onCheckboxClick,
   onEdit, onHoverEnter, onHoverLeave, onToggleCollapse, onSaveAssignees,
-  onSaveName, autoEditName, onInsertAfter,
+  onSaveName, autoEditName, onInsertAfter, onAddChild,
   draggingId, dropZone, onDragHandleStart, onDragHandleEnd, onRowDragOver, onRowDragLeave, onRowDrop,
 }: GanttPjLabelRowProps) {
   const m = ganttRowMetrics(scale);
@@ -489,6 +491,7 @@ export const GanttPjLabelRow = memo(function GanttPjLabelRow({
   const shadowLayers: string[] = [];
   if (childCount > 0) shadowLayers.push("inset 3px 0 0 var(--color-brand)");
   else if (isChild) shadowLayers.push("inset 2px 0 0 var(--color-brand-border)");
+  if (dropZone === "nest") shadowLayers.push("inset 0 0 0 2px var(--color-brand)");
   if (dropZone === "before") shadowLayers.push("inset 0 2px 0 var(--color-brand)");
   if (dropZone === "after") shadowLayers.push("inset 0 -2px 0 var(--color-brand)");
   return (
@@ -614,6 +617,24 @@ export const GanttPjLabelRow = memo(function GanttPjLabelRow({
             cursor: "pointer", zIndex: 5,
           }}
         >＋</button>
+      )}
+      {/* 子タスクの追加（この行の子にする）。「＋」と同じく position:absolute で行の高さに影響しない */}
+      {onAddChild && isRowHovered && m.showSecondary && (
+        <button
+          onClick={e => { e.stopPropagation(); onAddChild(task); }}
+          onMouseDown={e => e.stopPropagation()}
+          title="この行の子タスクを追加"
+          aria-label="この行の子タスクを追加"
+          style={{
+            position: "absolute", left: "calc(50% + 14px)", bottom: -8,
+            height: 16, borderRadius: 8, padding: "0 5px",
+            background: "var(--color-bg-primary)", color: "var(--color-brand)",
+            border: "1px solid var(--color-brand)",
+            fontSize: "9px", lineHeight: "12px", whiteSpace: "nowrap",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            cursor: "pointer", zIndex: 5,
+          }}
+        >↳ 子</button>
       )}
     </div>
   );

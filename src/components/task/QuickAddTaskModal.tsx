@@ -16,7 +16,7 @@ import { MentionTextarea } from "../common/MentionTextarea";
 import { useAssigneeCandidates } from "../../hooks/useAssigneeCandidates";
 import { prepareNewTask, validateTaskDateRange } from "../../lib/task/newTask";
 import { showToast } from "../common/Toast";
-import { parentTaskCandidates } from "../../lib/taskHierarchy";
+import { buildParentOptions } from "../../lib/task/parentOptions";
 import { v4 as uuidv4 } from "uuid";
 import { modalOverlayStyle, modalBoxStyle, MODAL_BODY_STYLE } from "../common/modalStyles";
 
@@ -76,45 +76,28 @@ export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, def
   const [dueDate, setDueDate] = useState(defaultDueDate ?? "");
   const [priority, setPriority] = useState<Task["priority"]>(null);
   const [comment, setComment] = useState("");
-  // 子タスク（1行1タスク）。最上位タスク作成時のみ表示・一括作成する（2階層固定のため）。
+  // 子タスク（1行1タスク）。作成するタスクの直下の子として一括作成する。
   const [childDraft, setChildDraft] = useState("");
   const [saving, setSaving] = useState(false);
 
-  // PJ を変えても選択中の親タスクはクリアしない（他PJ親も許容するため）。
-  // 親を選んで保存すると project_id は親のPJに揃う（handleSave）。
-  // PJを変えたらグループは外す（別PJのグループを指さない）。
+  // 親は同じPJの中から選ぶ。PJを別のPJに変えたら選択中の親は外す。
+  // PJを変えたらグループも外す（別PJのグループを指さない）。
   const handleProjectChange = (val: string) => {
     if (val !== projectId) setSectionId(null);
     setProjectId(val);
+    const cur = parentId ? rawTasks.find(t => t.id === parentId) : undefined;
+    if (cur && (cur.project_id ?? null) !== (val || null)) setParentId("");
   };
 
   // 親タスクを選んでいる間、グループは親と同じ（選べない）
   const formParent = parentId ? rawTasks.find(t => t.id === parentId) : undefined;
 
-  // 親タスク候補＝全PJの最上位タスク。選択中PJを先頭に、他PJはPJ名を併記。
-  // （子を選ぶと子は親のPJに揃うため他PJ親も許容。同一PJを優先表示）
-  const parentOptions = useMemo<SelectOption[]>(() => {
-    const cur = projectId || null;
-    const pjOf = (id: string | null) => (id ? projects.find(p => p.id === id) : undefined);
-    const currentPjColor = pjOf(cur)?.color_tag ?? "var(--color-border-secondary)";
-    const cands = parentTaskCandidates(rawTasks, cur);
-    const same  = cands.filter(t => (t.project_id ?? null) === cur);
-    const other = cands.filter(t => (t.project_id ?? null) !== cur);
-    const opts: SelectOption[] = [{ value: "", label: "（なし＝親タスク）" }];
-    if (same.length) {
-      opts.push({ value: "__h_same", label: "このプロジェクト", header: true });
-      for (const t of same) opts.push({ value: t.id, label: t.name, color: currentPjColor });
-    }
-    if (other.length) {
-      opts.push({ value: "__h_other", label: "他のプロジェクト", header: true });
-      for (const t of other) opts.push({
-        value: t.id, label: t.name,
-        color: pjOf(t.project_id)?.color_tag ?? "var(--color-border-secondary)",
-        meta: pjOf(t.project_id)?.name, dim: true,
-      });
-    }
-    return opts;
-  }, [rawTasks, projectId, projects]);
+  // 親タスク候補＝同じPJの任意のタスク（パス表示）。親が決まっている間はその親のPJ
+  const parentCandidateProjectId = formParent ? (formParent.project_id ?? null) : (projectId || null);
+  const parentOptions = useMemo<SelectOption[]>(
+    () => buildParentOptions(rawTasks, parentCandidateProjectId, undefined, parentId || null, projects, "（なし＝最上位）"),
+    [rawTasks, parentCandidateProjectId, parentId, projects],
+  );
 
   const handleSave = async () => {
     if (!name.trim()) return;
@@ -327,39 +310,37 @@ export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, def
           parentLocked={formParent ? { sectionId: formParent.section_id ?? null } : null}
         />
 
-        {/* 親タスク（任意・2階層固定。他PJの親も選べる＝選ぶと子は親のPJに揃う） */}
+        {/* 親タスク（任意・同じPJの任意のタスク。パスで表示・検索できる。なし＝最上位） */}
         <div style={{ marginBottom: "16px" }}>
           <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "4px" }}>親タスク（任意）</div>
           <CustomSelect
             value={parentId}
             onChange={setParentId}
             options={parentOptions}
-            placeholder="（なし＝親タスク）"
+            placeholder="（なし＝最上位）"
             searchable
-            searchPlaceholder="親タスクを検索..."
+            searchPlaceholder="親タスクを検索（A > B > C）..."
           />
         </div>
 
-        {/* 子タスク（任意・最上位タスク作成時のみ。1行に1つ＝まとめて子タスクを作成） */}
-        {!parentId && (
-          <div style={{ marginBottom: "12px" }}>
-            <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "4px" }}>子タスク（任意・1行に1つ）</div>
-            <textarea
-              value={childDraft}
-              onChange={e => setChildDraft(e.target.value)}
-              placeholder={"子タスク名を1行に1つ入力...\n例：\n要件整理\nデザイン案作成"}
-              rows={3}
-              style={{
-                width: "100%", padding: "8px 12px", fontSize: "12px", lineHeight: 1.6,
-                border: "1px solid var(--color-border-primary)",
-                borderRadius: "var(--radius-md)",
-                background: "var(--color-bg-primary)",
-                color: "var(--color-text-primary)",
-                outline: "none", resize: "vertical", fontFamily: "inherit",
-              }}
-            />
-          </div>
-        )}
+        {/* 子タスク（任意。1行に1つ＝まとめて子タスクを作成） */}
+        <div style={{ marginBottom: "12px" }}>
+          <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "4px" }}>子タスク（任意・1行に1つ）</div>
+          <textarea
+            value={childDraft}
+            onChange={e => setChildDraft(e.target.value)}
+            placeholder={"子タスク名を1行に1つ入力...\n例：\n要件整理\nデザイン案作成"}
+            rows={3}
+            style={{
+              width: "100%", padding: "8px 12px", fontSize: "12px", lineHeight: 1.6,
+              border: "1px solid var(--color-border-primary)",
+              borderRadius: "var(--radius-md)",
+              background: "var(--color-bg-primary)",
+              color: "var(--color-text-primary)",
+              outline: "none", resize: "vertical", fontFamily: "inherit",
+            }}
+          />
+        </div>
 
         {/* 成果物（v3.149）。URL を書くとリストの📎から開ける */}
         <DeliverableField

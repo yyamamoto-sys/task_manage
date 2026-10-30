@@ -679,3 +679,56 @@ describe("applyProposal — bulk_status（CLAUDE.md Section 56）", () => {
     expect(result.dialog.bulk_over_limit).toBe(true);
   });
 });
+
+describe("add_task：何段目の既存タスクの下にも作れる（parent_task・v3.196）", () => {
+  const seed = () => useAppStore.setState({
+    projects: [makeProject({ id: "pj-1" })],
+    tasks: [
+      makeTask({ id: "A", name: "A", project_id: "pj-1" }),
+      makeTask({ id: "B", name: "B", project_id: "pj-1", parent_task_id: "A", display_order: 0 }),
+      makeTask({ id: "C", name: "C", project_id: "pj-1", parent_task_id: "B", display_order: 0 }),
+      makeTask({ id: "D", name: "別名", project_id: "pj-1", parent_task_id: "C", display_order: 0 }),
+    ],
+  });
+
+  it("IDで3段目のタスクを指定すると、その子として末尾に作られる（PJは親に揃う）", async () => {
+    seed();
+    const r = await applyProposal(
+      makeProposal({ action_type: "add_task", title: "新規", parent_task: "task_003", target_pj_ids: [] }),
+      new Map([["task_003", "C"]]), "user-1",
+    );
+    expect(r.type).toBe("needs_confirmation");
+    if (r.type !== "needs_confirmation") return;
+    expect(r.dialog.existing_parent_task_id).toBe("C");
+    expect(r.dialog.existing_parent_task_path).toBe("A > B > C");
+    expect(r.dialog.new_task_items?.[0].project_id).toBe("pj-1");
+
+    const ok = await applyProposalWithConfirmation(r.dialog, { [`${r.dialog.new_task_items![0].temp_id}_name`]: "新規" }, "user-1");
+    expect(ok.type).toBe("success");
+    const created = useAppStore.getState().tasks.find(t => t.name === "新規")!;
+    expect(created.parent_task_id).toBe("C");
+    expect(created.project_id).toBe("pj-1");
+    expect(created.display_order).toBe(1); // C の既存の子 D(0) の次
+  });
+
+  it("名前で指定できる。同名が複数あるときは作らずに知らせる", async () => {
+    seed();
+    const r = await applyProposal(makeProposal({ action_type: "add_task", title: "新規", parent_task: "B" }), new Map(), "user-1");
+    expect(r.type).toBe("needs_confirmation");
+    useAppStore.setState({ tasks: [...useAppStore.getState().tasks, makeTask({ id: "B2", name: "B", project_id: "pj-1" })] });
+    const dup = await applyProposal(makeProposal({ action_type: "add_task", title: "新規", parent_task: "B" }), new Map(), "user-1");
+    expect(dup.type).toBe("error");
+  });
+
+  it("見つからない親は作らずにエラー（黙って最上位に作らない）", async () => {
+    seed();
+    const r = await applyProposal(makeProposal({ action_type: "add_task", title: "新規", parent_task: "存在しない" }), new Map(), "user-1");
+    expect(r.type).toBe("error");
+  });
+
+  it("parent_task が無ければ従来どおり最上位", async () => {
+    seed();
+    const r = await applyProposal(makeProposal({ action_type: "add_task", title: "新規" }), new Map(), "user-1");
+    expect(r.type === "needs_confirmation" && r.dialog.existing_parent_task_id).toBeFalsy();
+  });
+});

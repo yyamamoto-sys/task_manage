@@ -63,8 +63,9 @@ import { resolveLinkDirection, type LinkSide } from "../../lib/dependencies/link
 import { canAddDependency } from "../../lib/dependencies/cycleCheck";
 import {
   orderSiblingsWithDependencies, applyDependencyOrderWithinSiblings, filterHideCompletedTasks, buildProgressFractionMap,
-  orderTasksAsTree, buildEffectiveDatesMap, buildTaskById, parentArrowPrefix,
+  orderTasksAsTree, buildEffectiveDatesMap, buildTaskById, parentArrowPrefix, buildChildrenMap, descendantsOf,
 } from "../../lib/taskHierarchy";
+import { nextDisplayOrder } from "../../lib/task/newTask";
 import { computeCriticalTaskIds } from "../../lib/gantt/criticalPath";
 import { computeOverloadRanges } from "../../lib/gantt/overload";
 import { getMemberActiveTasks } from "../../lib/workload/computeWorkload";
@@ -966,6 +967,36 @@ export function GanttView({
     setAutoEditTaskId(newTask.id);
   }, [allTasks, saveTask, currentUser.id]);
 
+  // 「↳ 子」：この行の子タスクを末尾に追加する（どの深さの行でも）。親が折りたたまれていれば開き、
+  // 名前をそのまま上書き入力できる状態で開く（handleInsertTaskAfter と同じ流れ）。
+  const handleAddChildTask = useCallback(async (parent: Task) => {
+    const now = new Date().toISOString();
+    const projectId = parent.project_id ?? null;
+    const newTask: Task = {
+      id: uuidv4(),
+      name: "新しいタスク",
+      project_id: projectId,
+      parent_task_id: parent.id,
+      display_order: nextDisplayOrder(allTasks, projectId, parent.id),
+      todo_ids: [],
+      assignee_member_id: "",
+      assignee_member_ids: [],
+      status: "todo",
+      priority: null,
+      start_date: null,
+      due_date: null,
+      estimated_hours: null,
+      comment: "",
+      is_deleted: false,
+      created_at: now,
+      updated_at: now,
+      updated_by: currentUser.id,
+    };
+    setCollapsed(prev => (prev[parent.id] ? { ...prev, [parent.id]: false } : prev));
+    await saveTask(newTask);
+    setAutoEditTaskId(newTask.id);
+  }, [allTasks, saveTask, currentUser.id]);
+
   // ===== D&D並べ替え（PJ別ビューのラベル列。依存の無い兄弟同士のみ display_order を書き換える。
   // 依存で縛られたペアは常に依存順が勝つ＝v2.39の仕様どおり、ここでは触らない） =====
   // ListViewと同じ useTaskDragReorder を共有（CLAUDE.md v3.01）。GanttViewには「手動ソート
@@ -982,15 +1013,22 @@ export function GanttView({
   } = useTaskDragReorder(allTasks, currentUser.id);
   const handleDragHandleStart = useCallback((taskId: string) => setGanttDraggingId(taskId), [setGanttDraggingId]);
   const handleDragHandleEnd = useCallback(() => { setGanttDraggingId(null); setGanttDropZone(null); }, [setGanttDraggingId, setGanttDropZone]);
+  // ドラッグ中のタスクと、その子孫の行へは落とせない（循環になる）
+  const ganttBlockedIds = useMemo(() => {
+    if (!ganttDraggingId) return null;
+    const set = new Set<string>([ganttDraggingId]);
+    for (const d of descendantsOf(ganttDraggingId, buildChildrenMap(allTasks))) set.add(d.id);
+    return set;
+  }, [ganttDraggingId, allTasks]);
   const handleRowDragOver = useCallback((e: React.DragEvent, taskId: string) => {
+    if (ganttBlockedIds?.has(taskId)) return; // preventDefault しない＝禁止カーソル
     e.preventDefault();
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const ratio = rect.height > 0 ? (e.clientY - rect.top) / rect.height : 0.5;
-    // GanttViewのラベル列は常に allowNest=false（before/afterのみ）。ドロップ先の子にする
-    // 操作はGanttでは提供しない（2階層の親子付け替えはListViewに限定するスコープ判断。CLAUDE.md v3.01）
-    const zone = computeDropZoneFromRatio(ratio, false) as "before" | "after";
+    // 上30%＝前・下30%＝後ろ・中央40%＝その行の子にする（どの深さの行でも）
+    const zone = computeDropZoneFromRatio(ratio, true);
     setGanttDropZone(z => (z && z.id === taskId && z.zone === zone) ? z : { id: taskId, zone });
-  }, [setGanttDropZone]);
+  }, [setGanttDropZone, ganttBlockedIds]);
   const handleRowDragLeave = useCallback((taskId: string) => {
     setGanttDropZone(z => (z?.id === taskId ? null : z));
   }, [setGanttDropZone]);
@@ -1805,8 +1843,9 @@ export function GanttView({
             onCheckboxClick={rowCheckboxClick}
             autoEditName={autoEditTaskId === task.id}
             onInsertAfter={handleInsertTaskAfter}
+            onAddChild={handleAddChildTask}
             draggingId={ganttDraggingId}
-            dropZone={ganttDropZone?.id === task.id ? (ganttDropZone.zone as "before" | "after") : null}
+            dropZone={ganttDropZone?.id === task.id ? ganttDropZone.zone : null}
             onDragHandleStart={handleDragHandleStart}
             onDragHandleEnd={handleDragHandleEnd}
             onRowDragOver={handleRowDragOver}

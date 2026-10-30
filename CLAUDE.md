@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.195
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.196
 #
-最終更新：2026-10-30（v3.195）
+最終更新：2026-10-30（v3.196）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -159,7 +159,7 @@
 | 85 | 85. キーボードショートカットの追加 | キーボードショートカットの追加 | docs/dev/sections/s85_keyboard-shortcuts.md |
 | 86 | 86. 縮小表示時のフォント切替 | 縮小表示時のフォント切替 | docs/dev/sections/s86_small-font-switch.md |
 | 87 | 87. プロジェクト・ビュー・タスクのリンク共有（`/?open=project`・`/?open=task`） | プロジェクト・ビュー・タスクのリンク共有 | docs/dev/sections/s87_share-link.md |
-| 88 | 88. タスクの親子を任意の深さにする：Phase A（表示）＋A'（下回り）（v3.195） | 親子2段固定を撤廃する第1段。木順・N段の集計（末端数え）・折りたたみ・子孫全体の移動/選択/複製・循環防止（DB トリガーは手動適用） | docs/dev/sections/s88_task-tree-depth.md |
+| 88 | 88. タスクの親子を任意の深さにする：Phase A（表示）＋A'（下回り）（v3.195）＋Phase B（編集操作・v3.196） | 親子2段固定を撤廃。木順・N段の集計（末端数え）・子孫全体の移動/選択/複製・循環防止（Phase A）／親欄1つ・ドラッグ・Tab/Shift+Tab・＋子タスク・AI の parent_task（Phase B・MIN_CLIENT_VERSION を 3.196 へ） | docs/dev/sections/s88_task-tree-depth.md |
 
 ---
 

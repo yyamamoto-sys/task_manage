@@ -50,8 +50,10 @@ export interface Proposal {
   needs_confirmation: boolean;
   /** add_project 用：作成するPJに紐づく初期タスク */
   new_project_tasks?: NewProjectTaskInput[];
-  /** add_task 用：このタスクを親として、その下にぶら下げる子タスク（2階層固定） */
+  /** add_task 用：このタスクを親として、その下にぶら下げる子タスク（さらに子を持たせることはしない＝1提案は「親＋直下の子」） */
   new_subtasks?: NewProjectTaskInput[];
+  /** add_task 用：作るタスクを入れる既存タスク（何段目でもよい）。タスクのID（task_001 等）または名前 */
+  parent_task?: string;
   /** bulk_rename 用：置換前の文字列（アプリ側でreplaceInNameを使って実際の新名を算出する） */
   find?: string;
   /** bulk_rename 用：置換後の文字列 */
@@ -195,6 +197,7 @@ function validateProposal(p: unknown, index: number): Proposal {
     needs_confirmation: needsConfirmation,
     new_project_tasks: parseNewProjectTasks(obj.new_project_tasks),
     new_subtasks: parseNewProjectTasks(obj.new_subtasks),
+    parent_task: typeof obj.parent_task === "string" && obj.parent_task.trim() ? obj.parent_task.trim() : undefined,
     find: typeof obj.find === "string" ? obj.find : undefined,
     replace: typeof obj.replace === "string" ? obj.replace : undefined,
     new_status: VALID_BULK_TASK_STATUSES.includes(obj.new_status as BulkTaskStatus)

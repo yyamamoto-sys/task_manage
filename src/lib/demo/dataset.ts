@@ -218,6 +218,9 @@ function buildTasks(): Task[] {
     mkTask({ id: T_REQ, name: "現行システムの課題整理", projectId: P.system, assignee: M.tamaki, status: "done", priority: "high", start: -55, due: -35, tags: ["要件定義"], todoIds: [TODO.currentIssues] }),
     mkTask({ id: T_REQDEF, name: "新システム要件定義", projectId: P.system, assignee: M.tamaki, status: "done", priority: "high", start: -34, due: -20, tags: ["要件定義"], todoIds: [TODO.newRequirements] }),
     mkTask({ id: "demo-task-2a", name: "画面要件のヒアリング", projectId: P.system, assignee: M.riku, status: "done", priority: "mid", start: -34, due: -28, parentId: T_REQDEF }),
+    // 3段の例：新システム要件定義 > 画面要件のヒアリング > 部署ごとの聞き取り／結果の取りまとめ（親子は何段でも入れ子にできる）
+    mkTask({ id: "demo-task-2a-1", name: "部署ごとの聞き取り", projectId: P.system, assignee: M.riku, status: "done", priority: "mid", start: -34, due: -31, parentId: "demo-task-2a" }),
+    mkTask({ id: "demo-task-2a-2", name: "ヒアリング結果の取りまとめ", projectId: P.system, assignee: M.riku, status: "done", priority: "mid", start: -31, due: -28, parentId: "demo-task-2a" }),
     mkTask({ id: "demo-task-2b", name: "データ移行要件の整理", projectId: P.system, assignee: M.mei, status: "done", priority: "mid", start: -30, due: -20, parentId: T_REQDEF }),
     // 当初計画（baseline）より遅延しているタスク：本来 -19〜-5 に終わる予定が +10 まで延びた
     mkTask({ id: T_DESIGN, name: "新システム設計", projectId: P.system, assignee: M.tamaki, status: "in_progress", priority: "high", start: -15, due: 10, tags: ["設計"], baselineStart: -19, baselineDue: -5 }),

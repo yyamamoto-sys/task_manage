@@ -40,6 +40,8 @@ import { toDate, addDays, toDateStr } from "../date";
 import { sortTaskIdsByDependencyOrder } from "../dependencies/topoSort";
 import { TASK_STATUS_LABEL } from "../taskMeta";
 import { buildBulkRenamePlan, buildBulkExclusionSummary, buildBulkStatusPlan } from "./bulkEditPlan";
+import { buildTaskById, taskPathLabel } from "../taskHierarchy";
+import { nextDisplayOrder } from "../task/newTask";
 
 // ===== 型定義 =====
 
@@ -117,8 +119,12 @@ export interface ConfirmationDialog {
   target_task_uuids?: string[];
   /** add_task 用：新規タスク情報（new_subtask_items がある場合は new_task_items[0] が親タスク） */
   new_task_items?: NewTaskItem[];
-  /** add_task 用：親タスク（new_task_items[0]）にぶら下げる子タスク（2階層固定） */
+  /** add_task 用：親タスク（new_task_items[0]）にぶら下げる子タスク */
   new_subtask_items?: NewTaskItem[];
+  /** add_task 用：new_task_items[0] を入れる既存タスク（何段目でもよい）。無ければ最上位に作る */
+  existing_parent_task_id?: string;
+  /** 上の表示用パス（「A > B > C」） */
+  existing_parent_task_path?: string;
   /** add_project 用：作成する新規PJ情報 */
   new_project?: { name: string; purpose: string };
   /** add_project 用：新規PJに紐づく初期タスク（NewTaskItem を流用。project_id は新規PJなので未確定＝空） */
@@ -547,6 +553,35 @@ export async function applyProposal(
       }
     }
 
+    // 入れ先の既存タスク（parent_task＝IDまたは名前）。何段目でもよい。特定できないときは作らずに知らせる
+    // （黙って最上位に作ると、AIの意図と違う場所にタスクが増える）。PJは親に揃える
+    let existingParentId: string | undefined;
+    let existingParentPath: string | undefined;
+    if (proposal.parent_task) {
+      const live = useAppStore.getState().tasks.filter(t => !t.is_deleted);
+      const byId = buildTaskById(live);
+      const viaShort = resolveUUID(proposal.parent_task, shortIdMap);
+      let found: Task | undefined = viaShort ? byId.get(viaShort) : undefined;
+      if (!found) {
+        const wanted = proposal.parent_task.trim();
+        const sameName = live.filter(t => t.name.trim() === wanted);
+        const inPj = projectId ? sameName.filter(t => t.project_id === projectId) : sameName;
+        const pool = inPj.length > 0 ? inPj : sameName;
+        if (pool.length > 1) {
+          return { type: "error", message: `親タスク「${wanted}」と同じ名前のタスクが複数あるため、入れ先を特定できません。タスクIDで指定するか、名前を区別して相談し直してください` };
+        }
+        found = pool[0];
+      }
+      if (!found) {
+        return { type: "error", message: `親タスク「${proposal.parent_task}」が見つかりませんでした` };
+      }
+      existingParentId = found.id;
+      existingParentPath = taskPathLabel(found, byId);
+      const parentPj = found.project_id ? getProjectPreview(found.project_id) : null;
+      projectId = found.project_id ?? undefined;
+      projectName = parentPj?.name;
+    }
+
     // 担当者解決用に有効メンバーを一括取得（親タスク＋子タスクの short_name→id 変換に使う）
     const memberRows = getAssigneeCandidatesForNameResolution(projectId);
     const memberByShortName = new Map<string, { id: string; short_name: string }>();
@@ -595,6 +630,8 @@ export async function applyProposal(
           suggested_due_date: proposal.suggested_date,
         }],
         new_subtask_items: subtaskItems.length > 0 ? subtaskItems : undefined,
+        existing_parent_task_id: existingParentId,
+        existing_parent_task_path: existingParentPath,
       },
     };
   }
@@ -996,12 +1033,23 @@ export async function applyProposalWithConfirmation(
         const dueDate = confirmedValues[`${item.temp_id}_due_date`] || null;
 
         const newId = generateId();
+        // 既存タスクの下に入れるとき：PJは親に揃え、親の子の末尾に置く（保存時に最新の親を引き直す）
+        const existingParent = parentId === null && dialog.existing_parent_task_id
+          ? useAppStore.getState().tasks.find(t => t.id === dialog.existing_parent_task_id && !t.is_deleted)
+          : undefined;
+        if (parentId === null && dialog.existing_parent_task_id && !existingParent) {
+          return { type: "error", message: "入れ先の親タスクが見つかりません（削除された可能性があります）" };
+        }
         try {
           await createTaskRow(
             {
               id: newId,
               name,
-              project_id: item.project_id ?? null,
+              project_id: existingParent ? (existingParent.project_id ?? null) : (item.project_id ?? null),
+              parent_task_id: existingParent ? existingParent.id : null,
+              display_order: existingParent
+                ? nextDisplayOrder(useAppStore.getState().tasks, existingParent.project_id ?? null, existingParent.id)
+                : undefined,
               assignee_member_id: assigneeId,
               assignee_member_ids: assigneeIdList,
               start_date: startDate,
@@ -1015,7 +1063,7 @@ export async function applyProposalWithConfirmation(
         }
         operations.push({ type: "task_delete", taskId: newId });
         addedCount++;
-        if (parentId === null) { parentId = newId; parentProjectId = item.project_id ?? null; }
+        if (parentId === null) { parentId = newId; parentProjectId = existingParent ? (existingParent.project_id ?? null) : (item.project_id ?? null); }
       }
 
       // 子タスクを作成（親に parent_task_id でぶら下げ・project_id は親に揃える）。

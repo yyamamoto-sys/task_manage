@@ -8,7 +8,7 @@
 // 不安」というクレームを受け、保存ボタン／Enter／Ctrl(Cmd)+Enterで明示的に保存する方式へ
 // 変更した（TaskEditModal.tsxと同じ設計。CLAUDE.md 新設グランドルール参照）。
 // 対象は `sidebarForm`（このタスク自身のフィールド）のみ。先行タスクの紐づけ・子タスクの付け外し
-// （add/removeTaskDependency・applyChildren・detachChild）は別テーブルへのjoin/unjoinや
+// （add/removeTaskDependency・detachChild）は別テーブルへのjoin/unjoinや
 // 他タスクのparent_task_id変更で、操作した瞬間に結果が見える別種の操作のため、従来どおり
 // 即時実行のままにする。
 //
@@ -25,7 +25,8 @@ import {
   getAssigneeIds, suppressOverdue,
 } from "../../lib/taskMeta";
 import { todayStr } from "../../lib/date";
-import { parentTaskCandidates, childrenOf, eligibleChildTasks } from "../../lib/taskHierarchy";
+import { childrenOf } from "../../lib/taskHierarchy";
+import { buildParentOptions } from "../../lib/task/parentOptions";
 import { wouldCreateCycle } from "../../lib/dependencies/cycleCheck";
 import { Avatar } from "../auth/UserSelectScreen";
 import { confirmDialog } from "../../lib/dialog";
@@ -133,45 +134,20 @@ export function TaskSidePanel({ taskId, currentUser, onClose, onSwitchFailed }: 
     );
   }, [allTasks, taskId, predecessorDeps, activeTaskDependencies]);
 
-  // 親タスク候補＝全PJの最上位タスク。選択中タスクのPJを先頭に、他PJはPJ名を併記。
-  // （子を選ぶと子は親のPJに揃うため他PJ親も許容。同一PJを優先表示）
-  // 親タスク候補。現PJのタスクと他PJのタスクを見出しで分け、PJカラーのドットで属性を可視化する
-  // （どこまでが今のプロジェクトに属するか色で判別できるようにする）。
-  const currentProjectId = selectedTask?.project_id ?? null;
-  const parentOptions = useMemo<SelectOption[]>(() => {
-    const pjOf = (id: string | null) => (id ? projects.find(p => p.id === id) : undefined);
-    const currentPjColor = pjOf(currentProjectId)?.color_tag ?? "var(--color-border-secondary)";
-    const cands = parentTaskCandidates(allTasks, currentProjectId, selectedTask?.id);
-    const same  = cands.filter(t => (t.project_id ?? null) === currentProjectId);
-    const other = cands.filter(t => (t.project_id ?? null) !== currentProjectId);
-    const opts: SelectOption[] = [{ value: "", label: "（親タスクを選択...）" }];
-    if (same.length) {
-      opts.push({ value: "__h_same", label: "このプロジェクト", header: true });
-      for (const t of same) opts.push({ value: t.id, label: t.name, color: currentPjColor });
-    }
-    if (other.length) {
-      opts.push({ value: "__h_other", label: "他のプロジェクト", header: true });
-      for (const t of other) opts.push({
-        value: t.id, label: t.name,
-        color: pjOf(t.project_id)?.color_tag ?? "var(--color-border-secondary)",
-        meta: pjOf(t.project_id)?.name, dim: true,
-      });
-    }
-    return opts;
-  }, [allTasks, currentProjectId, selectedTask?.id, projects]);
-
   const [sidebarForm, setSidebarForm] = useState<SidebarForm | null>(null);
+  // 親タスク候補＝同じPJの、自分と自分の子孫以外の任意のタスク（パス表示）。親が決まっている間はその親のPJ
+  const parentCandidateProjectId = useMemo(() => {
+    const p = sidebarForm?.parent_task_id ? allTasks.find(t => t.id === sidebarForm.parent_task_id) : undefined;
+    return p ? (p.project_id ?? null) : (sidebarForm?.project_id ?? selectedTask?.project_id ?? null);
+  }, [allTasks, sidebarForm?.parent_task_id, sidebarForm?.project_id, selectedTask?.project_id]);
+  const parentOptions = useMemo<SelectOption[]>(
+    () => buildParentOptions(allTasks, parentCandidateProjectId, selectedTask?.id, sidebarForm?.parent_task_id, projects, "（なし＝最上位）"),
+    [allTasks, parentCandidateProjectId, selectedTask?.id, sidebarForm?.parent_task_id, projects],
+  );
   // 担当者の候補（表示部署のメンバー＋PJ参加者＋今の担当者）。チップの名前解決は members（全件）のまま
   const assigneeCandidates = useAssigneeCandidates(sidebarForm?.project_id ?? null, sidebarForm?.assignee_member_ids ?? []);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
-  // 階層モード：単独（none）／子タスク（child＝親を選ぶ）／親タスク（parent＝子を選ぶ）。
-  // 両方のUIを同時に出すと混乱するため、選んだモード専用のUIだけを表示する。
-  const [hierarchyMode, setHierarchyMode] = useState<"none" | "child" | "parent">("none");
-  // 子タスク選択（親側から子を複数チェックして決定する）UI の状態
-  const [childPickerOpen, setChildPickerOpen] = useState(false);
-  const [childPickerChecked, setChildPickerChecked] = useState<Set<string>>(new Set());
-  const [childSearch, setChildSearch] = useState("");
   // ===== v3.87：明示保存のためのbaseline管理（TaskEditModal.tsxと同じ設計） =====
   // baselineFormRef：「最後に保存した内容（未保存なら開いた時点の内容）」。isDirty判定の基準。
   // baselineUpdatedAtRef：「最後に保存した時点（未保存なら開いた時点）のupdated_at」。
@@ -252,15 +228,6 @@ export function TaskSidePanel({ taskId, currentUser, onClose, onSwitchFailed }: 
       baselineFormRef.current = nextForm;
       baselineUpdatedAtRef.current = selectedTask.updated_at;
       formTaskRef.current = selectedTask;
-      // 現在の親子状態から階層モードを導出
-      setHierarchyMode(
-        selectedTask.parent_task_id ? "child"
-        : childrenOf(allTasks, selectedTask.id).length > 0 ? "parent"
-        : "none"
-      );
-      setChildPickerOpen(false);
-      setChildPickerChecked(new Set());
-      setChildSearch("");
       setSaveStatus("idle");
       setSaveError(null);
     }
@@ -410,68 +377,8 @@ export function TaskSidePanel({ taskId, currentUser, onClose, onSwitchFailed }: 
   // 親タスクを選んでいる間、グループは親と同じ（選べない）
   const formParentTask = sidebarForm.parent_task_id ? allTasks.find(t => t.id === sidebarForm.parent_task_id) : undefined;
 
-  // ===== 階層（親子関係） =====
+  // ===== 階層（親子関係）：親は「親タスク」欄1つで決める。子は直下の件数・一覧を表示 =====
   const children = childrenOf(allTasks, selectedTask.id);
-  const hasChildren = children.length > 0;
-
-  // モード切替。子が付いている間は「親タスク」以外に切り替えられない（先に子を外す）。
-  // 「子タスク」以外に切り替えたら親設定はクリアする（sidebarFormの一部のため、保存ボタン／
-  // Enter／Ctrl+Enterで明示保存されるまでDBには反映されない＝v3.87）。
-  const switchHierarchyMode = (mode: "none" | "child" | "parent") => {
-    if (mode === hierarchyMode) return;
-    if (hasChildren && mode !== "parent") return;
-    setHierarchyMode(mode);
-    if (mode !== "child" && sidebarForm.parent_task_id) {
-      setSidebarForm(f => f ? { ...f, parent_task_id: null } : f);
-    }
-    if (mode !== "parent") {
-      setChildPickerOpen(false);
-      setChildPickerChecked(new Set());
-    }
-  };
-
-  const childCandidates = hierarchyMode === "parent"
-    ? eligibleChildTasks(allTasks, selectedTask).filter(t => t.parent_task_id !== selectedTask.id)
-    : [];
-  const childQ = childSearch.trim().toLowerCase();
-  const visibleChildCandidates = childQ
-    ? childCandidates.filter(t => t.name.toLowerCase().includes(childQ))
-    : childCandidates;
-
-  const toggleChild = (id: string) => setChildPickerChecked(prev => {
-    const n = new Set(prev);
-    if (n.has(id)) n.delete(id); else n.add(id);
-    return n;
-  });
-
-  // v3.87：applyChildren/detachChildは「別のタスク（子）」のparent_task_idを変更する操作で、
-  // 選択中タスク自身のsidebarFormではない。従来どおり即時保存のままにする（保存ボタンの対象外）。
-  const applyChildren = async () => {
-    const ids = [...childPickerChecked];
-    if (ids.length === 0) return;
-    // 兄弟の display_order 最大値から連番で付与し、選んだ順に親直下へ並べる
-    let order = children.reduce((mx, c) => Math.max(mx, c.display_order ?? 0), 0);
-    try {
-      for (const id of ids) {
-        const t = allTasks.find(x => x.id === id);
-        if (!t) continue;
-        order += 1;
-        await saveTask({
-          ...t,
-          parent_task_id: selectedTask.id,
-          project_id: selectedTask.project_id ?? null, // 子は親と同一PJに揃える
-          display_order: order,
-          updated_by: currentUser.id,
-        });
-      }
-      showToast(`${ids.length}件を「${selectedTask.name}」の子タスクにしました`);
-      flashImmediateSaved();
-      setChildPickerChecked(new Set());
-      setChildPickerOpen(false);
-    } catch (e) {
-      showToast(formatErrorForUser("子タスクの設定に失敗しました", e), "error");
-    }
-  };
 
   const detachChild = async (childId: string) => {
     const t = allTasks.find(x => x.id === childId);
@@ -710,6 +617,9 @@ export function TaskSidePanel({ taskId, currentUser, onClose, onSwitchFailed }: 
             project_id: value || null,
             // PJを変えたらグループは外す（別PJのグループを指さない）
             section_id: (value || null) === f.project_id ? f.section_id : null,
+            // 親は同じPJの中から選ぶ。別のPJに変えたら親は外す
+            parent_task_id: f.parent_task_id && (allTasks.find(t => t.id === f.parent_task_id)?.project_id ?? null) !== (value || null)
+              ? null : f.parent_task_id,
           } : f)}
           options={[
             { value: "", label: "なし" },
@@ -726,128 +636,32 @@ export function TaskSidePanel({ taskId, currentUser, onClose, onSwitchFailed }: 
           parentLocked={formParentTask ? { sectionId: formParentTask.section_id ?? null } : null}
         />
 
-        {/* 階層（親子関係）。単独／子タスク／親タスクのどれかを選び、選んだモード専用のUIだけを出す
-            （親セレクタと子ピッカーの同時表示は「どちらも変更できて違和感」というフィードバックを受け廃止） */}
-        <SideLabel>階層</SideLabel>
-        <div style={{ display: "flex", gap: "4px", marginBottom: "8px" }}>
-          {([
-            { mode: "none"   as const, label: "単独",     hint: "親も子も持たない通常のタスク" },
-            { mode: "child"  as const, label: "子タスク", hint: "親タスクの下にぶら下げる" },
-            { mode: "parent" as const, label: "親タスク", hint: "子タスクを複数まとめる" },
-          ]).map(seg => {
-            const isActive = hierarchyMode === seg.mode;
-            const isDisabled = hasChildren && seg.mode !== "parent";
-            return (
-              <button
-                key={seg.mode}
-                onClick={() => switchHierarchyMode(seg.mode)}
-                disabled={isDisabled}
-                title={isDisabled ? "子タスクをすべて外すと変更できます" : seg.hint}
-                style={{
-                  flex: 1, padding: "6px 4px", fontSize: "11px", fontWeight: isActive ? 600 : 400,
-                  border: `1px solid ${isActive ? "var(--color-brand)" : "var(--color-border-primary)"}`,
-                  borderRadius: "var(--radius-md)",
-                  background: isActive ? "var(--color-brand-light)" : "var(--color-bg-primary)",
-                  color: isDisabled ? "var(--color-text-tertiary)"
-                    : isActive ? "var(--color-brand)" : "var(--color-text-secondary)",
-                  cursor: isDisabled ? "not-allowed" : "pointer",
-                  opacity: isDisabled ? 0.55 : 1,
-                }}
-              >
-                {seg.label}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* 子タスクモード：親を1つ選ぶ専用UI */}
-        {hierarchyMode === "child" && (
-          <div style={{ marginBottom: "12px" }}>
-            <CustomSelect
-              value={sidebarForm.parent_task_id ?? ""}
-              onChange={value => setSidebarForm(f => f ? { ...f, parent_task_id: value || null } : f)}
-              options={parentOptions}
-              searchable searchPlaceholder="親タスクを検索..."
-            />
-            {!sidebarForm.parent_task_id && (
-              <div style={{ marginTop: "4px", fontSize: "10px", color: "var(--color-text-tertiary)" }}>
-                親タスクを選ぶと、そのタスクの下にぶら下がります（親のPJに揃います）
+        {/* 親タスク（同じPJの任意のタスク。自分と自分の子孫は選べない。なし＝最上位）。
+            候補はパス「A > B > C」で表示・検索できる。子を持つタスクは直下の子の件数と一覧を出す */}
+        <SideLabel>親タスク</SideLabel>
+        <div style={{ marginBottom: "12px" }}>
+          <CustomSelect
+            value={sidebarForm.parent_task_id ?? ""}
+            onChange={value => setSidebarForm(f => f ? { ...f, parent_task_id: value || null } : f)}
+            options={parentOptions}
+            searchable searchPlaceholder="親タスクを検索（A > B > C）..."
+          />
+          {children.length > 0 && (
+            <div style={{ marginTop: "6px" }}>
+              <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginBottom: "4px" }}>
+                子タスク {children.length}件（親を変えると子タスクごと移ります）
               </div>
-            )}
-          </div>
-        )}
-
-        {/* 親タスクモード：子を複数選ぶ専用UI */}
-        {hierarchyMode === "parent" && (
-          <div style={{ marginBottom: "12px" }}>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: "6px" }}>
-              {children.map(c => (
-                <span key={c.id} style={chipStyle}>
-                  <span style={{ color: "var(--color-text-tertiary)" }}>↳</span>{c.name}
-                  <button onClick={() => detachChild(c.id)} aria-label={`${c.name} を子タスクから外す`} style={chipRemoveBtn}>×</button>
-                </span>
-              ))}
-              {children.length === 0 && (
-                <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>まだ子タスクがありません</span>
-              )}
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
+                {children.map(c => (
+                  <span key={c.id} style={chipStyle}>
+                    <span style={{ color: "var(--color-text-tertiary)" }}>↳</span>{c.name}
+                    <button onClick={() => detachChild(c.id)} aria-label={`${c.name} を子タスクから外す`} style={chipRemoveBtn}>×</button>
+                  </span>
+                ))}
+              </div>
             </div>
-            <button
-              onClick={() => { setChildPickerChecked(new Set()); setChildSearch(""); setChildPickerOpen(v => !v); }}
-              style={{
-                width: "100%", padding: "6px 10px", fontSize: "11px",
-                border: `1px solid ${childPickerOpen ? "var(--color-brand)" : "var(--color-border-primary)"}`,
-                borderRadius: "var(--radius-md)", cursor: "pointer",
-                background: childPickerOpen ? "var(--color-brand-light)" : "var(--color-bg-primary)",
-                color: childPickerOpen ? "var(--color-brand)" : "var(--color-text-secondary)",
-              }}>
-              {childPickerOpen ? "閉じる" : "＋ 子タスクを選ぶ"}
-            </button>
-            {childPickerOpen && (
-              <div style={{
-                border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)",
-                padding: "8px", marginTop: "6px", background: "var(--color-bg-secondary)",
-              }}>
-                <input value={childSearch} onChange={e => setChildSearch(e.target.value)}
-                  placeholder="タスクを検索..." aria-label="子タスク候補を検索"
-                  style={{ ...inputStyle, marginBottom: "6px" }} />
-                <div style={{ maxHeight: "180px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "2px" }}>
-                  {visibleChildCandidates.length === 0 && (
-                    <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", padding: "4px 2px" }}>
-                      候補がありません（同じプロジェクトで、子を持たないタスクが対象です）
-                    </div>
-                  )}
-                  {visibleChildCandidates.map(t => {
-                    const checked = childPickerChecked.has(t.id);
-                    const curParent = t.parent_task_id ? allTasks.find(p => p.id === t.parent_task_id) : null;
-                    return (
-                      <label key={t.id} style={{
-                        display: "flex", alignItems: "center", gap: "7px",
-                        padding: "4px 6px", borderRadius: "var(--radius-sm)", cursor: "pointer", fontSize: "12px",
-                        background: checked ? "var(--color-brand-light)" : "transparent",
-                      }}>
-                        <input type="checkbox" checked={checked} onChange={() => toggleChild(t.id)} style={{ cursor: "pointer", flexShrink: 0 }} />
-                        <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span>
-                        {curParent && (
-                          <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", flexShrink: 0 }}>現: {curParent.name}</span>
-                        )}
-                      </label>
-                    );
-                  })}
-                </div>
-                <button onClick={applyChildren} disabled={childPickerChecked.size === 0}
-                  style={{
-                    width: "100%", marginTop: "8px", padding: "7px 10px", fontSize: "11px", fontWeight: 600,
-                    border: "none", borderRadius: "var(--radius-md)",
-                    background: childPickerChecked.size === 0 ? "var(--color-bg-tertiary)" : "var(--color-brand)",
-                    color: childPickerChecked.size === 0 ? "var(--color-text-tertiary)" : "#fff",
-                    cursor: childPickerChecked.size === 0 ? "not-allowed" : "pointer",
-                  }}>
-                  {childPickerChecked.size > 0 ? `${childPickerChecked.size}件を子タスクにする` : "子にするタスクを選択"}
-                </button>
-              </div>
-            )}
-          </div>
-        )}
+          )}
+        </div>
 
         {/* 先行タスク（B1：依存ゲート）。階層（親子関係）とは別概念のため、枠で囲んで視覚的に分離する。
             完了は先行が全部doneになるまでハードブロック・着手はソフト警告のみ（止めない）。

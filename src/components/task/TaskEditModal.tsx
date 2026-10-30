@@ -29,7 +29,8 @@ import {
   getAssigneeIds, suppressOverdue,
 } from "../../lib/taskMeta";
 import { todayStr } from "../../lib/date";
-import { parentTaskCandidates, isParentTask } from "../../lib/taskHierarchy";
+import { childrenOf } from "../../lib/taskHierarchy";
+import { buildParentOptions } from "../../lib/task/parentOptions";
 import { wouldCreateCycle } from "../../lib/dependencies/cycleCheck";
 import { Avatar } from "../auth/UserSelectScreen";
 import { confirmDialog } from "../../lib/dialog";
@@ -121,39 +122,22 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
 
   const originalTask = allTasks.find(t => t.id === taskId);
 
-  // このタスクが子を持つ親なら、親に設定できない（孫禁止）
-  const isParent = useMemo(
-    () => originalTask ? isParentTask(originalTask, allTasks) : false,
-    [originalTask, allTasks],
-  );
-
-  // 親タスク候補＝全PJの最上位タスク。元タスクのPJを先頭に、他PJはPJ名を併記。
-  // （子を選ぶと子は親のPJに揃うため他PJ親も許容。同一PJを優先表示）
-  const currentProjectId = originalTask?.project_id ?? null;
-  const parentOptions = useMemo<SelectOption[]>(() => {
-    const pjOf = (id: string | null) => (id ? projects.find(p => p.id === id) : undefined);
-    const currentPjColor = pjOf(currentProjectId)?.color_tag ?? "var(--color-border-secondary)";
-    const cands = parentTaskCandidates(allTasks, currentProjectId, originalTask?.id);
-    const same  = cands.filter(t => (t.project_id ?? null) === currentProjectId);
-    const other = cands.filter(t => (t.project_id ?? null) !== currentProjectId);
-    const opts: SelectOption[] = [{ value: "", label: "（なし＝親タスク）" }];
-    if (same.length) {
-      opts.push({ value: "__h_same", label: "このプロジェクト", header: true });
-      for (const t of same) opts.push({ value: t.id, label: t.name, color: currentPjColor });
-    }
-    if (other.length) {
-      opts.push({ value: "__h_other", label: "他のプロジェクト", header: true });
-      for (const t of other) opts.push({
-        value: t.id, label: t.name,
-        color: pjOf(t.project_id)?.color_tag ?? "var(--color-border-secondary)",
-        meta: pjOf(t.project_id)?.name, dim: true,
-      });
-    }
-    return opts;
-  }, [allTasks, currentProjectId, originalTask?.id, projects]);
-
   // このモーダルはタグ編集UIを持つため、tags は常に配列で保持する（TaskSidePanel と違い省略しない）
   const [form, setForm] = useState<TaskEditFormState & { tags: string[] }>(() => buildFormFromTask(originalTask));
+  // 子（直下）の件数。子を持つタスクを開いたときに親欄の下へ表示する
+  const childCount = useMemo(
+    () => originalTask ? childrenOf(allTasks, originalTask.id).length : 0,
+    [originalTask, allTasks],
+  );
+  // 親タスク候補＝同じPJの、自分と自分の子孫以外の任意のタスク（パス表示）。親が決まっている間はその親のPJ
+  const parentCandidateProjectId = useMemo(() => {
+    const p = form.parent_task_id ? allTasks.find(t => t.id === form.parent_task_id) : undefined;
+    return p ? (p.project_id ?? null) : form.project_id;
+  }, [allTasks, form.parent_task_id, form.project_id]);
+  const parentOptions = useMemo<SelectOption[]>(
+    () => buildParentOptions(allTasks, parentCandidateProjectId, originalTask?.id, form.parent_task_id, projects, "（なし＝最上位）"),
+    [allTasks, parentCandidateProjectId, originalTask?.id, form.parent_task_id, projects],
+  );
   // 担当者・メンションの候補（表示部署のメンバー＋PJ参加者＋今の担当者）。チップの名前解決は members（全件）のまま
   const assigneeCandidates = useAssigneeCandidates(form.project_id, form.assignee_member_ids);
   const [tagDraft, setTagDraft] = useState("");
@@ -526,6 +510,9 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
                 project_id: value || null,
                 // PJを変えたらグループは外す（別PJのグループを指さない）
                 section_id: (value || null) === f.project_id ? f.section_id : null,
+                // 親は同じPJの中から選ぶ。別のPJに変えたら親は外す
+                parent_task_id: f.parent_task_id && (allTasks.find(t => t.id === f.parent_task_id)?.project_id ?? null) !== (value || null)
+                  ? null : f.parent_task_id,
               }))}
               options={[
                 { value: "", label: "なし" },
@@ -543,17 +530,16 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
             parentLocked={formParent ? { sectionId: formParent.section_id ?? null } : null}
           />
 
-          {/* 親タスク（2階層固定。子を持つタスクは親に設定不可） */}
+          {/* 親タスク（同じPJの任意のタスク。自分と自分の子孫は選べない。なし＝最上位） */}
           <FieldSection label="親タスク">
             <CustomSelect value={form.parent_task_id ?? ""}
               onChange={value => setForm(f => ({ ...f, parent_task_id: value || null }))}
               options={parentOptions}
-              disabled={isParent}
-              searchable searchPlaceholder="親タスクを検索..."
+              searchable searchPlaceholder="親タスクを検索（A > B > C）..."
             />
-            {isParent && (
+            {childCount > 0 && (
               <div style={{ marginTop: "4px", fontSize: "10px", color: "var(--color-text-tertiary)" }}>
-                子タスクがあるため親に設定できません
+                このタスクには子タスクが{childCount}件あります（親を変えると子タスクごと移ります）
               </div>
             )}
           </FieldSection>

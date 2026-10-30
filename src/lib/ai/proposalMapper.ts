@@ -30,6 +30,8 @@ export interface UIProposal {
   new_project_tasks?: NewProjectTaskInput[];
   /** add_task 用：親タスクにぶら下げる子タスク（素通し） */
   new_subtasks?: NewProjectTaskInput[];
+  /** add_task 用：作るタスクを入れる既存タスク（IDまたは名前。素通し） */
+  parent_task?: string;
   /** bulk_rename 用：置換前の文字列（素通し） */
   find?: string;
   /** bulk_rename 用：置換後の文字列（素通し） */
@@ -129,6 +131,7 @@ export function mapProposalsToUI(proposals: Proposal[]): UIProposal[] {
       needs_confirmation: p.needs_confirmation,
       new_project_tasks: p.new_project_tasks,
       new_subtasks: p.new_subtasks,
+      parent_task: p.parent_task,
       find: p.find,
       replace: p.replace,
       new_status: p.new_status,

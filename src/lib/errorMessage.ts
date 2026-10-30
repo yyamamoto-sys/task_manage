@@ -52,6 +52,11 @@ export function formatErrorForUser(prefix: string, e: unknown): string {
     message = String(e);
   }
 
+  // タスクの親子の循環を DB が拒否したとき（トリガー prevent_task_parent_cycle・SQLSTATE 23514）は、原因が分かる文言にする
+  if (message && message.includes("task parent cycle")) {
+    return [prefix, `[${code ?? "23514"}]`, "親子が循環するため設定できません（自分自身や自分の子タスクは親にできません）"].filter(Boolean).join(" ");
+  }
+
   if (code) parts.push(`[${code}]`);
   if (message) parts.push(message);
   if (details && details !== message) parts.push(`(${details})`);

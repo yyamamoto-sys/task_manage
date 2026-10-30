@@ -163,20 +163,25 @@ describe("computeMultiReorder", () => {
     expect(r.patches.find(p => p.id === "c1")!.patch.project_id).toBe("pj-b");
   });
 
-  it("子だけを選んで最上位へ移すのは拒否する", () => {
-    const all = [task({ id: "p", display_order: 0 }), task({ id: "c", parent_task_id: "p" }), task({ id: "q", display_order: 1 })];
+  it("子だけを選んで最上位へ移せる（子孫は連れて動く）", () => {
+    const all = [
+      task({ id: "p", display_order: 0 }), task({ id: "c", parent_task_id: "p" }),
+      task({ id: "g", parent_task_id: "c" }), task({ id: "q", display_order: 1 }),
+    ];
     const r = computeMultiReorder(all, all, ["c"], { kind: "after", targetId: "q" });
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.reason).toContain("子タスクだけ");
+    if (!r.ok) throw new Error("x");
+    expect(r.patches.find(p => p.id === "c")!.patch.parent_task_id).toBeNull();
+    expect(r.patches.find(p => p.id === "g")).toBeUndefined();
   });
 
-  it("子だけ別の親の子へ移すのは拒否する", () => {
+  it("子だけ別の親の子へ移せる", () => {
     const all = [
       task({ id: "p1", display_order: 0 }), task({ id: "c1", parent_task_id: "p1" }),
       task({ id: "p2", display_order: 1 }), task({ id: "c2", parent_task_id: "p2" }),
     ];
     const r = computeMultiReorder(all, all, ["c1"], { kind: "after", targetId: "c2" });
-    expect(r.ok).toBe(false);
+    if (!r.ok) throw new Error("x");
+    expect(r.patches.find(p => p.id === "c1")!.patch.parent_task_id).toBe("p2");
   });
 
   it("同じ親の子同士の並べ替えは通る", () => {
@@ -189,13 +194,34 @@ describe("computeMultiReorder", () => {
     expect(r.patches.find(p => p.id === "c3")!.patch.display_order).toBe(0);
   });
 
-  it("子を持つタスクを子として入れるのは拒否する", () => {
+  it("子を持つタスクも子として入れられる（子孫ごと）", () => {
     const all = [
       task({ id: "p1", display_order: 0 }), task({ id: "c1", parent_task_id: "p1" }),
       task({ id: "p2", display_order: 1 }), task({ id: "c2", parent_task_id: "p2" }),
     ];
     const r = computeMultiReorder(all, all, ["p1"], { kind: "after", targetId: "c2" });
-    expect(r.ok).toBe(false);
+    if (!r.ok) throw new Error("x");
+    expect(r.patches.find(p => p.id === "p1")!.patch.parent_task_id).toBe("p2");
+  });
+
+  it("自分の子孫の下へは移せない（循環）", () => {
+    const all = [task({ id: "p1", display_order: 0 }), task({ id: "c1", parent_task_id: "p1" }), task({ id: "g1", parent_task_id: "c1" })];
+    const r1 = computeMultiReorder(all, all, ["p1"], { kind: "nest", parentId: "g1" });
+    expect(r1.ok).toBe(false);
+    const r2 = computeMultiReorder(all, all, ["p1"], { kind: "after", targetId: "g1" });
+    expect(r2.ok).toBe(false);
+  });
+
+  it("選択に祖先と子孫の両方があれば祖先だけが動く", () => {
+    const all = [
+      task({ id: "p1", display_order: 0 }), task({ id: "c1", parent_task_id: "p1", display_order: 0 }),
+      task({ id: "x", display_order: 1 }),
+    ];
+    const r = computeMultiReorder(all, all, ["p1", "c1"], { kind: "nest", parentId: "x" });
+    if (!r.ok) throw new Error("x");
+    expect(r.movedCount).toBe(1);
+    expect(r.patches.find(p => p.id === "c1")).toBeUndefined();
+    expect(r.patches.find(p => p.id === "p1")!.patch.parent_task_id).toBe("x");
   });
 
   it("親へのnest：子を持たない最上位は子になる", () => {

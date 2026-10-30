@@ -8603,3 +8603,14 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 * appStore の親の自動完了：段ごとに直列で最上位へ伝播（循環データでは伝播しない）。useTaskDragReorder の循環判定を祖先全体に。payloadBuilder に parent_task_path（3段以上のみ）。
 * マイグレーション 20261030_task_parent_cycle_guard.sql（idx_tasks_parent・prevent_task_parent_cycle・trg_tasks_parent_cycle）を新規作成（山本さんが手動適用。未適用でもアプリは動く）。schema.sql 同期・schemaChecks に関数の検査を追加（索引の kind は無いため対象外）。
 * テスト：taskHierarchyDeep.test.ts 新設（3〜5段・折りたたみ・集計・移動/選択/複製/保存順・循環）。設計＝docs/dev/sections/s88_task-tree-depth.md。MIN_CLIENT_VERSION は据え置き（Phase B で引き上げ）。
+
+# v3.196（2026-10-30）：タスクの親子を任意の深さにする Phase B（編集操作）
+* 親にできる範囲：同じPJの、自分と自分の子孫以外の任意のタスク（`parentTaskCandidates`・子持ちのタスクも別のタスクの子にできる）。`eligibleChildTasks` を撤去。パス表示は `taskPathLabel`、編集面の選択肢は `lib/task/parentOptions.ts` に集約。
+* 編集面（TaskSidePanel・TaskEditModal・QuickAddTaskModal）：「単独／子／親」の3択と親側の子ピッカーを廃止し、「親タスク」欄1つ（パス「A > B > C」で表示・検索）。子を持つタスクは直下の件数を表示。PJを変えたら別PJの親は外す。追加モーダルの「子タスク」一括入力は親の有無に関わらず出す。
+* ドラッグ（リスト・ガント左列）：どの深さの行も中央ドロップで子にできる。ドラッグ中のタスクと子孫の行は落とせない（禁止カーソル）。`computeMultiReorder` を N 段に（祖先と子孫が両方選択なら祖先だけ動く・循環は拒否・PJが変わるなら子孫も追従）。PJ見出し・グループ見出しへの移動でも子孫の project_id を揃える（`carryProjectToDescendants`）。
+* 「＋子タスク」：リストは全行、ガントは行の下端に「↳ 子」。
+* Tab／Shift+Tab（リスト・PJ別表示・`lib/task/indentOutdent.ts`）：選択（無ければ注目中）を1段下げる／上げる。入力欄・モーダル・ボタン上では発火しない。Undo トースト＋Ctrl+Z。ショートカット一覧（ja／en）に追記。
+* AI：add_task に `parent_task`（既存タスクのIDまたは名前）。特定できないときは作らずにエラー。systemPrompt・uiGuide を「何段でも」へ更新。
+* DB の循環拒否（23514 `task parent cycle`）を `formatErrorForUser` で分かる文言に。
+* ゲスト用サンプルに3段の例を追加。`MIN_CLIENT_VERSION` を 3.196 へ（古い画面では孫以下が消える／親子が壊れるため）。
+* テスト：`taskTreeEdit.test.ts` 新設。

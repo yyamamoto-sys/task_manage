@@ -2,15 +2,15 @@
 //
 // 【設計意図】選択中の複数タスクを、ドロップ位置へまとめて移す採番の純粋関数（v3.156）。
 // 単体の computeSiblingReorderIds（src/lib/dragReorder.ts）を複数に拡張したもの。
-// 規則：
-//  - 移すタスクは表示順のまま、ドロップ先と同じ兄弟グループ（同じ parent・project）へ全部入れる
-//  - 親（最上位）を選んでいれば子は連れて動く（選択の有無を問わず親の下に残る）。PJが変わるなら子の project_id も揃える
-//  - 親だけが選ばれていない子（子だけ選択）は、親から外さない：最上位への移動・別の親への移動は拒否する
-//    （同じ親の子の間での並べ替えだけ許す）
-//  - 子として並べる（ドロップ先が子／nest）なら、移すタスクは子を持たず、最上位か同じ親の子であること
-//  - ドロップ先が選択中・選択中の親の子の場合は何もしない
+// 規則（v3.196で任意の深さに対応）：
+//  - 動かすのは「選択のうち、祖先に選択が居ないタスク」。選択の中に祖先と子孫が両方あれば祖先側だけが動き、
+//    子孫は選択の有無を問わず連れて動く（何段でも）。PJが変わるなら子孫の project_id も揃える
+//  - 動かすタスクは表示順のまま、ドロップ先と同じ兄弟グループ（同じ parent・project）へ全部入れる。子持ちも子にできる
+//  - 自分自身・自分の子孫の下へは移せない（循環）。ドロップ先が動かすタスク自身なら何もしない
+//  - ドロップ先が選択中の親の子孫（連れられる側）の場合も、自分の中へ移すことになるので拒否する
 
 import type { Task } from "../localData/types";
+import { ancestorsOf, buildChildrenMap, descendantsOf } from "../taskHierarchy";
 
 export type MultiDropPosition =
   | { kind: "before" | "after"; targetId: string }
@@ -28,9 +28,7 @@ export type MultiReorderResult =
   | { ok: false; reason: string }
   | { ok: false; reason: null };
 
-const ERR_PARENT_AS_CHILD = "子タスクを持つタスクは子にできません（先に子タスクを別の親に移動するか、解除してください）";
-const ERR_CHILD_LEAVES = "子タスクだけを選んで別の親・最上位へまとめて移すことはできません。親タスクごと選ぶか、1件ずつドラッグしてください";
-const ERR_CHILD_OTHER_PARENT = "別の親タスクの子はまとめて子にできません。1件ずつドラッグしてください";
+const ERR_CYCLE = "自分自身や自分の子タスクの下には移せません（循環になります）";
 
 /**
  * @param allTasks 全タスク
@@ -52,41 +50,26 @@ export function computeMultiReorder(
   if (!target) return { ok: false, reason: null };
 
   // 新しい親・PJ
-  const newParentId: string | null = position.kind === "nest" ? target.id : (target.parent_task_id ?? null);
+  const parentOf = (t: Task) => (t.parent_task_id && byId.has(t.parent_task_id) ? t.parent_task_id : null);
+  const newParentId: string | null = position.kind === "nest" ? target.id : parentOf(target);
   const newProjectId = target.project_id ?? null;
 
-  if (position.kind !== "nest" && selected.has(target.id)) return { ok: false, reason: null };
-  if (position.kind === "nest") {
-    if (selected.has(target.id)) return { ok: false, reason: null };
-    if (target.parent_task_id) return { ok: false, reason: ERR_PARENT_AS_CHILD };
-  }
+  if (selected.has(target.id)) return { ok: false, reason: null };
 
-  const hasChildren = (id: string) => live.some(t => t.parent_task_id === id);
-  const parentOf = (t: Task) => (t.parent_task_id && byId.has(t.parent_task_id) ? t.parent_task_id : null);
-
-  // 実際に動かす集合（選択された親に連れられる子は除く）
+  // 実際に動かす集合（選択された祖先に連れられる子孫は除く）
+  const childrenMap = buildChildrenMap(live);
   const moving: Task[] = [];
   for (const id of orderedSelectedIds) {
     const t = byId.get(id);
     if (!t) continue;
-    const p = parentOf(t);
-    if (p && selected.has(p)) continue; // 親と一緒に動く
+    if (ancestorsOf(t, byId).some(a => selected.has(a.id))) continue; // 祖先と一緒に動く
     moving.push(t);
   }
 
-  for (const t of moving) {
-    const p = parentOf(t);
-    if (newParentId === null) {
-      if (p) return { ok: false, reason: ERR_CHILD_LEAVES };
-    } else {
-      if (hasChildren(t.id)) return { ok: false, reason: ERR_PARENT_AS_CHILD };
-      if (t.id === newParentId) return { ok: false, reason: null };
-      if (p && p !== newParentId) return { ok: false, reason: ERR_CHILD_OTHER_PARENT };
-    }
-  }
-  // ドロップ先が選択中の親の子（連れられる子）なら、実質自分の中へ移すことになる
-  if (position.kind !== "nest" && target.parent_task_id && selected.has(target.parent_task_id)) {
-    return { ok: false, reason: null };
+  // 新しい親が、動かすタスク自身かその子孫なら循環
+  if (newParentId !== null) {
+    const parentChain = new Set<string>([newParentId, ...ancestorsOf(byId.get(newParentId)!, byId).map(a => a.id)]);
+    if (moving.some(t => parentChain.has(t.id))) return { ok: false, reason: ERR_CYCLE };
   }
 
   const movingIds = new Set(moving.map(t => t.id));
@@ -129,9 +112,9 @@ export function computeMultiReorder(
     if (Object.keys(patch).length > 0) { patches.push({ id, patch, prev }); planned.add(id); }
   });
 
-  // PJが変わるなら、動く親の子も同じPJへ（親子は同じPJ）。親の保存の後に回す
+  // PJが変わるなら、動くタスクの子孫（何段でも）も同じPJへ（親子は同じPJ）。親の保存の後に回す
   for (const t of moving) {
-    for (const c of live.filter(x => x.parent_task_id === t.id)) {
+    for (const c of descendantsOf(t.id, childrenMap)) {
       if (planned.has(c.id) || (c.project_id ?? null) === newProjectId) continue;
       patches.push({
         id: c.id,

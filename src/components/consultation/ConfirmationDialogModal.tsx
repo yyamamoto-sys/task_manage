@@ -497,7 +497,9 @@ export function ConfirmationDialogModal({
               <NewTaskFormRow
                 key={item.temp_id}
                 item={item}
-                roleLabel={isHierarchy ? "＋ 親タスク（大分類）" : "＋ 新規タスク"}
+                roleLabel={dialog.existing_parent_task_path
+                  ? `＋ 新規タスク（「${dialog.existing_parent_task_path}」の子として作成）`
+                  : isHierarchy ? "＋ 親タスク（大分類）" : "＋ 新規タスク"}
                 roleLabelColor="var(--color-brand)"
                 confirmedValues={confirmedValues}
                 setConfirmedValues={setConfirmedValues}
