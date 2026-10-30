@@ -9,6 +9,7 @@
 // タスクは skipCascade:true（先行タスク追加前でB3は空振りだが、一括作成系と同じ防御）。
 
 import type { Milestone, Project, ProjectSection, Task } from "../localData/types";
+import type { DepType } from "../dependencies/depType";
 import type { WbsPlan } from "./wbsPlan";
 
 export interface WbsApplyDeps {
@@ -20,7 +21,7 @@ export interface WbsApplyDeps {
   deleteTask: (id: string, by: string) => Promise<void>;
   getTaskStatus: (id: string) => Task["status"] | undefined;
   getTask: (id: string) => Task | undefined;
-  addTaskDependency: (pred: string, succ: string, by: string) => Promise<void>;
+  addTaskDependency: (pred: string, succ: string, by: string, terms?: { depType?: DepType; lagDays?: number }) => Promise<void>;
   /** 作った先行タスクのid（取り消し用）。見つからなければ undefined */
   findDependencyId: (pred: string, succ: string) => string | undefined;
   removeTaskDependency: (id: string, by: string) => Promise<void>;
@@ -111,7 +112,7 @@ export async function applyWbsPlan(plan: WbsPlan, by: string, deps: WbsApplyDeps
     stage = "先行タスクの設定";
     for (const d of plan.dependencies) {
       progress(`先行タスクを設定中…（${written.dependencies + 1}/${plan.dependencies.length}）`);
-      await deps.addTaskDependency(d.predecessorTaskId, d.successorTaskId, by);
+      await deps.addTaskDependency(d.predecessorTaskId, d.successorTaskId, by, { depType: d.depType, lagDays: d.lagDays });
       createdDeps.push({ pred: d.predecessorTaskId, succ: d.successorTaskId });
       written.dependencies++;
       step++;

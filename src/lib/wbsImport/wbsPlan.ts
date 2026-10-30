@@ -4,8 +4,8 @@
 // 読み取ったWBS（wbsParse.ts）を、アプリのデータ（PJ・PJ内グループ・タスク・先行タスク・マイルストーン）へ
 // 当てはめる純粋関数。保存はしない（確認画面で見せてから wbsApply.ts が書く）。
 // 当てはめ方：
-//  - G＝PJ内グループ（Section 78）。既存PJへ追加するとき同名のグループがあればそこへ入れ、無ければ新しく作る
-//  - P＝親タスク、C＝その子タスク（子は親と同じグループ）
+//  - グループ行（isGroup）＝PJ内グループ（Section 78）。既存PJへ追加するとき同名のグループがあればそこへ入れ、無ければ新しく作る
+//  - タスクの親子は任意の深さ（parentIndex。Section 88）。子は親と同じグループ。先行タスクは種類（FS/SS/FF/SF）とずらし日数つき（Section 89）
 //  - 備考：「完了」→ステータス完了／「マイルストーン」→タスク＋マイルストーン（◆）の両方／「ユーザー」「仮」→タグ／その他→メモ
 //    マイルストーンをタスクのまま残すのは、先行タスクのつながり（タスク同士にしか張れない）を保つため。
 //    ◆はタスクの終了日（無ければ開始日）に置く
@@ -15,6 +15,7 @@
 import type { Member, Milestone, Project, ProjectSection, Task } from "../localData/types";
 import { normalizeSectionName, sectionsOfProject, nextSectionSortOrder } from "../section/sections";
 import { nextDisplayOrder } from "../task/newTask";
+import type { DepType } from "../dependencies/depType";
 import type { WbsParseResult, WbsRow } from "./wbsParse";
 
 export type WbsTarget =
@@ -45,7 +46,7 @@ export interface WbsPlan {
   tasks: Task[];
   /** 親タスクの、WBSに書かれた本来のステータス（子の保存で自動更新された後に合わせ直す） */
   finalStatuses: { taskId: string; status: Task["status"] }[];
-  dependencies: { predecessorTaskId: string; successorTaskId: string }[];
+  dependencies: { predecessorTaskId: string; successorTaskId: string; depType: DepType; lagDays: number }[];
   milestones: Milestone[];
   /** 行（WbsRow.index）ごとの当てはめ時の警告（担当者・マイルストーンの日付） */
   extraWarnings: Map<number, string[]>;
@@ -117,7 +118,7 @@ export function buildWbsPlan(parsed: WbsParseResult, ctx: WbsPlanContext): WbsPl
   const sectionIdByName = new Map<string, string>();
   const sectionIdByRow = new Map<number, string>();
   for (const row of rows) {
-    if (row.level !== "G") continue;
+    if (!row.isGroup) continue;
     const name = normalizeSectionName(row.name);
     if (!name) continue;
     let id = sectionIdByName.get(name);
@@ -166,7 +167,7 @@ export function buildWbsPlan(parsed: WbsParseResult, ctx: WbsPlanContext): WbsPl
     } else {
       order = topOrder++;
     }
-    const desired: Task["status"] = row.done ? "done" : "todo";
+    const desired: Task["status"] = row.status;
     // 子を持つ親は、子の保存で親の状態が自動で動くため、いったん todo で作り最後に本来の値へ合わせる
     const parentWithChildren = hasChildren.has(row.index);
     if (parentWithChildren && desired !== "todo") finalStatuses.push({ taskId: id, status: desired });
@@ -208,7 +209,7 @@ export function buildWbsPlan(parsed: WbsParseResult, ctx: WbsPlanContext): WbsPl
   };
 
   for (const row of rows) {
-    if (row.level === "G") continue;
+    if (row.isGroup) continue;
     tasks.push(buildTask(row));
   }
 
@@ -216,10 +217,10 @@ export function buildWbsPlan(parsed: WbsParseResult, ctx: WbsPlanContext): WbsPl
   for (const row of rows) {
     const succ = taskIdByRow.get(row.index);
     if (!succ) continue;
-    for (const pid of row.predecessorIds) {
-      const predRow = rows.find(r => r.id === pid);
+    for (const p of row.predecessors) {
+      const predRow = rows.find(r => r.id === p.id);
       const pred = predRow ? taskIdByRow.get(predRow.index) : undefined;
-      if (pred) dependencies.push({ predecessorTaskId: pred, successorTaskId: succ });
+      if (pred) dependencies.push({ predecessorTaskId: pred, successorTaskId: succ, depType: p.type, lagDays: p.lagDays });
     }
   }
 

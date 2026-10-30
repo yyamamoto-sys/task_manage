@@ -60,7 +60,7 @@ describe("buildWbsPlan", () => {
     expect(t("要件整理").status).toBe("todo");
     expect(plan.finalStatuses).toEqual([{ taskId: t("要件整理").id, status: "done" }]);
     expect(plan.dependencies).toHaveLength(3);
-    expect(plan.dependencies).toContainEqual({ predecessorTaskId: t("ヒアリング").id, successorTaskId: t("まとめ").id });
+    expect(plan.dependencies).toContainEqual({ predecessorTaskId: t("ヒアリング").id, successorTaskId: t("まとめ").id, depType: "FS", lagDays: 0 });
     expect(plan.milestones.map(m => [m.name, m.date])).toEqual([["判断日", "2026-01-12"]]);
     expect([...plan.extraWarnings.values()].flat().join()).toContain("日付が無いためマイルストーン");
   });

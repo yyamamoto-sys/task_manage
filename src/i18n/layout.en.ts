@@ -106,7 +106,7 @@ export const layoutEn: Record<keyof typeof layoutJa, string> = {
   "layout.sidebar.pjSectionExpand": "Expand project list",
   "layout.sidebar.pjSectionLabel": "Projects",
   "layout.sidebar.pjCreateTitle": "Create a new project",
-  "layout.sidebar.pjImportWbsTitle": "Import a WBS (xlsx / md)",
+  "layout.sidebar.pjImportWbsTitle": "Import a WBS (xlsx / md / xml / csv)",
   "layout.sidebar.allPjLabel": "Show all projects",
   "layout.sidebar.myPjTooltipSuffix": " (you have tasks assigned here)",
   "layout.sidebar.showArchivedLabel": "Show completed/archived",

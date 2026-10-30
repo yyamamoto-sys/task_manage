@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.197
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.198
 #
-最終更新：2026-10-30（v3.197）
+最終更新：2026-10-30（v3.198）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -61,7 +61,7 @@
 - **その領域を触るときは、該当する節ファイルを必ず読む。** 要約は禁止事項の入口であって、理由・例外・再発の経緯は節ファイルにしかない。
 - 元の行範囲との対応は `docs/dev/sections/README.md`。分割前の全文は git の履歴（32e4cfd）にある。
 
-## 節の目次（全94節）
+## 節の目次（全95節）
 
 | 節 | タイトル | 1行要約 | ファイル |
 |---|---|---|---|
@@ -161,6 +161,7 @@
 | 87 | 87. プロジェクト・ビュー・タスクのリンク共有（`/?open=project`・`/?open=task`） | プロジェクト・ビュー・タスクのリンク共有 | docs/dev/sections/s87_share-link.md |
 | 88 | 88. タスクの親子を任意の深さにする：Phase A（表示）＋A'（下回り）（v3.195）＋Phase B（編集操作・v3.196） | 親子2段固定を撤廃。木順・N段の集計（末端数え）・子孫全体の移動/選択/複製・循環防止（Phase A）／親欄1つ・ドラッグ・Tab/Shift+Tab・＋子タスク・AI の parent_task（Phase B・MIN_CLIENT_VERSION を 3.196 へ） | docs/dev/sections/s88_task-tree-depth.md |
 | 89 | 89. 依存関係の種類（FS/SS/FF/SF）とずらし日数（v3.197） | 依存に種類とラグ（暦日・負＝リード）。自動ずらし・完了ゲート・着手警告・ガント矢印を4種へ一般化。MSPDI取り込みの土台 | docs/dev/sections/s89_dependency-type-lag.md |
+| 90 | 90. WBS取り込みの拡張：MS Project XML・各種ツールのCSV（v3.198） | 取り込みの中間表現を N 段・依存の種類／ラグ・グループ有無へ一般化。MSPDI（XMLは自前の小さなパーサ）・汎用CSV／xlsx＋列の対応づけ画面・Shift_JIS・M/D/YYYY | docs/dev/sections/s90_wbs-import-formats.md |
 
 ---
 

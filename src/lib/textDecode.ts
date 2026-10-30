@@ -37,3 +37,24 @@ export function decodeTextBytes(bytes: Uint8Array, truncated: boolean): string {
     return utf8;
   }
 }
+
+/**
+ * 取り込み用（WBS の CSV 等）：UTF-8（BOM 有無）として厳密に読めなければ Shift_JIS で読み直す。
+ * decodeTextBytes は「化けた割合が1%以下なら UTF-8 のまま」とする近似で、先頭の一部を読む用途向け。
+ * こちらは全文を読むため、1文字でも UTF-8 として不正なら Shift_JIS（Excel・Redmine 日本語環境の CSV）とみなす。
+ */
+export function decodeTextBytesStrict(bytes: Uint8Array): string {
+  if (bytes.length >= 2) {
+    if (bytes[0] === 0xff && bytes[1] === 0xfe) return new TextDecoder("utf-16le").decode(bytes);
+    if (bytes[0] === 0xfe && bytes[1] === 0xff) return new TextDecoder("utf-16be").decode(bytes);
+  }
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    try {
+      return new TextDecoder("shift_jis").decode(bytes);
+    } catch {
+      return new TextDecoder("utf-8").decode(bytes);
+    }
+  }
+}

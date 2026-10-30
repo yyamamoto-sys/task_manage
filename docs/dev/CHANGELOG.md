@@ -8622,3 +8622,11 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 * UI：`DependencyTermsEditor`（編集モーダル・サイドパネル共用）。`updateTaskDependency`（Undoトースト付き）。複製・PJ引き継ぎは種類・ラグを引き継ぐ。
 * uiGuide 更新。`MIN_CLIENT_VERSION` を 3.197 へ。詳細＝`docs/dev/sections/s89_dependency-type-lag.md`。
 * テスト：`depTypeLag.test.ts`・`dependencyTermsUpdate.test.ts` 新設。
+
+# v3.198（2026-10-30）：WBS取り込みの拡張（MS Project XML・各種ツールのCSV）
+* 中間表現：`WbsRow` を `level`（G/P/C）から `isGroup`＋`depth`（任意の段）＋`predecessors`（種類・ラグつき）＋`status`（todo/in_progress/done）へ一般化。固定列テンプレート（.xlsx/.md）は互換（G→グループ・P→深さ0・C→深さ1）。先行タスク列は「3FS+2」「3SS-1d」も読む（`wbsPredecessors.ts`）。
+* `wbsItems.ts`：`WbsItem`→`WbsRow`（親ID／深さの木・親が後ろでも解決・循環切り・「一番上の段をグループにする」切替）。`wbsPlan`/`wbsApply` は種類・ラグを `addTaskDependency` の4引数目で渡す。
+* MS Project XML：`miniXml.ts`（DOMParser を使わない自前の小さな XML 解析。テストが node 環境で DOMParser を持たないため。DOCTYPE・外部実体は展開しない）＋`wbsMspdi.ts`。LagFormat の経過時間判定は s90 に根拠。
+* 汎用 CSV／xlsx：`wbsCsv.ts`（引用符・改行対応）・`wbsColumns.ts`（見出し辞書・自動推定・階層の取り方5種）・`textDecode.decodeTextBytesStrict`（UTF-8厳密→Shift_JIS）。`.mpp` は XML 保存を案内するエラー。
+* `WbsImportModal`：列の対応づけ画面・グループ切替・種類つき先行の表示。uiGuide・i18n 更新。`MIN_CLIENT_VERSION` は据え置き。詳細＝`docs/dev/sections/s90_wbs-import-formats.md`。
+* テスト：`wbsMspdi.test.ts`・`wbsCsvImport.test.ts` 新設、既存の wbsParse／wbsPlanApply を追随。

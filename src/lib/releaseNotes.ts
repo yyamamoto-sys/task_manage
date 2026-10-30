@@ -39,6 +39,18 @@ export interface ReleaseNoteEntry {
 
 export const RELEASE_NOTES: ReleaseNoteEntry[] = [
   {
+    version: "v3.198",
+    date: "2026-10-30",
+    title: "MS Project の XML や各種ツールの CSV から取り込めるようになりました",
+    highlights: [
+      "「WBSを取り込む」で、MS Project・ProjectLibre・GanttProject の XML（MS Project XML 形式）と、Asana・Jira・Redmine・Backlog などの CSV を読み込めます。.mpp は MS Project で「名前を付けて保存」→「XML 形式」にしてから選んでください。",
+      "階層は何段あってもそのまま取り込めます。一番上の段をグループ（PJ内の見出し）にするか、すべてタスクにするかを選べます。",
+      "MS Project の先行（終了→開始・開始→開始など）とずらし日数も取り込めます。Excel・Markdown のテンプレートの先行タスク欄にも「3FS+2」「3SS-1d」のように書けます。",
+      "CSV は、列の役割（名前・開始日・親・先行・担当者など）を自動で推定して、画面で選び直せます。階層の取り方（親の列・レベル・WBS番号・字下げ）も選べます。Shift_JIS の CSV も読めます。",
+      "登録する前に、読み取った内容と警告を確認できます（従来どおり）。",
+    ],
+  },
+  {
     version: "v3.197",
     date: "2026-10-30",
     title: "先行タスクの「つながり方」と「ずらし日数」を選べるようになりました",

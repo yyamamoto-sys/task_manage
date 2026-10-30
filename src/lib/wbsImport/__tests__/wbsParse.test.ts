@@ -22,12 +22,12 @@ const BASE: WbsCell[][] = [
 describe("parseWbsGrid", () => {
   it("G・P・C の階層・日付・先行タスク・備考を読む", () => {
     const r = ok(parseWbsGrid(BASE));
-    expect(r.rows.map(x => x.level).join("")).toBe("GPCCPGP");
+    expect(r.rows.map(x => (x.isGroup ? "G" : x.depth === 0 ? "P" : "C")).join("")).toBe("GPCCPGP");
     const [g1, p11, c111, c112, p12, g2, p21] = r.rows;
     expect(c111.parentIndex).toBe(p11.index);
     expect(c111.groupIndex).toBe(g1.index);
     expect(c111.start).toBe("2026-01-05");
-    expect(c111.done).toBe(true);
+    expect(c111.status).toBe("done");
     expect(c112.predecessorIds).toEqual(["1.1.1"]);
     expect(c112.tags).toEqual(["ユーザー", "仮"]);
     expect(p12.milestone).toBe(true);
@@ -50,7 +50,7 @@ describe("parseWbsGrid", () => {
     const r = ok(parseWbsGrid(grid));
     expect(r.title).toBe("架空プロジェクトWBS");
     expect(r.rows).toHaveLength(1);
-    expect(r.rows[0]).toMatchObject({ id: "1", name: "作業A", start: "2026-02-01", end: "2026-02-02", done: true });
+    expect(r.rows[0]).toMatchObject({ id: "1", name: "作業A", start: "2026-02-01", end: "2026-02-02", status: "done" });
   });
 
   it("IDが空の行（凡例など）で止まる。その後にIDのある行があれば警告する", () => {
@@ -65,7 +65,7 @@ describe("parseWbsGrid", () => {
 
   it("階層列が無ければIDの深さから決める", () => {
     const r = ok(parseWbsGrid([["ID", "タスク名"], ["1", "a"], ["1.1", "b"], ["1.1.1", "c"]]));
-    expect(r.rows.map(x => x.level).join("")).toBe("GPC");
+    expect(r.rows.map(x => (x.isGroup ? "G" : x.depth === 0 ? "P" : "C")).join("")).toBe("GPC");
   });
 
   it("日付：Excelの日付・YYYY-MM-DD・YYYY/MM/DD・YYYY/M/D", () => {
@@ -109,12 +109,12 @@ describe("parseWbsGrid", () => {
       ["1.3", "P", "c", null, null, null, "1", null],
     ]));
     const [g, a, b, c] = r.rows;
-    expect(g.warnings.join()).toContain("グループ（G）の先行タスク");
+    expect(g.warnings.join()).toContain("グループの先行タスク");
     expect(a.predecessorIds).toEqual(["1.2"]);
     expect(a.warnings.join()).toContain("自分自身");
     expect(b.predecessorIds).toEqual([]);
     expect(b.warnings.join()).toContain("循環");
-    expect(c.warnings.join()).toContain("グループ（G）のため");
+    expect(c.warnings.join()).toContain("グループのため");
   });
 
   it("見出し・データが無ければエラー", () => {
@@ -144,7 +144,7 @@ describe("parseWbsMarkdown", () => {
     const r = ok(parseWbsMarkdown(md));
     expect(r.title).toBe("架空WBS");
     expect(r.rows.map(x => x.name)).toEqual(["準備", "要件", "調査 | 整理"]);
-    expect(r.rows[2]).toMatchObject({ done: true, tags: ["ユーザー"], parentIndex: 1 });
+    expect(r.rows[2]).toMatchObject({ status: "done", tags: ["ユーザー"], parentIndex: 1 });
     expect(r.rows[2].predecessorIds).toEqual(["1.1"]);
     expect(r.rows[1].end).toBe("2026-01-09");
   });

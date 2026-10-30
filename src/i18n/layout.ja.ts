@@ -125,7 +125,7 @@ export const layoutJa = {
   "layout.sidebar.pjSectionExpand": "プロジェクト一覧を展開",
   "layout.sidebar.pjSectionLabel": "プロジェクト",
   "layout.sidebar.pjCreateTitle": "新規プロジェクトを作成",
-  "layout.sidebar.pjImportWbsTitle": "WBS（xlsx・md）を取り込む",
+  "layout.sidebar.pjImportWbsTitle": "WBS（Excel・XML・CSVなど）を取り込む",
   "layout.sidebar.allPjLabel": "全PJ表示",
   "layout.sidebar.myPjTooltipSuffix": "（自分が担当するタスクがあります）",
   "layout.sidebar.showArchivedLabel": "完了・アーカイブも表示",

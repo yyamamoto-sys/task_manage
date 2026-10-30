@@ -8,10 +8,12 @@
 // 結合セルの見出し（縦に数行）は、見出し行の下にIDの無い行が続くだけなので「最初のIDまで読み飛ばす」で吸収する。
 // ここは読むだけ。PJ・グループ・タスクへの当てはめは wbsPlan.ts。
 
-import { canAddDependency } from "../dependencies/cycleCheck";
+import { resolvePredecessors, type PredSpec, type WbsPredecessor } from "./wbsPredecessors";
 
 export type WbsCell = string | number | null | undefined;
+/** 固定列テンプレートの階層（G=グループ／P=親タスク／C=その子タスク） */
 export type WbsLevel = "G" | "P" | "C";
+export type WbsStatus = "todo" | "in_progress" | "done";
 
 export interface WbsRow {
   /** 取込結果の中での通し番号（0始まり・読んだ行の順） */
@@ -19,22 +21,29 @@ export interface WbsRow {
   /** 元の表での行番号（1始まり。画面の警告表示用） */
   sourceRow: number;
   id: string;
-  level: WbsLevel;
+  /** グループ（PJ内 section）になる行か。タスクにはならない */
+  isGroup: boolean;
+  /** タスクの深さ（0=最上位。グループ行は 0）。v3.198 で G/P/C の3段から一般化 */
+  depth: number;
   name: string;
   start: string | null;
   end: string | null;
-  /** 先行タスクとして書かれていたID（解決できたものだけ。重複・自己参照・循環は除く） */
+  /** 先行タスク（解決できたものだけ。重複・自己参照・循環は除く）。種類（FS/SS/FF/SF）とずらし日数つき */
+  predecessors: WbsPredecessor[];
+  /** predecessors のIDだけ（確認画面・旧テスト用） */
   predecessorIds: string[];
+  /** 構造で渡された先行の指定（MSPDI）。あれば predecessorText より優先して照合する */
+  predSpecs?: PredSpec[];
   /** 先行タスクの元の文字列（確認画面に出す） */
   predecessorText: string;
-  done: boolean;
+  status: WbsStatus;
   milestone: boolean;
   /** 「ユーザー」「仮」などタグにする語 */
   tags: string[];
   /** 既知の語（完了・マイルストーン・ユーザー・仮）以外の備考。メモに残す */
   memo: string;
   assigneeText: string;
-  /** 親（P）の index。G と親なしの行は null */
+  /** 親タスクの index。グループと最上位のタスクは null */
   parentIndex: number | null;
   /** 属するグループ（G）の index。無ければ null */
   groupIndex: number | null;
@@ -105,9 +114,14 @@ function serialToIso(n: number): string | null {
   return toIso(dt.getUTCFullYear(), dt.getUTCMonth() + 1, dt.getUTCDate());
 }
 
-export interface ParsedDate { value: string | null; invalid: boolean }
+export interface ParsedDate {
+  value: string | null;
+  invalid: boolean;
+  /** 「3/4/2026」のように M/D とも D/M とも読める（M/D として読んだ） */
+  ambiguous?: boolean;
+}
 
-/** Excelの日付（シリアル値）・YYYY-MM-DD・YYYY/MM/DD・YYYY/M/D を読む。空は value=null・invalid=false */
+/** Excelの日付（シリアル値）・YYYY-MM-DD・YYYY/MM/DD・YYYY年M月D日・M/D/YYYY（英語ツール）・日時つきを読む。空は value=null・invalid=false */
 export function parseWbsDate(cell: WbsCell): ParsedDate {
   if (cell === null || cell === undefined) return { value: null, invalid: false };
   if (typeof cell === "number") {
@@ -120,6 +134,24 @@ export function parseWbsDate(cell: WbsCell): ParsedDate {
   if (m) {
     const v = toIso(Number(m[1]), Number(m[2]), Number(m[3]));
     return { value: v, invalid: v === null };
+  }
+  const jp = /^(\d{4})年\s*(\d{1,2})月\s*(\d{1,2})日?(?:[ T].*)?$/.exec(s);
+  if (jp) {
+    const v = toIso(Number(jp[1]), Number(jp[2]), Number(jp[3]));
+    return { value: v, invalid: v === null };
+  }
+  const us = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})(?:[ T].*)?$/.exec(s);
+  if (us) {
+    const a = Number(us[1]);
+    const b = Number(us[2]);
+    const y = Number(us[3]);
+    // 12を超える側が日。両方12以下は M/D と読み、曖昧として知らせる
+    if (a > 12 && b <= 12) {
+      const v = toIso(y, b, a);
+      return { value: v, invalid: v === null };
+    }
+    const v = toIso(y, a, b);
+    return { value: v, invalid: v === null, ambiguous: v !== null && a <= 12 && b <= 12 && a !== b };
   }
   if (/^\d{5}(\.\d+)?$/.test(s)) {
     const v = serialToIso(Number(s));
@@ -136,10 +168,6 @@ function parseLevel(raw: string, id: string): WbsLevel | null {
     return depth === 1 ? "G" : depth === 2 ? "P" : depth === 3 ? "C" : null;
   }
   return null;
-}
-
-function splitList(s: string): string[] {
-  return s.split(/[,、，;；\s]+/).map(x => x.trim()).filter(x => x !== "");
 }
 
 function parseRemarks(raw: string): { done: boolean; milestone: boolean; tags: string[]; memo: string } {
@@ -222,13 +250,15 @@ export function parseWbsGrid(grid: WbsCell[][]): WbsParseOutcome {
       index: rows.length,
       sourceRow,
       id,
-      level,
+      isGroup: level === "G",
+      depth: level === "C" ? 1 : 0,
       name,
       start,
       end,
+      predecessors: [],
       predecessorIds: [],
       predecessorText: norm(cell(row, cols.pred)),
-      done: rem.done,
+      status: rem.done ? "done" : "todo",
       milestone: rem.milestone,
       tags: rem.tags,
       memo: rem.memo,
@@ -252,10 +282,10 @@ export function parseWbsGrid(grid: WbsCell[][]): WbsParseOutcome {
   let curGroup: number | null = null;
   let curParent: number | null = null;
   for (const row of rows) {
-    if (row.level === "G") {
+    if (row.isGroup) {
       curGroup = row.index;
       curParent = null;
-    } else if (row.level === "P") {
+    } else if (row.depth === 0) {
       row.groupIndex = curGroup;
       curParent = row.index;
       if (curGroup === null) row.warnings.push("グループ（G）より前にあるため、グループに入れず取り込みます");
@@ -274,40 +304,7 @@ export function parseWbsGrid(grid: WbsCell[][]): WbsParseOutcome {
     }
   }
 
-  // 先行タスク：IDで照合。見つからない・グループ・自己参照・循環は警告して読み飛ばす
-  const edges: { predecessor_task_id: string; successor_task_id: string }[] = [];
-  for (const row of rows) {
-    if (row.predecessorText === "") continue;
-    if (row.level === "G") {
-      row.warnings.push("グループ（G）の先行タスクは取り込みません（グループはタスクではないため）");
-      continue;
-    }
-    const seen = new Set<string>();
-    for (const pid of splitList(row.predecessorText)) {
-      if (seen.has(pid)) continue;
-      seen.add(pid);
-      const pi = idToIndex.get(pid);
-      if (pi === undefined) {
-        row.warnings.push(`先行タスクのID「${pid}」が見つかりません（読み飛ばします）`);
-        continue;
-      }
-      const pred = rows[pi];
-      if (pred.level === "G") {
-        row.warnings.push(`先行タスクのID「${pid}」はグループ（G）のため読み飛ばします`);
-        continue;
-      }
-      if (pred.id === row.id) {
-        row.warnings.push("先行タスクが自分自身のため読み飛ばします");
-        continue;
-      }
-      if (!canAddDependency(edges, pred.id, row.id).ok) {
-        row.warnings.push(`先行タスク「${pid}」は循環になるため読み飛ばします`);
-        continue;
-      }
-      edges.push({ predecessor_task_id: pred.id, successor_task_id: row.id });
-      row.predecessorIds.push(pid);
-    }
-  }
+  resolvePredecessors(rows);
 
   if (rows.length === 0) {
     return { ok: false, error: "見出しの下に、取り込めるデータ行がありませんでした。" };
