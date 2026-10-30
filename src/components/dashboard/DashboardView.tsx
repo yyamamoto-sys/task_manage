@@ -60,17 +60,13 @@ interface Props {
   onOpenAdmin?: (page: "okr" | "pj") => void;
   /** オンボーディングからクイックタスク追加モーダルを開く */
   onOpenQuickAdd?: () => void;
-  /** サイドバーの「自分」トグルが ON のとき true。自分が担当のタスクのみ表示 */
-  mineOnly?: boolean;
-  /** Dashboard 内チップから mineOnly を切り替える（サイドバーと同じ state を共有） */
-  onToggleMineOnly?: () => void;
   /** タスク行クリックで詳細（TaskEditModal）を開く。MainLayout の setAiEditTaskId に橋渡し */
   onOpenTask?: (taskId: string) => void;
 }
 
 // ===== メインコンポーネント =====
 
-export function DashboardView({ currentUser, projects, selectedProject = null, onClearProjectFilter, onOpenAiProject, onOpenAdmin, onOpenQuickAdd, mineOnly = false, onToggleMineOnly, onOpenTask }: Props) {
+export function DashboardView({ currentUser, projects, selectedProject = null, onClearProjectFilter, onOpenAiProject, onOpenAdmin, onOpenQuickAdd, onOpenTask }: Props) {
   // 【Phase 2 移行済み】個別 selector で必要な state のみを購読する。
   // 他の state（loading, milestones, taskTaskForces 等）変更では Dashboard は再レンダーされない。
   const rawTasks   = useAppStore(selectScopedTasks);
@@ -145,17 +141,14 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
   );
 
   // フィルター適用後のタスク
-  // 「自分」フィルタは mineOnly（サイドバートグル）に一元化。Dashboard 内のチップも
-  // 同じ state を操作するので、表示と挙動が常に一致する
   const filteredTasks = useMemo(() => {
     let tasks = allTasks;
-    if (mineOnly) tasks = tasks.filter(t => isAssignedTo(t, currentUser.id));
     // PJフィルター選択時は、選択PJに紐づくタスク OR project_id=nullのタスク（ToDo系）を含める
     if (effectivePjIds.length > 0) tasks = tasks.filter(t =>
       (t.project_id && effectivePjIds.includes(t.project_id)) || t.project_id == null
     );
     return tasks;
-  }, [allTasks, mineOnly, effectivePjIds, currentUser.id]);
+  }, [allTasks, effectivePjIds]);
 
   const todayS = todayStr();
   const weekLater = addDaysFromToday(7);
@@ -561,28 +554,6 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
             style={{ width: "220px", maxWidth: "100%", flexShrink: 0 }}
           />
         )}
-
-        {/* 自分のみ/全員トグル */}
-        <div style={{ display: "flex", background: "var(--color-bg-tertiary)", borderRadius: "var(--radius-md)", padding: "2px", gap: "2px", flexShrink: 0 }}>
-          {[{ val: false, label: "全員" }, { val: true, label: "自分のみ" }].map(({ val, label }) => (
-            <button
-              key={label}
-              onClick={() => { if (mineOnly !== val && onToggleMineOnly) onToggleMineOnly(); }}
-              title="サイドバーの「担当タスクのみ／全タスク」トグルと連動します"
-              style={{
-                padding: "4px 12px", fontSize: "11px",
-                borderRadius: "var(--radius-sm)", border: "none", cursor: "pointer",
-                fontWeight: mineOnly === val ? "500" : "400",
-                background: mineOnly === val ? "var(--color-bg-primary)" : "transparent",
-                color: mineOnly === val ? "var(--color-text-primary)" : "var(--color-text-tertiary)",
-                boxShadow: mineOnly === val ? "var(--shadow-sm)" : "none",
-                transition: "background var(--transition-fast), color var(--transition-fast), box-shadow var(--transition-fast)",
-              }}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
       </div>
 
       {/* ===== 全PJ AI分析モーダル ===== */}
@@ -817,7 +788,7 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
 
         {/* グリッド — key でフィルター変更時にアニメーションを再発火 */}
         <div
-          key={`${mineOnly ? "1" : "0"}-${effectivePjIds.join(",")}-${activeKrId ?? ""}`}
+          key={`${effectivePjIds.join(",")}-${activeKrId ?? ""}`}
           className="animate-fadeIn"
           style={{
             display: "grid",

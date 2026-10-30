@@ -22,7 +22,7 @@ import { useOutsideDismiss } from "../../hooks/useOutsideDismiss";
 import { extractMessageId } from "../../lib/adminMessages/adminMessages";
 import { setClientErrorScreen } from "../../lib/errors/clientErrorLog";
 import {
-  APP_BELL_FIXED_TOP_PX, APP_BELL_RESERVE_PC_PX, APP_BELL_RESERVE_VAR, APP_BELL_SIZE_MOBILE_PX, APP_BELL_SIZE_PC_PX,
+  APP_BELL_FIXED_TOP_PX, APP_BELL_GAP_PX, APP_BELL_RESERVE_PC_PX, APP_BELL_RESERVE_VAR, APP_BELL_SIZE_MOBILE_PX, APP_BELL_SIZE_PC_PX,
   computeBellRightPc, withBellReserve,
 } from "../../lib/layout/topRightBell";
 import type { SettingsPageId } from "../../lib/settings/settingsPages";
@@ -76,7 +76,6 @@ import { AcceptInviteModal } from "../project/AcceptInviteModal";
 import { formatErrorForUser } from "../../lib/errorMessage";
 import { clampSidebarWidth, parseStoredSidebarWidth, SIDEBAR_DEFAULT_WIDTH, SIDEBAR_WIDTH_KEY_STEP, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH } from "../../lib/layout/sidebarWidth";
 import { shouldGroupSidebarMiscButtons } from "../../lib/layout/sidebarMiscSection";
-import { resolveInitialSidebarMineOnly } from "../../lib/layout/sidebarMineOnlyDefault";
 import { confirmDialog } from "../../lib/dialog";
 import { loadDemoDataset } from "../../lib/demo/loadDemoDataset";
 import { QuickAddFab } from "./QuickAddFab";
@@ -740,22 +739,9 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
     return ids;
   }, [rawTasks, currentUser.id]);
 
-  // 初期値の決定はsrc/lib/layout/sidebarMineOnlyDefault.tsの一般則に従う（v3.76）。
-  // 自分の担当タスクがまだ無く、PJは1件以上あるなら初期値を「全タスク」にする（各ビューが空になる
-  // のを避ける。招待受諾者・新入社員。「招待受諾者かどうか」を判定する分岐は書かない）。useStateの初期化関数は初回マウント時
-  // にしか呼ばれないため、以後ユーザーが明示的に切り替えた選択を再判定で上書きすることはない。
-  const [mineOnly, setMineOnlyState] = useState<boolean>(
-    () => resolveInitialSidebarMineOnly(
-      localStorage.getItem(KEYS.SIDEBAR_MY_PROJECTS_ONLY),
-      projects.filter(p => myProjectIds.has(p.id)).length,
-      projects.length,
-    ),
-  );
-  const toggleMineOnly = () => setMineOnlyState(prev => {
-    const next = !prev;
-    localStorage.setItem(KEYS.SIDEBAR_MY_PROJECTS_ONLY, next ? "1" : "0");
-    return next;
-  });
+  // 「通知のクリック先＝自分のタスク一覧」用。値が増えるたびにリストの「自分」チップを ON にする（ListView の myOnlyRequest）。
+  // サイドバーの「担当タスクのみ／全タスク」トグルは v3.194 で廃止した（保存値は読まない＝常に全タスク）。
+  const [listMyOnlyRequest, setListMyOnlyRequest] = useState(0);
 
   const sidebarProjects = useMemo(
     () => sortProjectsMineFirst(projects, myProjectIds),
@@ -772,9 +758,8 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
     setSelectedProjectId(null);
     setSelectedKrId(null);
     setViewMode("list");
-    // 一時的に「担当タスクのみ」にするだけで保存しない（保存すると次回以降も残る。v3.188）。
-    // サイドバーのボタンが「担当タスクのみ」の強調表示になるので、状態は利用者から見える。
-    setMineOnlyState(true);
+    // リスト側の「自分」チップを ON にする（保存しない。チップの状態はリストを開き直すまで）
+    setListMyOnlyRequest(n => n + 1);
   });
   // 設定を開く入口は openSettings(pageId?) の1つ（歯車＝トップ、各種の直接ジャンプ＝ページ指定）。
   // stageSettingsPage は指定ページを積むだけで開かない（オンボーディングのオーバーレイを閉じる処理と束ねるため分けている）
@@ -928,6 +913,23 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
       onOpenMessage={setOpenMessageId}
       refreshKey={bellRefreshKey}
     />
+  );
+  // WBS等のインポートボタン（v3.194：サイドバーから移設）。ベルのすぐ左。ガント・リスト（計画モード）を表示中だけ出す
+  const showImportWbsButton = !isGuest && appMode === "plan" && (viewMode === "gantt" || viewMode === "list")
+    && !isAdminOpen && !isGuideOpen && activeLabView === null;
+  const importWbsButton = (size: number) => !showImportWbsButton ? null : (
+    <button
+      data-import-wbs-header
+      onClick={() => setWbsImport({ projectId: null })}
+      title={t("layout.sidebar.pjImportWbsTitle")}
+      aria-label={t("layout.sidebar.pjImportWbsTitle")}
+      style={{
+        width: `${size}px`, height: `${size}px`, flexShrink: 0,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        background: "var(--color-bg-secondary)", border: "1px solid var(--color-border-primary)",
+        borderRadius: "var(--radius-md)", cursor: "pointer", fontSize: "15px", lineHeight: 1, padding: 0,
+      }}
+    >📥</button>
   );
   // お知らせツアー（v3.159・tours/announcements.ts）。ガイドの「ほかのツアー」への並び・自動開始・管理者の再試行
   const announcementTours = useMemo(
@@ -1443,8 +1445,6 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
                 onOpenAiProject={openAiProjectCreate}
                 onOpenAdmin={page => openSettings(page)}
                 onOpenQuickAdd={() => setIsQuickAddOpen(true)}
-                mineOnly={mineOnly}
-                onToggleMineOnly={toggleMineOnly}
                 onOpenTask={setAiEditTaskId}
               />
             )}
@@ -1455,7 +1455,6 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
                 projects={projects}
                 selectedKrId={selectedKrId}
                 krTaskIds={krTaskIds}
-                mineOnly={mineOnly}
               />
             )}
             {viewMode === "gantt" && (
@@ -1465,7 +1464,6 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
                 projects={projects}
                 selectedKrId={selectedKrId}
                 krTaskIds={krTaskIds}
-                mineOnly={mineOnly}
                 shortcutsOpen={isShortcutsOpen}
                 onToggleShortcuts={toggleShortcuts}
               />
@@ -1477,7 +1475,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
                 projects={projects}
                 selectedKrId={selectedKrId}
                 krTaskIds={krTaskIds}
-                mineOnly={mineOnly}
+                myOnlyRequest={listMyOnlyRequest}
               />
             )}
             {viewMode === "workload" && (
@@ -1675,6 +1673,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           >
             <AIIcon />
           </button>
+          {importWbsButton(APP_BELL_SIZE_MOBILE_PX)}
           {notificationBell(APP_BELL_SIZE_MOBILE_PX)}
           {/* 設定ボタン（ゲストは非表示） */}
           {!isGuest && (
@@ -1832,7 +1831,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
     <div style={{
       display: "flex", height: "100%", overflow: "hidden",
       // 各ビューのヘッダーが右端に空ける幅（withBellReserve）。ベルを出すときだけ値を入れる
-      [APP_BELL_RESERVE_VAR as string]: isGuest ? "0px" : `${APP_BELL_RESERVE_PC_PX}px`,
+      [APP_BELL_RESERVE_VAR as string]: isGuest ? "0px" : `${APP_BELL_RESERVE_PC_PX + (showImportWbsButton ? APP_BELL_SIZE_PC_PX + APP_BELL_GAP_PX : 0)}px`,
     } as React.CSSProperties}>
       {onboardingOverlay}
       {tourInviteDialog}
@@ -1844,7 +1843,9 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           right: `${computeBellRightPc(isConsultOpen, consultPanelWidth)}px`,
           transition: isConsultResizing ? "none" : "right 0.3s ease",
           zIndex: 45,
+          display: "flex", alignItems: "center", gap: `${APP_BELL_GAP_PX}px`,
         }}>
+          {importWbsButton(APP_BELL_SIZE_PC_PX)}
           {notificationBell(APP_BELL_SIZE_PC_PX)}
         </div>
       )}
@@ -1898,8 +1899,6 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         setViewMode={navSetViewMode}
         projects={sidebarProjects}
         myProjectIds={myProjectIds}
-        mineOnly={mineOnly}
-        onToggleMineOnly={toggleMineOnly}
         showCompletedAndArchived={showCompletedAndArchived}
         onToggleShowCompletedAndArchived={toggleShowCompletedAndArchived}
         selectedProjectId={selectedProjectId}
@@ -2045,9 +2044,6 @@ interface SidebarProps {
   projects: Project[];
   /** 自分が担当するタスクを持つPJ（行の目印用。一覧の絞り込みには使わない） */
   myProjectIds: ReadonlySet<string>;
-  /** 各ビューのタスクを自分担当に絞る（PJ一覧は絞らない） */
-  mineOnly: boolean;
-  onToggleMineOnly: () => void;
   /** 「完了・アーカイブも表示」トグル（既定OFF）。CLAUDE.md参照：completed/archivedを既定で隠す */
   showCompletedAndArchived: boolean;
   onToggleShowCompletedAndArchived: () => void;
@@ -2104,7 +2100,6 @@ interface SidebarProps {
 
 function Sidebar({
   viewMode, setViewMode, projects, myProjectIds,
-  mineOnly, onToggleMineOnly,
   showCompletedAndArchived, onToggleShowCompletedAndArchived,
   selectedProjectId, onSelectProject,
   keyResults, selectedKrId, onSelectKr,
@@ -2416,87 +2411,55 @@ function Sidebar({
         </div>
 
         {/* 計画管理：プロジェクト一覧（スクロールは親の flex:1 ラッパーが担う） */}
-        <div style={{ padding: c ? "5px 0" : "3px 0" }}>
+        <div style={{ padding: c ? "5px 0" : "2px 0" }}>
           {!c && (
+            // 1行固定：ラベルは nowrap＋省略、右端の＋は縮まない。サイドバー幅がどうでも改行・縦伸びしない
             <div style={{
-              display: "flex", alignItems: "center", justifyContent: "space-between",
-              flexWrap: "wrap", rowGap: "2px",
-              padding: "5px 8px 3px",
+              display: "flex", alignItems: "center", gap: "4px",
+              height: "24px", minWidth: 0, boxSizing: "border-box", overflow: "hidden",
+              padding: "0 8px",
             }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "4px", flex: 1, minWidth: 0 }}>
-                <button
-                  onClick={togglePjOpen}
-                  aria-expanded={pjOpen}
-                  title={pjOpen ? t("layout.sidebar.pjSectionCollapse") : t("layout.sidebar.pjSectionExpand")}
-                  style={{
-                    display: "flex", alignItems: "center", gap: "4px",
-                    background: "transparent", border: "none", cursor: "pointer", padding: 0,
-                    fontSize: "10px", fontWeight: 600, letterSpacing: "0.05em",
-                    color: "var(--color-text-tertiary)", textTransform: "uppercase",
-                  }}
-                >
-                  <span style={{ fontSize: "8px", display: "inline-block", transform: pjOpen ? "rotate(90deg)" : "none", transition: "transform 0.15s" }}>▶</span>
-                  {t("layout.sidebar.pjSectionLabel")}
-                </button>
-                <button
-                  onClick={onCreateProject}
-                  title={t("layout.sidebar.pjCreateTitle")}
-                  style={{
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    width: 16, height: 16, flexShrink: 0,
-                    background: "transparent", border: "1px solid var(--color-border-primary)",
-                    borderRadius: "var(--radius-sm)", cursor: "pointer",
-                    fontSize: "12px", lineHeight: 1, color: "var(--color-text-tertiary)",
-                    padding: 0,
-                  }}
-                  onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "var(--color-bg-tertiary)"; (e.currentTarget as HTMLButtonElement).style.color = "var(--color-text-secondary)"; }}
-                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; (e.currentTarget as HTMLButtonElement).style.color = "var(--color-text-tertiary)"; }}
-                >＋</button>
-                {!isGuest && (
-                  <button
-                    onClick={() => onImportWbs(null)}
-                    title={t("layout.sidebar.pjImportWbsTitle")}
-                    aria-label={t("layout.sidebar.pjImportWbsTitle")}
-                    style={{
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      width: 16, height: 16, flexShrink: 0,
-                      background: "transparent", border: "1px solid var(--color-border-primary)",
-                      borderRadius: "var(--radius-sm)", cursor: "pointer",
-                      fontSize: "10px", lineHeight: 1, color: "var(--color-text-tertiary)",
-                      padding: 0,
-                    }}
-                    onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "var(--color-bg-tertiary)"; (e.currentTarget as HTMLButtonElement).style.color = "var(--color-text-secondary)"; }}
-                    onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; (e.currentTarget as HTMLButtonElement).style.color = "var(--color-text-tertiary)"; }}
-                  >📥</button>
-                )}
-              </div>
               <button
-                onClick={onToggleMineOnly}
-                title={mineOnly ? t("layout.sidebar.mineOnlyToAll") : t("layout.sidebar.mineOnlyToMine")}
+                onClick={togglePjOpen}
+                aria-expanded={pjOpen}
+                title={pjOpen ? t("layout.sidebar.pjSectionCollapse") : t("layout.sidebar.pjSectionExpand")}
                 style={{
-                  display: "flex", alignItems: "center", gap: "3px",
-                  padding: "2px 5px",
-                  fontSize: "10px", fontWeight: 500,
-                  background: mineOnly ? "var(--color-brand-light)" : "transparent",
-                  color: mineOnly ? "var(--color-brand)" : "var(--color-text-tertiary)",
-                  border: `1px solid ${mineOnly ? "var(--color-brand-border)" : "var(--color-border-primary)"}`,
-                  borderRadius: "var(--radius-full)",
-                  cursor: "pointer", lineHeight: 1.4,
+                  flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: "4px",
+                  background: "transparent", border: "none", cursor: "pointer", padding: 0,
+                  fontSize: "10px", fontWeight: 600, letterSpacing: "0.05em",
+                  color: "var(--color-text-tertiary)", textTransform: "uppercase",
+                  whiteSpace: "nowrap", textAlign: "left",
                 }}
               >
-                <span style={{ fontSize: "9px" }}>{mineOnly ? "👤" : "🌐"}</span>
-                {mineOnly ? t("layout.sidebar.mineLabel") : t("layout.sidebar.allLabel")}
+                <span style={{ flexShrink: 0, fontSize: "8px", display: "inline-block", transform: pjOpen ? "rotate(90deg)" : "none", transition: "transform 0.15s" }}>▶</span>
+                <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t("layout.sidebar.pjSectionLabel")}</span>
               </button>
+              <button
+                onClick={onCreateProject}
+                title={t("layout.sidebar.pjCreateTitle")}
+                aria-label={t("layout.sidebar.pjCreateTitle")}
+                style={{
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  width: 16, height: 16, flexShrink: 0,
+                  background: "transparent", border: "1px solid var(--color-border-primary)",
+                  borderRadius: "var(--radius-sm)", cursor: "pointer",
+                  fontSize: "12px", lineHeight: 1, color: "var(--color-text-tertiary)",
+                  padding: 0,
+                }}
+                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "var(--color-bg-tertiary)"; (e.currentTarget as HTMLButtonElement).style.color = "var(--color-text-secondary)"; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; (e.currentTarget as HTMLButtonElement).style.color = "var(--color-text-tertiary)"; }}
+              >＋</button>
             </div>
           )}
           {!c && pjOpen && (
-            <div style={{ display: "flex", justifyContent: "flex-end", padding: "0 8px 4px", minWidth: 0 }}>
+            <div style={{ display: "flex", justifyContent: "flex-end", padding: "0 8px 2px", minWidth: 0, overflow: "hidden" }}>
               <button
                 onClick={onToggleShowCompletedAndArchived}
                 title={showCompletedAndArchived ? t("layout.sidebar.showArchivedOff") : t("layout.sidebar.showArchivedOn")}
                 style={{
                   display: "flex", alignItems: "center", gap: "3px",
-                  padding: "2px 7px", minWidth: 0,
+                  padding: "2px 7px", minWidth: 0, maxWidth: "100%", boxSizing: "border-box",
+                  whiteSpace: "nowrap",
                   fontSize: "10px", fontWeight: 500,
                   background: showCompletedAndArchived ? "var(--color-bg-tertiary)" : "transparent",
                   color: showCompletedAndArchived ? "var(--color-text-secondary)" : "var(--color-text-tertiary)",

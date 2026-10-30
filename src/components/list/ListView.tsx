@@ -21,7 +21,7 @@ import { DuplicateTasksModal } from "../task/DuplicateTasksModal";
 import { EmptyState } from "../common/EmptyState";
 import { computeRangeSelection, applyCheckboxClick } from "../../lib/selectionRange";
 import { useBulkTaskActions } from "../../hooks/useBulkTaskActions";
-import { BulkActionBar } from "../task/BulkActionBar";
+import { BulkActionBar, BULK_BAR_SCROLL_PAD_PX } from "../task/BulkActionBar";
 import { useTaskDragReorder } from "../../hooks/useTaskDragReorder";
 import { computeDropZoneFromRatio, type DropZone } from "../../lib/dragReorder";
 import { toggleTaskWithChildren } from "../../lib/task/selectionWithChildren";
@@ -52,8 +52,8 @@ interface Props {
   projects: Project[];
   selectedKrId?: string | null;
   krTaskIds?: Set<string> | null;
-  /** サイドバーの「自分」トグル ON のとき true。自分が担当のタスクのみ表示 */
-  mineOnly?: boolean;
+  /** 値が増えるたびに「自分」チップを ON にする（通知のクリック先＝自分のタスク一覧・初期値が >0 でも ON で始まる） */
+  myOnlyRequest?: number;
 }
 
 const PRIO: Record<string, number> = { high: 0, mid: 1, low: 2, "": 3 };
@@ -123,7 +123,7 @@ function lsSet(field: string, value: unknown) {
   } catch { /* ignore */ }
 }
 
-export function ListView({ currentUser, selectedProject, projects, krTaskIds, mineOnly = false }: Props) {
+export function ListView({ currentUser, selectedProject, projects, krTaskIds, myOnlyRequest = 0 }: Props) {
   const rawTasks   = useAppStore(selectScopedTasks);
   const taskDependencies = useAppStore(selectScopedTaskDependencies);
   const rawMembers = useAppStore(s => s.members);
@@ -161,7 +161,13 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
   const setFilterPriority= (v: "all"|"high"|"mid"|"low")  => { setFilterPriorityState(v); lsSet("filterPriority", v); };
 
   // セッション限りのフィルター
-  const [filterMyOnly,   setFilterMyOnly  ] = useState(false);
+  const [filterMyOnly,   setFilterMyOnly  ] = useState(myOnlyRequest > 0);
+  const handledMyOnlyRequestRef = useRef(myOnlyRequest);
+  useEffect(() => {
+    if (myOnlyRequest === handledMyOnlyRequestRef.current) return;
+    handledMyOnlyRequestRef.current = myOnlyRequest;
+    setFilterMyOnly(true);
+  }, [myOnlyRequest]);
   const [filterThisWeek, setFilterThisWeek] = useState(false);
   const [filterHideDone, setFilterHideDone] = useState(false);
   const [filterMember,   setFilterMember  ] = useState<string>("all");
@@ -286,8 +292,8 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
     else if (krTaskIds)          tasks = tasks.filter(t => krTaskIds.has(t.id));
     if (filterStatus !== "all")  tasks = tasks.filter(t => t.status === filterStatus);
     if (filterHideDone)          tasks = tasks.filter(t => t.status !== "done");
-    // 「担当者=自分」フィルタ：内部チップ(filterMyOnly) または サイドバー(mineOnly) のどちらかが ON
-    if (filterMyOnly || mineOnly) tasks = tasks.filter(t => isAssignedTo(t, currentUser.id));
+    // 「担当者=自分」フィルタ（内部チップ）
+    if (filterMyOnly) tasks = tasks.filter(t => isAssignedTo(t, currentUser.id));
     if (filterMember !== "all")  tasks = tasks.filter(t =>
       t.assignee_member_ids?.includes(filterMember) || t.assignee_member_id === filterMember
     );
@@ -325,7 +331,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
       if (va > vb) return sortDir === "asc" ?  1 : -1;
       return 0;
     });
-  }, [allTasks, selectedProject, krTaskIds, filterStatus, filterHideDone, filterMyOnly, mineOnly, filterMember,
+  }, [allTasks, selectedProject, krTaskIds, filterStatus, filterHideDone, filterMyOnly, filterMember,
       filterThisWeek, filterPriority, searchText, sortKey, sortDir, currentUser.id, t0, t7, members]);
 
   // 親タスクの導出ステータス・進捗（PC表の行ごとに rollupStatus/parentProgress を呼ぶと
@@ -832,8 +838,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
           currentUserId={currentUser.id}
         />
 
-        {/* ===== 一括操作バー（選択時のみ表示・スムーズ展開でレイアウト飛びを防止） ===== */}
-        <div style={{ overflow: "hidden", maxHeight: selectedIds.size > 0 ? "120px" : "0", transition: "max-height 0.18s ease", flexShrink: 0 }}>
+        {/* ===== 一括操作バー（選択時のみ表示・画面下部に固定表示＝行位置は動かさない） ===== */}
         {selectedIds.size > 0 && (
           <BulkActionBar
             selectedCount={selectedIds.size}
@@ -847,7 +852,6 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
             onClear={clearSelection}
           />
         )}
-        </div>
 
         {draggingSection && (
           <SectionDragNotice name={projectSections.find(x => x.id === draggingSection.id)?.name ?? "グループ"} />
@@ -855,7 +859,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
         {sectionDrag.ghostProps && <SectionDragGhost {...sectionDrag.ghostProps} />}
 
         {/* ===== テーブル（PC）/ カード（モバイル） ===== */}
-        <div ref={listScrollRef} style={{ flex: 1, overflow: "auto" }}>
+        <div ref={listScrollRef} style={{ flex: 1, overflow: "auto", paddingBottom: selectedIds.size > 0 ? BULK_BAR_SCROLL_PAD_PX : 0 }}>
           {isMobile ? (
             /* モバイル：カードリスト */
             <div style={{ padding: "8px 10px", display: "flex", flexDirection: "column", gap: "6px" }}>

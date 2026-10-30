@@ -53,7 +53,7 @@ import { isGuestMember } from "../../lib/guestMode";
 import { canGuestEdit } from "../../lib/guest/guestCapability";
 import { useAssigneeCandidates } from "../../hooks/useAssigneeCandidates";
 import { sharedProjectId } from "../../lib/members/assigneeCandidates";
-import { BulkActionBar } from "../task/BulkActionBar";
+import { BulkActionBar, BULK_BAR_SCROLL_PAD_PX } from "../task/BulkActionBar";
 import { DuplicateTasksModal } from "../task/DuplicateTasksModal";
 import {
   computeDependencyRenders, pointsToPathD,
@@ -99,8 +99,6 @@ interface Props {
   isPreview?: boolean;
   /** プレビューモード：変更されたタスクIDのセット（ハイライト表示） */
   previewChangedTaskIds?: Set<string>;
-  /** サイドバーの「自分」トグル ON のとき true。自分が担当のタスクのみ表示 */
-  mineOnly?: boolean;
   /**
    * キーボードショートカット（T/+-/Ctrl+A/Enter）を有効にするか。既定 true。
    * AI相談のガントプレビュー（GanttPreviewPanel）は1画面に2つの GanttView を同時に
@@ -128,7 +126,6 @@ export function GanttView({
   previewTasks,
   isPreview = false,
   previewChangedTaskIds,
-  mineOnly = false,
   enableKeyboardShortcuts = true,
   shortcutsOpen: shortcutsOpenProp,
   onToggleShortcuts,
@@ -180,8 +177,7 @@ export function GanttView({
   }, []);
 
   // previewTasksが指定されている場合はそちらを優先する。KRフィルタが有効な場合はさらに絞り込む
-  // mineOnly が true なら担当者=自分のタスクだけにする（サイドバーの「自分」トグル由来）
-  // 完了を隠すフィルタ（hideCompletedTasks）は mineOnly と併用でき、必ず並べ替え・グルーピング
+  // 完了を隠すフィルタ（hideCompletedTasks）は、必ず並べ替え・グルーピング
   // （orderTasksHierarchically・personGroups・todoGroups 等、すべて allTasks から派生）より前段
   // で効かせる。単純な status==="done" 除外ではなく filterHideCompletedTasks（親子ロールアップ
   // 考慮）を使うことで、未完了の子を持つ親タスクは残る（CLAUDE.md参照）。
@@ -190,10 +186,9 @@ export function GanttView({
       ? active(previewTasks)
       : active(rawTasks);
     let list = krTaskIds ? base.filter(t => krTaskIds.has(t.id)) : base;
-    if (mineOnly) list = list.filter(t => isAssignedTo(t, currentUser.id));
     if (hideCompletedTasks) list = filterHideCompletedTasks(list);
     return list;
-  }, [previewTasks, rawTasks, krTaskIds, mineOnly, currentUser.id, hideCompletedTasks]);
+  }, [previewTasks, rawTasks, krTaskIds, hideCompletedTasks]);
   const members  = useMemo(() => active(rawMembers), [rawMembers]);
   const todos    = useMemo(() => (rawTodos ?? []).filter((td: ToDo) => !td.is_deleted), [rawTodos]);
   // ホットループ用：タスク行ごとの find を回避するため id→entity の Map を一度だけ作る
@@ -208,6 +203,7 @@ export function GanttView({
   // Escapeでも選択クリア。選択中のバーの中央をドラッグすると選択中の全タスクが一緒にシフトする
   // （バー中央ドラッグ単体移動 = handleMoveDragStart の bulkTargets 拡張。詳細は下記）。
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
+  const bulkBarPadPx = !isPreview && selectedTaskIds.size > 0 ? BULK_BAR_SCROLL_PAD_PX : 0;
   // グループ見出しの並べ替え（⋮・⠿ドラッグ）。タスク行・バーのドラッグ state とは別にして干渉させない
   const sectionActions = useSectionActions(currentUser.id);
   const canReorderSections = !isPreview && !isMobile && canGuestEdit(isGuestMember(currentUser), "project");
@@ -2414,7 +2410,6 @@ export function GanttView({
         isPreview={isPreview}
         editingTaskId={editingTaskId}
         setEditingTaskId={setEditingTaskId}
-        mineOnly={mineOnly}
         selectedProject={selectedProject}
         krTaskIds={krTaskIds}
         currentUser={currentUser}
@@ -2658,8 +2653,8 @@ export function GanttView({
       )}
       {sectionDrag.ghostProps && <SectionDragGhost {...sectionDrag.ghostProps} />}
 
-      {/* 一括操作バー（v3.160・選択時のみ）。ヘッダーとガント本体の間に挿入する＝右下の FAB・ショートカット
-          （bottomStack）と重ならず、左右の列は同じ flex 親の中で同じだけ縮む（Section 80 の行ずれは起きない） */}
+      {/* 一括操作バー（選択時のみ）。画面下部に固定表示する＝ガントの行位置は動かない。
+          最下行が隠れないよう、左右のスクロール領域の末尾に同じ高さの余白を足す（Section 80：左右で必ず同じ値） */}
       {!isPreview && selectedTaskIds.size > 0 && (
         <BulkActionBar
           selectedCount={selectedTaskIds.size}
@@ -2724,9 +2719,7 @@ export function GanttView({
               <EmptyState
                 icon="📅"
                 title="表示するタスクがありません"
-                hint={mineOnly
-                  ? "「担当タスクのみ」で担当タスクが無いか、まだ登録されていません。サイドバー上部で「全タスク」に切り替えるか、＋ボタンで追加してください。"
-                  : "PJ やタスクを登録すると、ここに横長のバーで表示されます。"}
+                hint="PJ やタスクを登録すると、ここに横長のバーで表示されます。"
               />
             ) : (
               // 共有行モデル（ganttRows）。右バー列（下）と同じ配列を1回mapするだけ＝
@@ -2734,6 +2727,7 @@ export function GanttView({
               ganttRows.map(row => renderLabelRow(row))
             )}
             <div data-gantt-hbar-spacer style={{ height: hBarHeight, flexShrink: 0 }} />
+            <div data-gantt-bulkbar-pad style={{ height: bulkBarPadPx, flexShrink: 0 }} />
           </div>
         </div>
 
@@ -2971,6 +2965,7 @@ export function GanttView({
                   1回mapするだけ＝行数・各行の高さが構造的に一致する（CLAUDE.md v3.08） */}
               {ganttRows.map(row => renderBarRow(row))}
             </div>
+            <div data-gantt-bulkbar-pad style={{ height: bulkBarPadPx }} />
           </div>
         </div>
 

@@ -8585,3 +8585,12 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #
 # * useOutsideDismiss（hooks）＋ outsideDismiss.ts（純関数）。MainLayout の Sidebar で miscOpen・labOpen に適用。ツアー実行中（useTour().isRunning）は保留。
 # * KEYS.SIDEBAR_MISC_OPEN の読み書きを撤去（定数は表示設定リセット用に残す）。設計＝docs/dev/sections/s32_sidebar-misc.md。DB変更なし・MIN_CLIENT_VERSION 据え置き。
+
+# v3.194（2026-10-30）：サイドバーのプロジェクト見出しを作り直し／「担当タスクのみ／全タスク」トグルを廃止／WBSインポートをヘッダーへ／一括操作バーを下部固定に
+
+* サイドバー：「プロジェクト」見出しは「▶＋ラベル＋右端の＋」の1行だけ（高さ24px固定・nowrap・ellipsis）。「完了・アーカイブも表示」も nowrap＋maxWidth:100%。縦パディングを詰めた。
+* mineOnly（サイドバートグル）を全廃：MainLayout の state／トグル、DashboardView（「全員／自分のみ」チップ含む）・KanbanView・ListView・GanttView・GanttMobileView の prop とフィルタ、sidebarMineOnlyDefault.ts（＋テスト）、i18n 4キーを削除。保存値 KEYS.SIDEBAR_MY_PROJECTS_ONLY は読まない（表示設定リセットの掃除対象として定数だけ残す）＝保存値が「自分のみ」でも全タスク表示。
+* 通知クリック先「自分のタスク一覧」（/?open=my-tasks）は ListView の myOnlyRequest（増えるたびに内部「自分」チップを ON）で再現。
+* WBSインポート：サイドバーの📥を撤去し、MainLayout の showImportWbsButton（計画モード・ゲスト以外・ガント/リスト・設定/ガイド/ラボを開いていない）のとき、PC は固定ベルの箱の中でベルの直前、モバイルはヘッダーのベルの直前に📥を出す。--app-bell-reserve をボタン分広げる。PJ行「⋮」のインポートは従来どおり。
+* BulkActionBar：position:fixed（zIndex 40）の下部フローティングに変更。PC は下端中央・maxWidth=100vw-2*(FAB右余白+FAB幅+隙間)で右下FAB・ショートカットと重ならない。モバイルはボトムナビ＋FABの上。リスト・カンバンの高さ可変ラッパーを撤去。選択中だけスクロール領域末尾に BULK_BAR_SCROLL_PAD_PX(120) の余白（ガントは左右同じ値＝Section 80）。
+* テスト：sidebarHeaderAndBulkBar.test.ts 新設。topRightBell.test.ts の reserve 検査を更新。DB変更なし・MIN_CLIENT_VERSION 据え置き。

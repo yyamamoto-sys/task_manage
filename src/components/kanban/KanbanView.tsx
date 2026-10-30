@@ -6,10 +6,10 @@ import { sharedProjectId } from "../../lib/members/assigneeCandidates";
 import { useAssigneeCandidates } from "../../hooks/useAssigneeCandidates";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { useBulkTaskActions } from "../../hooks/useBulkTaskActions";
-import { BulkActionBar } from "../task/BulkActionBar";
+import { BulkActionBar, BULK_BAR_SCROLL_PAD_PX } from "../task/BulkActionBar";
 import type { Member, Project, Task, ToDo } from "../../lib/localData/types";
 import { active } from "../../lib/localData/localStore";
-import { TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORITY_STYLE, TASK_PRIORITY_STRIPE_COLOR, getAssigneeIds, isAssignedTo, suppressOverdue } from "../../lib/taskMeta";
+import { TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORITY_STYLE, TASK_PRIORITY_STRIPE_COLOR, getAssigneeIds, suppressOverdue } from "../../lib/taskMeta";
 import { computeRangeSelection } from "../../lib/selectionRange";
 import { computeKanbanOrderedIds } from "../../lib/kanbanOrder";
 import { useTaskKeyboardNav } from "../../hooks/useTaskKeyboardNav";
@@ -42,11 +42,9 @@ interface Props {
   projects: Project[];
   selectedKrId?: string | null;
   krTaskIds?: Set<string> | null;
-  /** サイドバーの「自分」トグル ON のとき true。自分が担当のタスクのみ表示 */
-  mineOnly?: boolean;
 }
 
-export function KanbanView({ currentUser, selectedProject, projects, selectedKrId: _selectedKrId, krTaskIds, mineOnly = false }: Props) {
+export function KanbanView({ currentUser, selectedProject, projects, selectedKrId: _selectedKrId, krTaskIds }: Props) {
   const allTasks         = useAppStore(selectScopedTasks);
   const allMembers       = useAppStore(s => s.members);
   const rawTodos         = useAppStore(s => s.todos);
@@ -139,7 +137,6 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
     let list = tasks;
     if (selectedProject) list = list.filter(t => t.project_id === selectedProject.id);
     else if (krTaskIds)  list = list.filter(t => krTaskIds.has(t.id));
-    if (mineOnly) list = list.filter(t => isAssignedTo(t, currentUser.id));
     if (selectedProject && effectiveSectionFilter) {
       const known = new Set(pjSections.map(x => x.id));
       list = list.filter(t => effectiveSectionFilter === UNSECTIONED_KEY
@@ -147,7 +144,7 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
         : t.section_id === effectiveSectionFilter);
     }
     return list;
-  }, [tasks, selectedProject, krTaskIds, mineOnly, currentUser.id, effectiveSectionFilter, pjSections]);
+  }, [tasks, selectedProject, krTaskIds, effectiveSectionFilter, pjSections]);
 
   // Ctrl/Cmd+A・Shift+クリック範囲選択の対象となる「現在の表示順」
   // （列＝todo→in_progress→done を左→右、各列内は上→下でフラット化。hideDone中はdone列を除外）
@@ -363,8 +360,7 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
         }}>{showPaused ? "👁" : "🙈"} 保留・中止を表示</button>
       </div>
 
-      {/* ===== 一括操作バー（選択時のみ表示・リストビューと同等のUI/挙動） ===== */}
-      <div style={{ overflow: "hidden", maxHeight: selectedIds.size > 0 ? "100px" : "0", transition: "max-height 0.18s ease", flexShrink: 0 }}>
+      {/* ===== 一括操作バー（選択時のみ表示・画面下部に固定表示） ===== */}
       {selectedIds.size > 0 && (
         <BulkActionBar
           selectedCount={selectedIds.size}
@@ -378,12 +374,12 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
           onClear={clearSelection}
         />
       )}
-      </div>
 
       {/* カンバン本体 */}
       <div style={{
         display: "flex", gap: isMobile ? "8px" : "12px",
         padding: isMobile ? "10px 12px" : "14px 16px",
+        paddingBottom: selectedIds.size > 0 ? BULK_BAR_SCROLL_PAD_PX : (isMobile ? 10 : 14),
         flex: 1, overflow: "auto",
         scrollSnapType: isMobile ? "x mandatory" : undefined,
         WebkitOverflowScrolling: "touch",

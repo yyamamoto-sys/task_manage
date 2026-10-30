@@ -4,10 +4,24 @@
 // 元は ListView と KanbanView にほぼ同じ JSX が二重にあったものを1つにまとめた（ガントにも同じバーを出すため）。
 // 実処理は useBulkTaskActions の戻り値。ここは見た目と配線だけを持つ。
 
+import type { CSSProperties } from "react";
 import type { Member, Project, Task } from "../../lib/localData/types";
 import { TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORITY_STYLE } from "../../lib/taskMeta";
 import { CustomSelect } from "../common/CustomSelect";
 import { BulkMoveShiftControls } from "./BulkMoveShiftControls";
+import { useIsMobile } from "../../hooks/useIsMobile";
+import { useUiLayoutStore } from "../../stores/uiLayoutStore";
+import { STACK_CLEARANCE_PX, FAB_SIZE_PX, FAB_RIGHT_PC_PX, computeFabBottomMobile } from "../../lib/layout/bottomStack";
+
+/** バーが出ている間、スクロール領域の末尾に足す余白[px]。最下行がバーの裏に隠れないようにする（下側への追加なので行位置は動かない） */
+export const BULK_BAR_SCROLL_PAD_PX = 120;
+
+// 【設計意図】バーはレイアウトに入れず画面下部に固定表示する（表示・非表示でリスト／ガントの行が動かない）。
+// PC：下端中央。右下のFAB・ショートカットボタンの幅（右端からFAB分）を左右対称に空けるため、幅を
+// 100vw - 2*(FAB右余白+FAB幅+隙間) までに制限して重ならないようにする。
+// モバイル：ボトムナビとFABの上に全幅で出す。
+export const BULK_BAR_Z_INDEX = 40;
+const PC_SIDE_RESERVE_PX = FAB_RIGHT_PC_PX + FAB_SIZE_PX + STACK_CLEARANCE_PX;
 
 type Actions = {
   bulkUpdateStatus: (s: Task["status"]) => unknown;
@@ -33,13 +47,21 @@ interface Props {
 export function BulkActionBar({
   selectedCount, statuses, actions, assigneeCandidates, currentUserId, projects, orderedTaskIds, onDuplicate, onClear,
 }: Props) {
+  const isMobile = useIsMobile();
+  const navHeight = useUiLayoutStore(s => s.mobileBottomNavHeightPx);
+  const placement: CSSProperties = isMobile
+    ? { left: 8, right: 8, bottom: computeFabBottomMobile(navHeight) + FAB_SIZE_PX + STACK_CLEARANCE_PX }
+    : { left: "50%", transform: "translateX(-50%)", bottom: STACK_CLEARANCE_PX, width: "max-content", maxWidth: `calc(100vw - ${PC_SIDE_RESERVE_PX * 2}px)` };
   return (
-    <div style={{
+    <div role="toolbar" aria-label="一括操作" data-bulk-action-bar style={{
+      position: "fixed", zIndex: BULK_BAR_Z_INDEX, ...placement,
+      boxSizing: "border-box",
       padding: "8px 12px",
       background: "var(--color-brand-light)",
-      borderBottom: "1px solid var(--color-brand-border)",
+      border: "1px solid var(--color-brand-border)",
+      borderRadius: "var(--radius-lg)",
+      boxShadow: "var(--shadow-md)",
       display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap",
-      flexShrink: 0,
     }}>
       <span style={{
         fontSize: "12px", fontWeight: 600,

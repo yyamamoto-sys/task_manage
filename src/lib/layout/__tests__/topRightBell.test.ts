@@ -69,7 +69,7 @@ describe("各画面のヘッダーがベルの幅を空けている", () => {
   it("ガイドの見出し行（MainLayout）も空けている（設定の見出しバーは v3.155 から SettingsView が持つ）", () => {
     const src = stripComments(readFileSync(join(SRC, "components/layout/MainLayout.tsx"), "utf8"));
     expect(src.match(/paddingRight: withBellReserve\(16\)/g)).toHaveLength(1);
-    expect(src).toContain("[APP_BELL_RESERVE_VAR as string]: isGuest ? \"0px\" : `${APP_BELL_RESERVE_PC_PX}px`");
+    expect(src).toContain("[APP_BELL_RESERVE_VAR as string]: isGuest ? \"0px\" : `${APP_BELL_RESERVE_PC_PX + (showImportWbsButton");
   });
 
   it("検査自体が効いている：コメントに書いただけでは通らない", () => {

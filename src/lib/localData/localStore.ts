@@ -59,6 +59,7 @@ const KEYS = {
    */
   OKR_MODE_INTRO_APPROVED: "okr_mode_intro_approved",
   /** サイドバーで「自分が参加しているPJのみ表示」の状態 */
+  // v3.194：サイドバーの「担当タスクのみ」トグルは廃止。値は読まない（displaySettingsReset の掃除対象としてだけ残す）
   SIDEBAR_MY_PROJECTS_ONLY: "sidebar_my_projects_only",
   /** サイドバーで「完了・アーカイブ済みPJも表示」の状態（既定OFF。v3.50・2026-08-11）。
    *  v3.49の「アーカイブ済みPJも表示」（sidebar_show_archived_projects）を置き換え。

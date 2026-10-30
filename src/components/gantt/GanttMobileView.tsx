@@ -27,7 +27,6 @@ interface GanttMobileViewProps {
   isPreview?: boolean;
   editingTaskId: string | null;
   setEditingTaskId: (id: string | null) => void;
-  mineOnly?: boolean;
   selectedProject: Project | null;
   krTaskIds?: Set<string> | null;
   currentUser: Member;
@@ -44,7 +43,7 @@ export function GanttMobileView({
   projectById, sortTasks, taskDependencies,
   previewChangedTaskIds, isPreview,
   editingTaskId, setEditingTaskId,
-  mineOnly, selectedProject, krTaskIds, currentUser,
+  selectedProject, krTaskIds, currentUser,
   saveTask,
   hideCompletedTasks, onToggleHideCompletedTasks,
 }: GanttMobileViewProps) {
@@ -211,9 +210,7 @@ export function GanttMobileView({
           <EmptyState
             icon="📅"
             title="表示するタスクがありません"
-            hint={mineOnly
-              ? "「担当タスクのみ」で担当タスクが無いか、まだ登録されていません。サイドバー上部で「全タスク」に切り替えるか、＋ボタンで追加してください。"
-              : "PJ やタスクを登録すると、ここに一覧で表示されます。"}
+            hint="PJ やタスクを登録すると、ここに一覧で表示されます。"
           />
         )}
 
