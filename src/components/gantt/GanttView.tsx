@@ -2916,7 +2916,7 @@ export function GanttView({
                       <path d="M0,0 L7,3.5 L0,7 Z" fill={CRITICAL_COLOR} />
                     </marker>
                   </defs>
-                  {depRender.arrows.map(({ dep, points }) => {
+                  {depRender.arrows.map(({ dep, points, label }) => {
                     const isHoveredArrow = hoveredTaskId != null
                       && (dep.predecessor_task_id === hoveredTaskId || dep.successor_task_id === hoveredTaskId);
                     const predTask = activeTaskById.get(dep.predecessor_task_id);
@@ -2929,9 +2929,10 @@ export function GanttView({
                     // （既存の期限超過赤・ホバー強調とは別の濃さ・太さ・矢印マーカーで判別可能にする）
                     const isCriticalArrow = showCriticalPath
                       && criticalTaskIds.has(dep.predecessor_task_id) && criticalTaskIds.has(dep.successor_task_id);
+                    const labelAnchor = points[1] ?? points[0];
                     return (
+                      <g key={dep.id}>
                       <path
-                        key={dep.id}
                         d={pointsToPathD(points)}
                         fill="none"
                         stroke={isCriticalArrow ? CRITICAL_COLOR : isHoveredArrow ? "var(--color-brand)" : "var(--color-border-secondary)"}
@@ -2940,6 +2941,14 @@ export function GanttView({
                         strokeDasharray={isPredIncomplete ? "4 3" : undefined}
                         markerEnd={isCriticalArrow ? "url(#gantt-dep-arrowhead-critical)" : isHoveredArrow ? "url(#gantt-dep-arrowhead-hover)" : "url(#gantt-dep-arrowhead)"}
                       />
+                      {label && (
+                        <text
+                          x={labelAnchor.x + 3} y={labelAnchor.y - 3}
+                          fontSize={9} fill="var(--color-text-tertiary)"
+                          stroke="var(--color-bg-primary)" strokeWidth={2.5} paintOrder="stroke"
+                        >{label}</text>
+                      )}
+                      </g>
                     );
                   })}
                 </svg>

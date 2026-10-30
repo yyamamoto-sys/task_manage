@@ -18,12 +18,17 @@
 //   on_holdは引き続き対象」ルールに揃える（v2.74でstatusが5値化された際の追従。それより先の
 //   後続への伝播は、動かなかったこのタスクの元の期日のまま計算する）。
 // - 先行に期日(due_date)が無ければその先行からの制約は無視する（押せない）。
-// - 暦日計算（土日祝を飛ばさない）。FS依存1種のみ。
+// - 暦日計算（土日祝を飛ばさない）。
+// - 種類（v3.197）：FS＝先行.due+lag <= 後続.start／SS＝先行.start+lag <= 後続.start／
+//   FF＝先行.due+lag <= 後続.due／SF＝先行.start+lag <= 後続.due。lag は暦日・負＝リード。
+//   種類・ラグ未設定（旧データ）は FS／0。違反時は後続を「制約を満たす最小の量」だけ後ろへ押す
+//   （作業期間保持・押す方向のみ・複数先行は最大の押し量を採用）。FS／0 の挙動は従来と同一。
 //
 // この関数は純粋関数（副作用なし）。DB書き込み・store更新は呼び出し側（appStore.saveTask）が行う。
 
 import type { Task, TaskDependency } from "../localData/types";
 import { toDate, toDateStr, addDays, diffDays } from "../date";
+import { depTypeOf, lagOf } from "./depType";
 
 export interface CascadeShift {
   taskId: string;
@@ -85,6 +90,7 @@ export function computeCascadeShiftsMulti(
 
   const successorsOf = new Map<string, string[]>();
   const predecessorsOf = new Map<string, string[]>();
+  const depsBySuccessor = new Map<string, TaskDependency[]>();
   for (const d of allDeps) {
     if (d.is_deleted) continue;
     if (!taskById.has(d.predecessor_task_id) || !taskById.has(d.successor_task_id)) continue;
@@ -96,6 +102,7 @@ export function computeCascadeShiftsMulti(
       d.successor_task_id,
       [...(predecessorsOf.get(d.successor_task_id) ?? []), d.predecessor_task_id],
     );
+    depsBySuccessor.set(d.successor_task_id, [...(depsBySuccessor.get(d.successor_task_id) ?? []), d]);
   }
 
   // origin群から辿れる後続タスク（間接含む）を複数始点BFSで収集する（origin自身は特別扱いせず、
@@ -146,39 +153,47 @@ export function computeCascadeShiftsMulti(
   // 各タスクの「確定した期日」を追跡する（未シフトなら元のdue_date、シフト済みなら新due）。
   // origin群はそれぞれ自身の（更新後の）期日で初期化する。
   const currentDue = new Map<string, string | null>();
+  const currentStart = new Map<string, string | null>();
   for (const originId of origins) {
     currentDue.set(originId, taskById.get(originId)!.due_date ?? null);
+    currentStart.set(originId, taskById.get(originId)!.start_date ?? null);
   }
 
   const shifts: CascadeShift[] = [];
 
   for (const id of topoOrder) {
     const task = taskById.get(id)!;
-    const preds = predecessorsOf.get(id) ?? [];
-
-    // 全先行の期日の最大値 = このタスクに必要な最早開始日
-    let requiredStart: string | null = null;
-    for (const p of preds) {
-      const pDue = currentDue.has(p) ? currentDue.get(p) : (taskById.get(p)?.due_date ?? null);
-      if (!pDue) continue; // 先行に期日が無ければその先行からの制約は無視
-      if (requiredStart === null || pDue > requiredStart) requiredStart = pDue;
-    }
+    const predDeps = depsBySuccessor.get(id) ?? [];
 
     // デフォルトはシフト無し（このタスクの期日は変わらない）
     currentDue.set(id, task.due_date ?? null);
+    currentStart.set(id, task.start_date ?? null);
 
     // origin自身（bulk側で既に同delta分だけ直接シフト済みのタスク）は、他originからの制約で
     // 二重にカスケードシフトしない。単一origin呼び出し時、原点は循環データ以外ではそもそも
     // topoOrderに現れない（＝このcontinueは実質到達しない）ので既存の単一origin挙動と完全互換。
     if (originSet.has(id)) continue;
 
-    if (requiredStart === null) continue;           // 制約する先行が無い
+    if (predDeps.length === 0) continue;             // 制約する先行が無い
     if (task.status === "done" || task.status === "cancelled") continue; // 終わったタスクは自動で動かさない
-    if (!task.start_date || !task.due_date) continue; // 開始日/期日が無い後続はスキップ（FS計算・作業期間保持ができない）
-    if (requiredStart <= task.start_date) continue;  // 余裕がある（delta<=0）→ 動かさない
+    if (!task.start_date || !task.due_date) continue; // 開始日/期日が無い後続はスキップ（制約計算・作業期間保持ができない）
 
-    const delta = diffDays(task.start_date, requiredStart); // requiredStart - start_date（>0）
-    const newStart = requiredStart;
+    // 全先行・全種類の制約のうち、最も大きい押し量（日数）を採る。先行の日付は確定済みの値（未シフトなら元の値）。
+    let delta = 0;
+    for (const d of predDeps) {
+      const type = depTypeOf(d);
+      const p = d.predecessor_task_id;
+      const base = type === "FS" || type === "FF"
+        ? (currentDue.has(p) ? currentDue.get(p) : (taskById.get(p)?.due_date ?? null))
+        : (currentStart.has(p) ? currentStart.get(p) : (taskById.get(p)?.start_date ?? null));
+      if (!base) continue; // 基準側の日付が無い先行は無視（押せない）
+      const required = addDaysToDateStr(base, lagOf(d));
+      const own = type === "FS" || type === "SS" ? task.start_date : task.due_date;
+      if (required > own) delta = Math.max(delta, diffDays(own, required));
+    }
+    if (delta <= 0) continue; // 余裕がある → 動かさない
+
+    const newStart = addDaysToDateStr(task.start_date, delta);
     const newDue = addDaysToDateStr(task.due_date, delta); // 作業期間を保持
 
     shifts.push({
@@ -189,6 +204,7 @@ export function computeCascadeShiftsMulti(
       newDue,
     });
     currentDue.set(id, newDue);
+    currentStart.set(id, newStart);
   }
 
   return shifts;

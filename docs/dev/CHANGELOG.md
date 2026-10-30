@@ -8614,3 +8614,11 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 * DB の循環拒否（23514 `task parent cycle`）を `formatErrorForUser` で分かる文言に。
 * ゲスト用サンプルに3段の例を追加。`MIN_CLIENT_VERSION` を 3.196 へ（古い画面では孫以下が消える／親子が壊れるため）。
 * テスト：`taskTreeEdit.test.ts` 新設。
+
+# v3.197（2026-10-30）：依存関係の種類（FS/SS/FF/SF）とずらし日数（ラグ）
+* DB：`task_dependencies.dep_type`（既定 FS）・`lag_days`（既定 0・暦日・負＝リード）。マイグレーション `20261030b_task_dependency_type_lag.sql`（山本さんが手動適用）。schema.sql・schemaChecks 追随。未適用でも読み込みは FS／0（`depType.ts` の `depTypeOf`／`lagOf`）。insert は FS／0 のとき新列を送らない。
+* `reschedule.ts`：4種×ラグへ一般化（FS／0 は従来と同一）。`gate.ts`：完了ゲートは FS・FF、着手警告は FS のみ（`getIncompletePredecessors` の第4引数）。
+* ガント矢印：`buildTypedDependencyPoints`（FS＝従来経路／SS／FF／SF）＋ラベル「SS+2d」。
+* UI：`DependencyTermsEditor`（編集モーダル・サイドパネル共用）。`updateTaskDependency`（Undoトースト付き）。複製・PJ引き継ぎは種類・ラグを引き継ぐ。
+* uiGuide 更新。`MIN_CLIENT_VERSION` を 3.197 へ。詳細＝`docs/dev/sections/s89_dependency-type-lag.md`。
+* テスト：`depTypeLag.test.ts`・`dependencyTermsUpdate.test.ts` 新設。

@@ -7,6 +7,7 @@
 // タスクを保存するあらゆる経路で同じ判定になる（UIの1箇所だけで弾く実装は禁止）。
 
 import type { Task, TaskDependency } from "../localData/types";
+import { blocksCompletion, blocksStart } from "./depType";
 
 /**
  * taskId の未完了かつ非削除の先行タスクを返す。
@@ -14,14 +15,18 @@ import type { Task, TaskDependency } from "../localData/types";
  * ブロックする意味が無いため done と同じ扱いにする）。on_hold（保留）は引き続き未完了扱い
  * （後続をブロックする＝再開されるまで先行が終わっていないのと同じ状態）。
  * 依存自体が論理削除されている行（is_deleted）は無視する。
+ * 種類（v3.197）：既定（for="complete"）は先行の完了を待つ FS・FF のみ。着手の警告（for="start"）は FS のみ。
+ * SS・SF は先行の開始を基準にするだけなので、先行が未完了でもブロックしない。
  */
 export function getIncompletePredecessors(
   taskId: string,
   tasks: Task[],
   deps: TaskDependency[],
+  gateFor: "complete" | "start" = "complete",
 ): Task[] {
+  const relevant = gateFor === "start" ? blocksStart : blocksCompletion;
   const predecessorIds = deps
-    .filter(d => !d.is_deleted && d.successor_task_id === taskId)
+    .filter(d => !d.is_deleted && d.successor_task_id === taskId && relevant(d))
     .map(d => d.predecessor_task_id);
   if (predecessorIds.length === 0) return [];
 

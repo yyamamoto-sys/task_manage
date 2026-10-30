@@ -24,6 +24,7 @@
 // ようにするため（純粋関数としてテストしやすくする設計）。
 
 import type { Milestone, Task, TaskDependency } from "../localData/types";
+import { depTypeOf, lagOf, type DepType } from "../dependencies/depType";
 import { isCompletedForProgress } from "../taskMeta";
 import { computeInheritedTaskDates, computeInheritedMilestoneDate } from "./inheritTaskDates";
 
@@ -115,6 +116,9 @@ export function buildInheritedTasks(params: BuildInheritedTasksParams): BuildInh
 export interface InheritedDependencyPair {
   predecessorTaskId: string;
   successorTaskId: string;
+  /** 元の依存の種類・ずらし日数（v3.197。未設定の旧データは FS／0） */
+  depType: DepType;
+  lagDays: number;
 }
 
 /**
@@ -130,7 +134,7 @@ export function buildInheritedDependencies(
     if (dep.is_deleted) continue;
     const newPred = idMap.get(dep.predecessor_task_id);
     const newSucc = idMap.get(dep.successor_task_id);
-    if (newPred && newSucc) pairs.push({ predecessorTaskId: newPred, successorTaskId: newSucc });
+    if (newPred && newSucc) pairs.push({ predecessorTaskId: newPred, successorTaskId: newSucc, depType: depTypeOf(dep), lagDays: lagOf(dep) });
   }
   return pairs;
 }

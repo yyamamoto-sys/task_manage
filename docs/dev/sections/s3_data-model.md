@@ -214,7 +214,7 @@ interface Member {
 
 ### 3-6. タスク依存関係（B1：依存ゲート／B2：ガント矢印可視化／B3：自動リスケ連鎖／B4：ベースライン差分・2026-07-17実装）
 
-PMツール化の第二機能。任意の2タスク間の先行→後続関係（FS依存1種のみ）。親子関係（parent_task_id）
+PMツール化の第二機能。任意の2タスク間の先行→後続関係（v3.197で種類 FS/SS/FF/SF とずらし日数を追加＝Section 89。以下の記述は FS を前提に書かれた原文）。親子関係（parent_task_id）
 とは完全に独立の別概念で、UI上も別ブロックとして表示する（混同させないことが重要なUX要件）。
 段階リリースの詳細・設計判断の経緯は project_task_manage.md「機能B」参照。
 
@@ -223,6 +223,8 @@ interface TaskDependency {
   id: string;
   predecessor_task_id: string; // 先に完了すべきタスク
   successor_task_id: string;   // それを待つタスク
+  dep_type?: "FS" | "SS" | "FF" | "SF"; // v3.197。未設定＝FS
+  lag_days?: number;           // v3.197。暦日・負＝リード。未設定＝0
   is_deleted: boolean;
   group_id?: string | null;    // マルチテナント（新規テーブルのためDB上はNOT NULL）
   created_at?: string;

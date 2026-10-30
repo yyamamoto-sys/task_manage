@@ -359,6 +359,11 @@ CREATE TABLE IF NOT EXISTS task_dependencies (
   deleted_by           text,
   CONSTRAINT task_dependencies_no_self_dep CHECK (predecessor_task_id <> successor_task_id)
 );
+-- 依存の種類（FS/SS/FF/SF）とずらし日数（暦日・負＝リード）。既存行は FS／0（migrations/20261030b_task_dependency_type_lag.sql・v3.197）
+ALTER TABLE task_dependencies ADD COLUMN IF NOT EXISTS dep_type text NOT NULL DEFAULT 'FS';
+ALTER TABLE task_dependencies ADD COLUMN IF NOT EXISTS lag_days integer NOT NULL DEFAULT 0;
+ALTER TABLE task_dependencies DROP CONSTRAINT IF EXISTS task_dependencies_dep_type_check;
+ALTER TABLE task_dependencies ADD CONSTRAINT task_dependencies_dep_type_check CHECK (dep_type IN ('FS', 'SS', 'FF', 'SF'));
 
 -- ===== Milestones（PJ に紐づく期日マーカー） =====
 -- 注: project_id は projects.id と型を合わせるため text にする

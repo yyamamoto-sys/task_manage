@@ -559,7 +559,24 @@ export async function deleteTaskProject(taskId: string, projectId: string) {
 // （自己依存・重複・循環）は appStore.addTaskDependency 側（lib/dependencies/cycleCheck）で行う。
 
 export async function insertTaskDependency(dep: TaskDependency) {
-  const { error } = await supabase.from("task_dependencies").insert(dep);
+  // 種類・ラグが既定（FS／0）のときは新列を送らない＝20261030b マイグレーション適用前のDBでも従来どおり追加できる
+  const { dep_type, lag_days, ...base } = dep;
+  const row: Record<string, unknown> = { ...base };
+  if (dep_type && dep_type !== "FS") row.dep_type = dep_type;
+  if (lag_days) row.lag_days = lag_days;
+  const { error } = await supabase.from("task_dependencies").insert(row);
+  if (error) throw error;
+}
+
+/** 依存の種類・ラグの更新（20261030b マイグレーション適用後のみ成功する） */
+export async function updateTaskDependencyTerms(
+  id: string,
+  terms: { dep_type: "FS" | "SS" | "FF" | "SF"; lag_days: number },
+  updatedBy: string,
+) {
+  const { error } = await supabase.from("task_dependencies")
+    .update({ dep_type: terms.dep_type, lag_days: terms.lag_days, updated_by: updatedBy, updated_at: new Date().toISOString() })
+    .eq("id", id);
   if (error) throw error;
 }
 

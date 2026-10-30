@@ -720,6 +720,23 @@ export const SCHEMA_HEALTH_CHECKS: SchemaCheckDescriptor[] = [
     label: "マイルストーンの色（milestones.color）の列が見つかりません",
     migration: "20261029_milestone_color.sql",
   },
+  // 依存の種類・ずらし日数（v3.197）。未適用でも読み込みは FS／0 として動く（種類・ラグの保存だけが失敗する）。
+  {
+    id: "task_dependencies_dep_type_column",
+    kind: "column",
+    table: "task_dependencies",
+    column: "dep_type",
+    label: "タスク依存関係の種類（task_dependencies.dep_type）の列が見つかりません",
+    migration: "20261030b_task_dependency_type_lag.sql",
+  },
+  {
+    id: "task_dependencies_lag_days_column",
+    kind: "column",
+    table: "task_dependencies",
+    column: "lag_days",
+    label: "タスク依存関係のずらし日数（task_dependencies.lag_days）の列が見つかりません",
+    migration: "20261030b_task_dependency_type_lag.sql",
+  },
   // タスク階層の下回り（v3.195）。親子の循環を DB 側でも拒否する関数。未適用でもアプリは動く（循環はアプリ側でも防ぐ）。
   // 索引 idx_tasks_parent は check_schema_health が索引の種別を持たないため検査対象外（同じマイグレーションで入る）。
   {

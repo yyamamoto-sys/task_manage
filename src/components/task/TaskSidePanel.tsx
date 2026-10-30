@@ -28,6 +28,7 @@ import { todayStr } from "../../lib/date";
 import { childrenOf } from "../../lib/taskHierarchy";
 import { buildParentOptions } from "../../lib/task/parentOptions";
 import { wouldCreateCycle } from "../../lib/dependencies/cycleCheck";
+import { DependencyTermsEditor } from "./DependencyTermsEditor";
 import { Avatar } from "../auth/UserSelectScreen";
 import { confirmDialog } from "../../lib/dialog";
 import { formatErrorForUser } from "../../lib/errorMessage";
@@ -89,6 +90,7 @@ export function TaskSidePanel({ taskId, currentUser, onClose, onSwitchFailed }: 
   const restoreTask         = useAppStore(s => s.restoreTask);
   const addTaskDependency    = useAppStore(s => s.addTaskDependency);
   const removeTaskDependency = useAppStore(s => s.removeTaskDependency);
+  const updateTaskDependency = useAppStore(s => s.updateTaskDependency);
   const setTaskSidePanelOpen        = useUiLayoutStore(s => s.setTaskSidePanelOpen);
   const setTaskSidePanelWidthInStore = useUiLayoutStore(s => s.setTaskSidePanelWidth);
 
@@ -678,17 +680,25 @@ export function TaskSidePanel({ taskId, currentUser, onClose, onSwitchFailed }: 
           }}>
             ⏱ 先行タスク（前に完了すべきタスク）
           </div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: "5px" }}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: "4px", marginBottom: "5px" }}>
             {predecessorTasks.map(t => {
               const dep = predecessorDeps.find(d => d.predecessor_task_id === t.id);
               return (
-                <span key={t.id} style={chipStyle}>
+                <span key={t.id} style={{ display: "inline-flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                <span style={chipStyle}>
                   <span aria-hidden>{t.status === "done" ? "✅" : t.status === "cancelled" ? "🚫" : t.status === "on_hold" ? "⏸" : "⏳"}</span>
                   {t.name}
                   <button
                     onClick={() => dep && void runImmediateSave(() => removeTaskDependency(dep.id, currentUser.id))}
                     aria-label={`${t.name} を先行タスクから外す`}
                     style={chipRemoveBtn}>×</button>
+                </span>
+                {dep && (
+                  <DependencyTermsEditor
+                    dep={dep}
+                    onChange={terms => void runImmediateSave(() => updateTaskDependency(dep.id, terms, currentUser.id))}
+                  />
+                )}
                 </span>
               );
             })}

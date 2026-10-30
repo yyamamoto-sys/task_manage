@@ -314,12 +314,18 @@ export interface TaskProject {
 /**
  * タスク依存関係（先行→後続）。B1（依存ゲート）で使用。
  * predecessor = 先に完了すべきタスク、successor = それを待つタスク。
- * FS（Finish-to-Start）依存1種のみ・親子関係（parent_task_id）とは独立した別概念。
+ * 種類（dep_type：FS/SS/FF/SF）とずらし日数（lag_days：暦日・負＝リード）を持つ（v3.197）。
+ * 列が無い旧データ／マイグレーション未適用のDBの行は undefined＝FS／0 とみなす（lib/dependencies/depType.ts）。
+ * 親子関係（parent_task_id）とは独立した別概念。
  */
 export interface TaskDependency {
   id: string;
   predecessor_task_id: string;
   successor_task_id: string;
+  /** 依存の種類。未設定は FS */
+  dep_type?: "FS" | "SS" | "FF" | "SF";
+  /** ずらし日数（暦日。負＝リード）。未設定は 0 */
+  lag_days?: number;
   is_deleted: boolean;
   /** 所属グループID（マルチテナント対応。新規テーブルのため必須） */
   group_id?: string | null;

@@ -326,7 +326,7 @@ export function ProjectCreateModal({ currentUser, onClose, onCreated }: Props) {
       const depPairs = buildInheritedDependencies(liveOriginDeps, successfulIdMap);
       depPairsLength = depPairs.length;
       const depResults = await Promise.allSettled(
-        depPairs.map(p => state.addTaskDependency(p.predecessorTaskId, p.successorTaskId, currentUser.id)),
+        depPairs.map(p => state.addTaskDependency(p.predecessorTaskId, p.successorTaskId, currentUser.id, { depType: p.depType, lagDays: p.lagDays })),
       );
       const succeededDeps = depResults.filter(r => r.status === "fulfilled").length;
 

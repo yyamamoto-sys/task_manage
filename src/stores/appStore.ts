@@ -48,12 +48,13 @@ import {
   upsertQuarterlyObjective,
   insertTaskTaskForce, deleteTaskTaskForce,
   insertTaskProject, deleteTaskProject,
-  insertTaskDependency, softDeleteTaskDependency,
+  insertTaskDependency, softDeleteTaskDependency, updateTaskDependencyTerms,
   upsertMemberTag, softDeleteMemberTag, replaceMemberTagMembers,
   insertEntityChangeLog,
 } from "../lib/supabase/store";
 import { computeTaskDiff, computeProjectDiff } from "../lib/history/changeDiff";
 import { canAddDependency } from "../lib/dependencies/cycleCheck";
+import { depTypeOf, lagOf, normalizeLag, type DepType } from "../lib/dependencies/depType";
 import { getIncompletePredecessors, formatBlockerNames } from "../lib/dependencies/gate";
 import { resolveBaselineFields } from "../lib/baseline/baselineCapture";
 import { computeCascadeShifts, computeCascadeShiftsMulti } from "../lib/dependencies/reschedule";
@@ -200,7 +201,9 @@ export interface AppState {
   removeTaskProject: (taskId: string, projectId: string) => Promise<void>;
 
   // ===== TaskDependency（B1：依存ゲート） =====
-  addTaskDependency: (predecessorTaskId: string, successorTaskId: string, createdBy: string) => Promise<void>;
+  addTaskDependency: (predecessorTaskId: string, successorTaskId: string, createdBy: string, terms?: { depType?: DepType; lagDays?: number }) => Promise<void>;
+  /** 依存の種類・ずらし日数を変える（Undoトースト付き）。日付の自動調整は走らせない（追加時と同じ） */
+  updateTaskDependency: (id: string, terms: { depType: DepType; lagDays: number }, updatedBy: string) => Promise<void>;
   removeTaskDependency: (id: string, deletedBy: string) => Promise<void>;
 
   // ===== Milestone =====
@@ -1140,7 +1143,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         throw new Error(message);
       }
     } else if (task.status === "in_progress" && existing?.status === "todo") {
-      const blockers = getIncompletePredecessors(task.id, get().tasks, get().taskDependencies);
+      const blockers = getIncompletePredecessors(task.id, get().tasks, get().taskDependencies, "start");
       if (blockers.length > 0) {
         showToast(`⚠ 先行タスク${formatBlockerNames(blockers)}がまだ完了していません`, "info");
       }
@@ -1422,7 +1425,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   // ===== TaskDependency（B1：依存ゲート） =====
-  addTaskDependency: async (predecessorTaskId, successorTaskId, createdBy) => {
+  addTaskDependency: async (predecessorTaskId, successorTaskId, createdBy, terms) => {
     // 自己依存・重複・循環はここで弾く（DB制約だけでは循環を表現できないため必須の関所）。
     // is_deleted は必ず除外する：他クライアントが依存を削除した realtime UPDATE は upsertById が
     // 行を配列内に残したまま is_deleted:true で上書きするだけ（DELETE イベントではないため）で、
@@ -1438,6 +1441,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
       id: crypto.randomUUID(),
       predecessor_task_id: predecessorTaskId,
       successor_task_id: successorTaskId,
+      dep_type: terms?.depType ?? "FS",
+      lag_days: normalizeLag(terms?.lagDays),
       is_deleted: false,
       group_id: get().currentGroupId ?? undefined,
       created_by: createdBy,
@@ -1450,6 +1455,32 @@ export const useAppStore = create<AppState>()((set, get) => ({
       await handleSaveError(e, get().load);
       throw e;
     }
+  },
+
+  updateTaskDependency: async (id, terms, updatedBy) => {
+    const before = get().taskDependencies.find(d => d.id === id && !d.is_deleted);
+    if (!before) return;
+    const next = { dep_type: terms.depType, lag_days: normalizeLag(terms.lagDays) };
+    const prev = { depType: depTypeOf(before), lagDays: lagOf(before) };
+    if (prev.depType === next.dep_type && prev.lagDays === next.lag_days) return;
+    const apply = async (t: { dep_type: DepType; lag_days: number }) => {
+      set(state => ({
+        taskDependencies: state.taskDependencies.map(d => d.id === id ? { ...d, ...t } : d),
+      }));
+      if (isGuestMode()) return;
+      try {
+        await updateTaskDependencyTerms(id, t, updatedBy);
+      } catch (e) {
+        await handleSaveError(e, get().load);
+        throw e;
+      }
+    };
+    await apply(next);
+    showToast("先行タスクの種類・ずらし日数を変更しました", "info", {
+      label: "元に戻す",
+      isUndo: true,
+      onClick: () => { void apply({ dep_type: prev.depType, lag_days: prev.lagDays }).catch(() => {}); },
+    });
   },
 
   removeTaskDependency: async (id, deletedBy) => {

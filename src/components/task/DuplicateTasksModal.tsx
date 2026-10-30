@@ -182,7 +182,7 @@ export function DuplicateTasksModal({ selectedTasks, allTasks, currentUser, onCl
 
       const depPairs = buildInheritedDependencies(state.taskDependencies, successfulIdMap);
       const depResults = await Promise.allSettled(
-        depPairs.map(p => state.addTaskDependency(p.predecessorTaskId, p.successorTaskId, currentUser.id)),
+        depPairs.map(p => state.addTaskDependency(p.predecessorTaskId, p.successorTaskId, currentUser.id, { depType: p.depType, lagDays: p.lagDays })),
       );
       const succeededDeps = depResults.filter(r => r.status === "fulfilled").length;
 

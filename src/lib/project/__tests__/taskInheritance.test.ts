@@ -207,7 +207,7 @@ describe("buildInheritedDependencies", () => {
     const idMap = new Map([["a", "new-a"], ["b", "new-b"]]);
     const deps = [mkDep({ id: "d1", predecessor_task_id: "a", successor_task_id: "b" })];
     const result = buildInheritedDependencies(deps, idMap);
-    expect(result).toEqual([{ predecessorTaskId: "new-a", successorTaskId: "new-b" }]);
+    expect(result).toEqual([{ predecessorTaskId: "new-a", successorTaskId: "new-b", depType: "FS", lagDays: 0 }]);
   });
 
   it("片方だけチェックされている（idMapに無い）依存は引き継がない", () => {
@@ -233,8 +233,8 @@ describe("buildInheritedDependencies", () => {
     ];
     const result = buildInheritedDependencies(deps, idMap);
     expect(result).toEqual([
-      { predecessorTaskId: "new-a", successorTaskId: "new-b" },
-      { predecessorTaskId: "new-b", successorTaskId: "new-c" },
+      { predecessorTaskId: "new-a", successorTaskId: "new-b", depType: "FS", lagDays: 0 },
+      { predecessorTaskId: "new-b", successorTaskId: "new-c", depType: "FS", lagDays: 0 },
     ]);
   });
 });

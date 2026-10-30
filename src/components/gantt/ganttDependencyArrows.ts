@@ -6,6 +6,7 @@
 // 全組合せでも「実際に描かれている場所」を正として矢印を引けるようにするための設計判断。
 
 import type { TaskDependency } from "../../lib/localData/types";
+import { depTypeOf, formatDepLabel } from "../../lib/dependencies/depType";
 
 /** 先行バー右端から少し外へ「蹴り出す」距離（px）。エルボーの最初の水平区間の長さ。 */
 export const ARROW_KICK = 10;
@@ -50,6 +51,37 @@ export function buildDependencyElbowPoints(predRight: ArrowPoint, succLeft: Arro
   ];
 }
 
+/**
+ * 種類別の経路（v3.197）。FS は従来の buildDependencyElbowPoints をそのまま使う。
+ * SS＝始端→始端（左へ蹴り出して縦→右向きに入る）／FF＝終端→終端（右へ蹴り出して縦→左向きに入る）／
+ * SF＝始端→終端（左へ蹴り出し、行の間で横切って右側から左向きに入る）。
+ */
+export function buildTypedDependencyPoints(
+  type: "FS" | "SS" | "FF" | "SF",
+  pred: TaskRect,
+  succ: TaskRect,
+): ArrowPoint[] {
+  const predY = pred.y + pred.height / 2;
+  const succY = succ.y + succ.height / 2;
+  const predStart: ArrowPoint = { x: pred.x, y: predY };
+  const predEnd: ArrowPoint = { x: pred.x + pred.width, y: predY };
+  const succStart: ArrowPoint = { x: succ.x, y: succY };
+  const succEnd: ArrowPoint = { x: succ.x + succ.width, y: succY };
+  if (type === "FS") return buildDependencyElbowPoints(predEnd, succStart);
+  if (type === "SS") {
+    const x = Math.min(predStart.x, succStart.x) - ARROW_KICK;
+    return [predStart, { x, y: predY }, { x, y: succY }, succStart];
+  }
+  if (type === "FF") {
+    const x = Math.max(predEnd.x, succEnd.x) + ARROW_KICK;
+    return [predEnd, { x, y: predY }, { x, y: succY }, succEnd];
+  }
+  const ax = predStart.x - ARROW_KICK;
+  const bx = succEnd.x + ARROW_KICK;
+  const midY = (predY + succY) / 2;
+  return [predStart, { x: ax, y: predY }, { x: ax, y: midY }, { x: bx, y: midY }, { x: bx, y: succY }, succEnd];
+}
+
 /** 頂点列を SVG の path d 属性（折れ線）に変換する */
 export function pointsToPathD(points: ArrowPoint[]): string {
   return points.map((p, i) => `${i === 0 ? "M" : "L"}${p.x},${p.y}`).join(" ");
@@ -58,6 +90,8 @@ export function pointsToPathD(points: ArrowPoint[]): string {
 export interface DependencyArrowGeometry {
   dep: TaskDependency;
   points: ArrowPoint[];
+  /** 「SS+2d」等。FS かつラグ0のときは null（ラベルなし） */
+  label: string | null;
 }
 
 /** 相手（依存の反対側）が画面外（未実測＝非表示）だったタスクに立てるバッジ情報 */
@@ -97,9 +131,11 @@ export function computeDependencyRenders(
     const predRect = rectMap.get(dep.predecessor_task_id);
     const succRect = rectMap.get(dep.successor_task_id);
     if (predRect && succRect) {
-      const predRight: ArrowPoint = { x: predRect.x + predRect.width, y: predRect.y + predRect.height / 2 };
-      const succLeft: ArrowPoint = { x: succRect.x, y: succRect.y + succRect.height / 2 };
-      arrows.push({ dep, points: buildDependencyElbowPoints(predRight, succLeft) });
+      arrows.push({
+        dep,
+        points: buildTypedDependencyPoints(depTypeOf(dep), predRect, succRect),
+        label: formatDepLabel(dep),
+      });
     } else if (predRect && !succRect) {
       // 先行だけ見えている＝後続（相手）が画面外
       addBadge(dep.predecessor_task_id, dep.successor_task_id, "successor");

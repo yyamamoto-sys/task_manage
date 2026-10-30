@@ -317,10 +317,10 @@ function buildTasks(): Task[] {
 
 function buildTaskDependencies(): TaskDependency[] {
   return [
-    { id: "demo-dep-1", predecessor_task_id: T_REQDEF, successor_task_id: T_DESIGN, is_deleted: false, group_id: DEMO_GROUP_ID },
-    { id: "demo-dep-2", predecessor_task_id: T_DESIGN,  successor_task_id: T_DEV,    is_deleted: false, group_id: DEMO_GROUP_ID },
-    { id: "demo-dep-3", predecessor_task_id: T_DEV,     successor_task_id: T_TEST,   is_deleted: false, group_id: DEMO_GROUP_ID },
-    { id: "demo-dep-4", predecessor_task_id: T_TEST,    successor_task_id: T_GOLIVE, is_deleted: false, group_id: DEMO_GROUP_ID },
+    { id: "demo-dep-1", predecessor_task_id: T_REQDEF, successor_task_id: T_DESIGN, dep_type: "FS", lag_days: 0, is_deleted: false, group_id: DEMO_GROUP_ID },
+    { id: "demo-dep-2", predecessor_task_id: T_DESIGN,  successor_task_id: T_DEV,    dep_type: "FS", lag_days: 0, is_deleted: false, group_id: DEMO_GROUP_ID },
+    { id: "demo-dep-3", predecessor_task_id: T_DEV,     successor_task_id: T_TEST,   dep_type: "FS", lag_days: 0, is_deleted: false, group_id: DEMO_GROUP_ID },
+    { id: "demo-dep-4", predecessor_task_id: T_TEST,    successor_task_id: T_GOLIVE, dep_type: "FS", lag_days: 0, is_deleted: false, group_id: DEMO_GROUP_ID },
   ];
 }
 

@@ -276,6 +276,8 @@ describe("依存関係の複製（buildInheritedDependenciesを再利用）", ()
     expect(pairs[0]).toEqual({
       predecessorTaskId: idMap.get("a"),
       successorTaskId: idMap.get("b"),
+      depType: "FS",
+      lagDays: 0,
     });
     void c; // 未選択であることの説明用（selectedTasksに渡さないことがポイント）
   });
