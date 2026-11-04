@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from "react";
 import { todayStr } from "../../lib/date";
 import { useT } from "../../hooks/useT";
+import { formatDueRelative, formatFullDateWithWeekday } from "../../lib/dueRelative";
+import type { Task } from "../../lib/localData/types";
 
 interface Props {
   value: string | null;
@@ -10,9 +12,11 @@ interface Props {
   /** 値が未設定のときに表示するプレースホルダ文言。既定＝期日入力での従来文言（後方互換）。
    *  ガントの開始日入力（GanttParts.tsx）では「開始日未設定」を渡す */
   placeholder?: string;
+  /** 渡すと期日を相対表示（超過・今日・明日・あとN日）にする。完了・中止は MM/DD を灰色で出す（一覧用・v3.199） */
+  relativeStatus?: Task["status"];
 }
 
-export function InlineEditDate({ value, onSave, isDone, placeholder }: Props) {
+export function InlineEditDate({ value, onSave, isDone, placeholder, relativeStatus }: Props) {
   const t = useT();
   const effectivePlaceholder = placeholder ?? t("common.date.dueUnset");
   const [editing, setEditing] = useState(false);
@@ -23,6 +27,7 @@ export function InlineEditDate({ value, onSave, isDone, placeholder }: Props) {
   }, [editing]);
 
   const isOverdue = !isDone && !!value && value < todayStr();
+  const rel = relativeStatus && value ? formatDueRelative(value, relativeStatus, todayStr()) : null;
 
   if (editing) {
     return (
@@ -65,21 +70,23 @@ export function InlineEditDate({ value, onSave, isDone, placeholder }: Props) {
       onClick={e => { e.stopPropagation(); setEditing(true); }}
       role="button" tabIndex={0}
       onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); setEditing(true); } }}
-      title={t("common.date.editTitle")}
+      title={rel && value ? `${formatFullDateWithWeekday(value)} ${t("common.date.editTitle")}` : t("common.date.editTitle")}
       style={{
         cursor: "text",
         fontSize: "inherit",
-        color: value
-          ? (isOverdue ? "var(--color-text-danger)" : "inherit")
-          : "var(--color-text-tertiary)",
-        fontWeight: isOverdue ? "500" : "inherit",
+        color: !value
+          ? "var(--color-text-tertiary)"
+          : rel
+            ? (rel.tone === "overdue" ? "var(--color-text-danger)" : rel.tone === "today" ? "var(--color-text-purple)" : rel.tone === "muted" ? "var(--color-text-tertiary)" : "inherit")
+            : (isOverdue ? "var(--color-text-danger)" : "inherit"),
+        fontWeight: rel ? (rel.tone === "overdue" || rel.tone === "today" ? "600" : "inherit") : (isOverdue ? "500" : "inherit"),
         borderBottom: "1px dashed transparent",
         display: "inline-block",
       }}
       onMouseEnter={e => { (e.currentTarget as HTMLSpanElement).style.borderBottomColor = "var(--color-border-primary)"; }}
       onMouseLeave={e => { (e.currentTarget as HTMLSpanElement).style.borderBottomColor = "transparent"; }}
     >
-      {value ? value.slice(5).replace("-", "/") : effectivePlaceholder}
+      {value ? (rel ? rel.label : value.slice(5).replace("-", "/")) : effectivePlaceholder}
     </span>
   );
 }

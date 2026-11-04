@@ -8630,3 +8630,10 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 * 汎用 CSV／xlsx：`wbsCsv.ts`（引用符・改行対応）・`wbsColumns.ts`（見出し辞書・自動推定・階層の取り方5種）・`textDecode.decodeTextBytesStrict`（UTF-8厳密→Shift_JIS）。`.mpp` は XML 保存を案内するエラー。
 * `WbsImportModal`：列の対応づけ画面・グループ切替・種類つき先行の表示。uiGuide・i18n 更新。`MIN_CLIENT_VERSION` は据え置き。詳細＝`docs/dev/sections/s90_wbs-import-formats.md`。
 * テスト：`wbsMspdi.test.ts`・`wbsCsvImport.test.ts` 新設、既存の wbsParse／wbsPlanApply を追随。
+
+# v3.199（2026-11-04）：リストの見直し（詳細のみ・列順・期日の相対表示・状態/優先度のその場変更）
+* 表示密度（シンプル/詳細）を廃止し詳細のみ。ツールバー「⋯」と設定>表示の切替・i18nキーを削除。localStorage の density は読まない（残っていても詳細表示）。
+* 列順を ☐ → 期日 → タスク名 → 担当者 → 状態 → 優先度 → 工数 に変更。タスク名列は `maxWidth:0`＋省略表示で狭い幅を吸収。
+* 期日の相対表示：`lib/dueRelative.ts`（`formatDueRelative`・`formatFullDateWithWeekday`）。`InlineEditDate` に任意 prop `relativeStatus` を追加（未指定なら従来表示＝カンバン・ガント等は不変）。
+* 状態・優先度バッジのその場変更：`components/common/InlineBadgeSelect.tsx`（portal のメニュー・Esc/IME考慮）。保存は `saveTask`（担当者・名前のインライン編集と同じ経路）。親の状態は導出値のため編集不可のまま。
+* テスト：`dueRelative.test.ts` 新設。MIN_CLIENT_VERSION は据え置き。

@@ -14,7 +14,6 @@ import { useAppStore } from "../../stores/appStore";
 import { useLangStore } from "../../stores/langStore";
 import { useT } from "../../hooks/useT";
 import { useUnsavedEditor } from "../../hooks/useUnsavedEditor";
-import { KEYS } from "../../lib/localData/localStore";
 import { confirmDialog } from "../../lib/dialog";
 import { formatErrorForUser } from "../../lib/errorMessage";
 import { showToast } from "../common/Toast";
@@ -132,24 +131,6 @@ export function AccountPage({ currentUser, onLogout }: { currentUser: Member; on
 
 // ===== 🎨 表示 =====
 
-type Density = "simple" | "detailed";
-
-function readDensity(): Density {
-  try {
-    const all = JSON.parse(localStorage.getItem(KEYS.LIST_VIEW_SETTINGS) ?? "{}") as Record<string, unknown>;
-    return all.density === "detailed" ? "detailed" : "simple";
-  } catch { return "simple"; }
-}
-
-/** 保存できたら true。利用不可・容量不足・壊れた値は false（呼び出し側が操作前の値に戻す） */
-function writeDensity(v: Density): boolean {
-  try {
-    const all = JSON.parse(localStorage.getItem(KEYS.LIST_VIEW_SETTINGS) ?? "{}") as Record<string, unknown>;
-    localStorage.setItem(KEYS.LIST_VIEW_SETTINGS, JSON.stringify({ ...all, density: v }));
-    return true;
-  } catch { return false; }
-}
-
 export function DisplayPage({ theme, onToggleTheme, onResetSidebarWidth }: {
   theme: "light" | "dark"; onToggleTheme: () => void; onResetSidebarWidth?: () => void;
 }) {
@@ -158,20 +139,8 @@ export function DisplayPage({ theme, onToggleTheme, onResetSidebarWidth }: {
   const lang = useLangStore(s => s.lang);
   const setLang = useLangStore(s => s.setLang);
   const isLoadingEn = useLangStore(s => s.isLoadingEn);
-  const [density, setDensity] = useState<Density>(readDensity);
   const [themeSaved, flashTheme] = useSavedFlash();
   const [langSaved, flashLang] = useSavedFlash();
-  const [densitySaved, flashDensity] = useSavedFlash();
-
-  const changeDensity = (v: Density) => {
-    const prev = density;
-    setDensity(v);
-    if (writeDensity(v)) flashDensity();
-    else {
-      setDensity(prev);
-      showToast(t("layout.settings.display.saveFailed"), "error");
-    }
-  };
 
   return (
     <SectionBody>
@@ -182,10 +151,6 @@ export function DisplayPage({ theme, onToggleTheme, onResetSidebarWidth }: {
       <Row label={t("layout.settings.display.lang")} hint={t("layout.settings.display.langHint")} flash={<SavedFlash visible={langSaved} />}>
         <SegButtons value={lang} onChange={v => { if (!isLoadingEn && v !== lang) { setLang(v); flashLang(); } }}
           options={[{ value: "ja", label: "日本語" }, { value: "en", label: "English" }]} />
-      </Row>
-      <Row label={t("layout.settings.display.density")} hint={t("layout.settings.display.densityHint")} flash={<SavedFlash visible={densitySaved} />}>
-        <SegButtons value={density} onChange={changeDensity}
-          options={[{ value: "simple", label: t("layout.settings.display.densitySimple") }, { value: "detailed", label: t("layout.settings.display.densityDetailed") }]} />
       </Row>
       {onResetSidebarWidth && (
         <Row label={t("layout.settings.display.sidebar")} hint={t("layout.settings.display.sidebarHint")}>

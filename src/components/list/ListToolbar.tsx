@@ -37,7 +37,6 @@ import { withBellReserve } from "../../lib/layout/topRightBell";
 export type GroupBy = "project" | "assignee" | "status" | "tag";
 export type SortKey = "name" | "due_date" | "priority" | "estimated_hours" | "status" | "assignee" | "manual";
 export type SortDir = "asc" | "desc";
-export type Density = "simple" | "detailed";
 
 type MenuId = "group" | "filter" | "sort" | "more";
 
@@ -285,8 +284,6 @@ export interface ListToolbarProps {
   setSearchOpen: (v: boolean) => void;
   searchInputRef: React.MutableRefObject<HTMLInputElement | null>;
   // その他
-  density: Density;
-  onChangeDensity: (v: Density) => void;
   onExportCSV: () => void;
   // 表示用
   taskCount: number;
@@ -305,7 +302,7 @@ export function ListToolbar({
   activeFilterCount, onClearFilters,
   sortKey, sortDir, onChangeSortKey, onToggleManualSort, onSortByNameNumber,
   searchText, onChangeSearchText, searchOpen, setSearchOpen, searchInputRef,
-  density, onChangeDensity, onExportCSV,
+  onExportCSV,
   taskCount, members, currentUserId,
 }: ListToolbarProps) {
   const [openMenu, setOpenMenu] = useState<MenuId | null>(null);
@@ -641,30 +638,6 @@ export function ListToolbar({
       >
         {close => (
           <>
-            <div style={MENU_HEADING_STYLE}>表示</div>
-            {([["simple", "▤ シンプル（主要4列）"], ["detailed", "▦ 詳細（優先度・工数を含む）"]] as const).map(([d, lbl]) => {
-              const selected = density === d;
-              return (
-                <button
-                  key={d}
-                  type="button"
-                  role="menuitem"
-                  onClick={() => { onChangeDensity(d); close(); }}
-                  style={{
-                    ...MENU_ITEM_STYLE,
-                    background: selected ? "var(--color-brand-light)" : "transparent",
-                    color: selected ? "var(--color-brand)" : "var(--color-text-primary)",
-                    fontWeight: selected ? 600 : 400,
-                  }}
-                >
-                  <span aria-hidden style={{ width: 12, flexShrink: 0 }}>{selected ? "✓" : ""}</span>
-                  <span>{lbl}</span>
-                </button>
-              );
-            })}
-
-            <div style={MENU_DIVIDER_STYLE} />
-
             <button
               type="button"
               role="menuitem"

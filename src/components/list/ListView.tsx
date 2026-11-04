@@ -32,7 +32,8 @@ import { computeNameOrderAssignments } from "../../lib/task/nameOrder";
 import { confirmDialog } from "../../lib/dialog";
 import { showToast } from "../common/Toast";
 import { formatErrorForUser } from "../../lib/errorMessage";
-import { ListToolbar, type GroupBy, type SortKey, type SortDir, type Density } from "./ListToolbar";
+import { InlineBadgeSelect, type BadgeOption } from "../common/InlineBadgeSelect";
+import { ListToolbar, type GroupBy, type SortKey, type SortDir } from "./ListToolbar";
 import { ListInlineAddRow } from "./ListInlineAddRow";
 import { useListInlineAdd } from "./useListInlineAdd";
 import { makeSpec, type GroupAddSpec } from "../../lib/list/inlineAdd";
@@ -763,14 +764,10 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, my
     ? <span style={{ marginLeft: 3, opacity: .8 }}>{sortDir === "asc" ? "↑" : "↓"}</span>
     : <span style={{ marginLeft: 3, opacity: .2 }}>↕</span>;
 
-  // 「シンプル」モードでは詳細列（優先度・工数）を非表示にして読みやすさを優先
-  const [density, setDensityState] = useState<Density>(() => lsGet("density", "simple"));
-  const setDensity = (v: Density) => { setDensityState(v); lsSet("density", v); };
-
   // ご意見のスナップショットの材料（v3.157・Section 82）。列挙値・真偽・IDだけ（検索語・タスク名は返さない）
   useSnapshotProvider("list", () => ({
     listSettings: {
-      groupBy, sortKey, sortDir, density,
+      groupBy, sortKey, sortDir,
       filters: {
         status: filterStatus, priority: filterPriority, myOnly: filterMyOnly, thisWeek: filterThisWeek, hideDone: filterHideDone,
         member: filterMember === "all" ? "all" : "set", hasSearch: searchText.trim() !== "",
@@ -779,16 +776,16 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, my
     selection: { taskId: editingTaskId ?? selectedTaskId, selectedCount: selectedIds.size },
   }));
 
-  const allCols: { key: string; label: string; w: string; sortKey?: SortKey; simple: boolean }[] = [
-    { key: "select",          label: "",         w: "32px",  simple: true  },
-    { key: "assignee",        label: "担当者",   w: "90px",  sortKey: "assignee",        simple: true  },
-    { key: "priority",        label: "優先度",   w: "55px",  sortKey: "priority",        simple: false },
-    { key: "name",            label: "タスク名", w: "auto",  sortKey: "name",            simple: true  },
-    { key: "status",          label: "状態",     w: "75px",  sortKey: "status",          simple: true  },
-    { key: "due_date",        label: "期日",     w: "80px",  sortKey: "due_date",        simple: true  },
-    { key: "estimated_hours", label: "工数",     w: "52px",  sortKey: "estimated_hours", simple: false },
+  // 列順（v3.199）：☐ → 期日 → タスク名 → 担当者 → 状態 → 優先度 → 工数。表示は詳細のみ（旧「シンプル」切替は廃止）
+  const cols: { key: string; label: string; w: string; sortKey?: SortKey }[] = [
+    { key: "select",          label: "",         w: "32px" },
+    { key: "due_date",        label: "期日",     w: "112px", sortKey: "due_date" },
+    { key: "name",            label: "タスク名", w: "auto",  sortKey: "name" },
+    { key: "assignee",        label: "担当者",   w: "90px",  sortKey: "assignee" },
+    { key: "status",          label: "状態",     w: "75px",  sortKey: "status" },
+    { key: "priority",        label: "優先度",   w: "55px",  sortKey: "priority" },
+    { key: "estimated_hours", label: "工数",     w: "52px",  sortKey: "estimated_hours" },
   ];
-  const cols = density === "simple" ? allCols.filter(c => c.simple) : allCols;
 
   // アクティブフィルター数（バッジ用）
   const activeFilterCount = [
@@ -860,8 +857,6 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, my
           searchOpen={searchOpen}
           setSearchOpen={setSearchOpen}
           searchInputRef={searchInputRef}
-          density={density}
-          onChangeDensity={setDensity}
           onExportCSV={() => exportCSV(filteredTasks, projects, members, projectSections)}
           taskCount={filteredTasks.length}
           members={filterMemberOptions}
@@ -1024,7 +1019,6 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, my
                             showHandleCol={showHandleCol}
                             myZone={myZone}
                             dropBlocked={dragBlockedIds !== null && dragBlockedIds.has(task.id)}
-                            density={density}
                             groupBy={groupBy}
                             currentUser={currentUser}
                             draggingId={draggingId}
@@ -1426,7 +1420,6 @@ interface ListTaskRowProps {
   myZone: DropZone | null;
   /** ドラッグ中のタスク（と子孫）の行＝ここへは落とせない（循環になる） */
   dropBlocked: boolean;
-  density: "simple" | "detailed";
   groupBy: GroupBy;
   currentUser: Member;
   draggingId: string | null;
@@ -1442,13 +1435,20 @@ interface ListTaskRowProps {
 
 // 一覧の行（親・子共通）のセル余白。v3.115で上下6px→3pxに詰めた（拡大表示で1画面の行数を増やすため）。
 // 横の10pxと fontSize は変えない（CLAUDE.md Section 60）。
+const STATUS_BADGE_OPTIONS: readonly BadgeOption<Task["status"]>[] = (Object.keys(TASK_STATUS_LABEL) as Task["status"][]).map(v => ({
+  value: v, label: TASK_STATUS_LABEL[v], bg: TASK_STATUS_STYLE[v].bg, color: TASK_STATUS_STYLE[v].color,
+}));
+const PRIORITY_BADGE_OPTIONS: readonly BadgeOption<"high" | "mid" | "low">[] = (["high", "mid", "low"] as const).map(v => ({
+  value: v, label: TASK_PRIORITY_LABEL[v], bg: TASK_PRIORITY_STYLE[v].bg, color: TASK_PRIORITY_STYLE[v].color,
+}));
+
 const ROW_TD_PADDING = "3px 10px";
 const ROW_TD_PADDING_FIRST = "3px 6px 3px 12px";
 
 const ListTaskRow = memo(function ListTaskRow({
   task, depth, parentNote, isParent, closesGroup, isEven, pj, todoItem,
   dispStatus, isSelected, isChecked, canAddChild, isCollapsed, prog,
-  canDrag, showHandleCol, myZone, dropBlocked, density, groupBy, currentUser,
+  canDrag, showHandleCol, myZone, dropBlocked, groupBy, currentUser,
   draggingId, saveTask, onRowClick, onCheckboxClick, toggleCollapse,
   openAddChild, setDraggingId, setDropZone, handleTaskDrop,
 }: ListTaskRowProps) {
@@ -1531,31 +1531,23 @@ const ListTaskRow = memo(function ListTaskRow({
           />
         </div>
       </td>
-      {/* 担当者（インライン編集） */}
+      {/* 期日（インライン編集） */}
       <td style={{ padding: ROW_TD_PADDING, whiteSpace: "nowrap" }}
         onClick={e => e.stopPropagation()}>
-        {/* inline-block のままだとベースライン下の余白（約4px）が行高に乗るため flex で包む */}
-        <div style={{ display: "flex", alignItems: "center" }}>
-          <InlineEditAssignee
-            assigneeIds={getAssigneeIds(task)}
-            projectId={task.project_id}
-            onSave={ids => saveTask({ ...task, assignee_member_ids: ids, assignee_member_id: ids[0] ?? "", updated_by: currentUser.id })}
-          />
-        </div>
+        {task.start_date && (
+          <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>
+            {task.start_date.slice(5).replace("-", "/")}〜
+          </span>
+        )}
+        <InlineEditDate
+          value={task.due_date}
+          isDone={suppressOverdue(dispStatus)}
+          relativeStatus={dispStatus}
+          onSave={due_date => saveTask({ ...task, due_date, updated_by: currentUser.id })}
+        />
       </td>
-      {/* 優先度（詳細モードのみ） */}
-      {density === "detailed" && (
-        <td style={{ padding: ROW_TD_PADDING }}>
-          {task.priority && (
-            <span style={{
-              fontSize: "9px", padding: "2px 5px", borderRadius: "3px",
-              background: TASK_PRIORITY_STYLE[task.priority].bg, color: TASK_PRIORITY_STYLE[task.priority].color,
-            }}>{TASK_PRIORITY_LABEL[task.priority]}</span>
-          )}
-        </td>
-      )}
       {/* タスク名（depth に応じたインデント＋親トグル＋子注記） */}
-      <td style={{ padding: ROW_TD_PADDING, paddingLeft: 10 + indentLevelOf(depth) * 22 }}>
+      <td style={{ padding: ROW_TD_PADDING, paddingLeft: 10 + indentLevelOf(depth) * 22, maxWidth: 0, overflow: "hidden" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
           {/* 折りたたみトグル（子を持つ親のみ） */}
           {isParent ? (
@@ -1577,7 +1569,7 @@ const ListTaskRow = memo(function ListTaskRow({
           <div
             onClick={e => e.stopPropagation()}
             style={{
-              overflow: "hidden", maxWidth: "360px",
+              overflow: "hidden", maxWidth: "360px", minWidth: 0, textOverflow: "ellipsis", whiteSpace: "nowrap",
               textDecoration: isDone ? "line-through" : "none",
               fontWeight: isSelected ? "500" : isParent ? "600" : "400",
               color: isSelected ? "var(--color-text-purple)" : "var(--color-text-primary)",
@@ -1649,29 +1641,48 @@ const ListTaskRow = memo(function ListTaskRow({
           </div>
         )}
       </td>
-      {/* 状態（親は導出値・バッジのみ＝手動変更UIは出さない） */}
-      <td style={{ padding: ROW_TD_PADDING, whiteSpace: "nowrap" }}>
-        <span title={isParent ? "子から自動算出" : undefined} style={{
-          fontSize: "9px", padding: "2px 6px", borderRadius: "3px",
-          background: TASK_STATUS_STYLE[dispStatus].bg, color: TASK_STATUS_STYLE[dispStatus].color,
-        }}>{TASK_STATUS_LABEL[dispStatus]}</span>
-      </td>
-      {/* 期日（インライン編集） */}
+      {/* 担当者（インライン編集） */}
       <td style={{ padding: ROW_TD_PADDING, whiteSpace: "nowrap" }}
         onClick={e => e.stopPropagation()}>
-        {task.start_date && (
-          <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>
-            {task.start_date.slice(5).replace("-", "/")}〜
-          </span>
+        {/* inline-block のままだとベースライン下の余白（約4px）が行高に乗るため flex で包む */}
+        <div style={{ display: "flex", alignItems: "center" }}>
+          <InlineEditAssignee
+            assigneeIds={getAssigneeIds(task)}
+            projectId={task.project_id}
+            onSave={ids => saveTask({ ...task, assignee_member_ids: ids, assignee_member_id: ids[0] ?? "", updated_by: currentUser.id })}
+          />
+        </div>
+      </td>
+      {/* 状態（クリックでその場変更。親は導出値＝子から自動算出のためバッジのみ） */}
+      <td style={{ padding: ROW_TD_PADDING, whiteSpace: "nowrap" }}
+        onClick={e => e.stopPropagation()}>
+        {isParent ? (
+          <span title="子から自動算出" style={{
+            fontSize: "9px", padding: "2px 6px", borderRadius: "3px",
+            background: TASK_STATUS_STYLE[dispStatus].bg, color: TASK_STATUS_STYLE[dispStatus].color,
+          }}>{TASK_STATUS_LABEL[dispStatus]}</span>
+        ) : (
+          <InlineBadgeSelect
+            value={task.status}
+            options={STATUS_BADGE_OPTIONS}
+            onSelect={status => { void saveTask({ ...task, status, updated_by: currentUser.id }); }}
+            title="クリックで状態を変更"
+          />
         )}
-        <InlineEditDate
-          value={task.due_date}
-          isDone={suppressOverdue(dispStatus)}
-          onSave={due_date => saveTask({ ...task, due_date, updated_by: currentUser.id })}
+      </td>
+      {/* 優先度（クリックでその場変更） */}
+      <td style={{ padding: ROW_TD_PADDING, whiteSpace: "nowrap" }}
+        onClick={e => e.stopPropagation()}>
+        <InlineBadgeSelect
+          value={task.priority ?? null}
+          options={PRIORITY_BADGE_OPTIONS}
+          noneOption={{ label: "なし", onSelect: () => { void saveTask({ ...task, priority: null, updated_by: currentUser.id }); } }}
+          onSelect={priority => { void saveTask({ ...task, priority, updated_by: currentUser.id }); }}
+          title="クリックで優先度を変更"
         />
       </td>
-      {/* 工数（詳細モードのみ） */}
-      {density === "detailed" && (
+      {/* 工数 */}
+      {(
         <td style={{ padding: ROW_TD_PADDING, color: "var(--color-text-tertiary)", textAlign: "right" }}>
           {task.estimated_hours != null ? `${task.estimated_hours}h` : "—"}
         </td>
