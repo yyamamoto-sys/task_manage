@@ -14,17 +14,18 @@ import { useIsMobile } from "../../hooks/useIsMobile";
 import type { Member, Project, Task, ToDo, Milestone } from "../../lib/localData/types";
 import { toDate, toDateStr, addDays, diffDays, formatYM, getDaysInRange, formatDateRangeWithWeekday, formatMDWithWeekday } from "../../lib/date";
 import { isHoliday } from "../../lib/date/holidays";
+import { findDependencyViolation } from "../../lib/dependencies/violation";
 import { v4 as uuidv4 } from "uuid";
 import { KEYS, active } from "../../lib/localData/localStore";
 import { TaskEditModal } from "../task/TaskEditModal";
 import { MilestoneEditModal } from "../milestone/MilestoneEditModal";
 import { milestoneFillColor, milestoneBorderColor } from "../../lib/milestoneColor";
 import { TaskSidePanel } from "../task/TaskSidePanel";
-import { isAssignedTo, suppressOverdue, isCompletedForProgress } from "../../lib/taskMeta";
+import { getAssigneeIds, isAssignedTo, suppressOverdue, isCompletedForProgress } from "../../lib/taskMeta";
 import { EmptyState } from "../common/EmptyState";
 import { showToast } from "../common/Toast";
 import {
-  DAY_WIDTH_DEFAULT, ZOOM_MIN, ZOOM_MAX, parseSavedZoom, stepZoom, clampDayWidth,
+  DAY_WIDTH_DEFAULT, ZOOM_MIN, ZOOM_MAX, ZOOM_PRESETS, parseSavedZoom, stepZoom, clampDayWidth,
   resolveZoomScrollLeft, wheelZoomTarget, wheelDeltaToPx, isDayTickLabelVisible, weekHeaderLabel,
   ganttRowScale, ganttRowMetrics, resolveZoomScrollTop, fitDayWidth,
   TODO_COLOR, MS_COLOR, MS_BORDER, CRITICAL_COLOR, OVERLOAD_COLOR,
@@ -180,6 +181,13 @@ export function GanttView({
     });
   }, []);
 
+  // ===== 担当者の絞り込み・タスク名検索（v3.200・保存しない一時的な絞り込み） =====
+  // 絞り込みで親が外れて子だけ残る場合は、リストと同じく子を最上位として出す（orderTasksAsTree が親不在を最上位に回す）。
+  // 絞り込みは allTasks の段で行うので、選択（pruneSelection）・一括操作・各グルーピングは自動的に見えているタスクだけを対象にする。
+  const [filterAssignee, setFilterAssignee] = useState<string>("all"); // "all"｜"unassigned"｜メンバーid
+  const [searchText, setSearchText] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
   // previewTasksが指定されている場合はそちらを優先する。KRフィルタが有効な場合はさらに絞り込む
   // 完了を隠すフィルタ（hideCompletedTasks）は、必ず並べ替え・グルーピング
   // （orderTasksHierarchically・personGroups・todoGroups 等、すべて allTasks から派生）より前段
@@ -191,8 +199,14 @@ export function GanttView({
       : active(rawTasks);
     let list = krTaskIds ? base.filter(t => krTaskIds.has(t.id)) : base;
     if (hideCompletedTasks) list = filterHideCompletedTasks(list);
+    if (!previewTasks) {
+      if (filterAssignee === "unassigned") list = list.filter(t => getAssigneeIds(t).length === 0);
+      else if (filterAssignee !== "all") list = list.filter(t => isAssignedTo(t, filterAssignee));
+      const q = searchText.trim().toLowerCase();
+      if (q) list = list.filter(t => t.name.toLowerCase().includes(q));
+    }
     return list;
-  }, [previewTasks, rawTasks, krTaskIds, hideCompletedTasks]);
+  }, [previewTasks, rawTasks, krTaskIds, hideCompletedTasks, filterAssignee, searchText]);
   const members  = useMemo(() => active(rawMembers), [rawMembers]);
   const todos    = useMemo(() => (rawTodos ?? []).filter((td: ToDo) => !td.is_deleted), [rawTodos]);
   // ホットループ用：タスク行ごとの find を回避するため id→entity の Map を一度だけ作る
@@ -1118,6 +1132,11 @@ export function GanttView({
         zoomOut();
         return;
       }
+      if (!hasOtherModifier && e.key === "/") {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        return;
+      }
       if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === "a" || e.key === "A")) {
         e.preventDefault();
         setSelectedTaskIds(new Set(visibleOrderedTaskIds));
@@ -1436,6 +1455,16 @@ export function GanttView({
     }
     return map;
   }, [isPreview, showOverload, viewMode, personGroups, allTasks, rangeStart, rangeEnd]);
+
+  // 依存の日付矛盾（v3.200）：制約を満たさない依存の矢印を赤くし、理由をツールチップに出す
+  const depViolations = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const d of logicalDeps) {
+      const v = findDependencyViolation(d, activeTaskById.get(d.predecessor_task_id), activeTaskById.get(d.successor_task_id));
+      if (v) map.set(d.id, v.message);
+    }
+    return map;
+  }, [logicalDeps, activeTaskById]);
 
   const [depRender, setDepRender] = useState<{
     arrows: DependencyArrowGeometry[];
@@ -2596,6 +2625,43 @@ export function GanttView({
             fontWeight: "600",
           }}>今日</button>
         )}
+        {/* 担当者の絞り込み・タスク名検索（「/」キーで検索欄へ） */}
+        {!isPreview && (
+          <>
+            <select
+              value={filterAssignee}
+              onChange={e => setFilterAssignee(e.target.value)}
+              aria-label="担当者で絞り込む"
+              title="担当者で絞り込む"
+              style={{
+                ...headerBtnStyle, maxWidth: 120,
+                color: filterAssignee !== "all" ? "var(--color-brand)" : "var(--color-text-secondary)",
+                borderColor: filterAssignee !== "all" ? "var(--color-brand-border)" : "var(--color-border-primary)",
+                background: "var(--color-bg-primary)",
+              }}
+            >
+              <option value="all">担当：全員</option>
+              <option value="unassigned">担当：未割当</option>
+              {members.map(m => <option key={m.id} value={m.id}>{m.display_name}</option>)}
+            </select>
+            <input
+              ref={searchInputRef}
+              type="search"
+              value={searchText}
+              onChange={e => setSearchText(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === "Escape" && !e.nativeEvent.isComposing) { e.stopPropagation(); setSearchText(""); e.currentTarget.blur(); }
+              }}
+              placeholder="タスク名を検索（/）"
+              aria-label="タスク名を検索"
+              style={{
+                ...headerBtnStyle, width: 130, cursor: "text",
+                background: "var(--color-bg-primary)", color: "var(--color-text-primary)",
+                borderColor: searchText.trim() ? "var(--color-brand-border)" : "var(--color-border-primary)",
+              }}
+            />
+          </>
+        )}
         {/* 拡大縮小：－／スライドバー／＋。Ctrl(Cmd)+ホイール・+/-キーでも動かせる。
             スライドバーは非制御（defaultValue＋ref同期）：rAFでまとめて反映する間に、制御inputだと
             つまみが元の位置へ戻ってガタつくため */}
@@ -2656,6 +2722,22 @@ export function GanttView({
                 padding: "4px 8px", fontSize: "11px", whiteSpace: "nowrap",
               }}
             >{t("common.gantt.fitAll")}</button>
+            {ZOOM_PRESETS.map(p => (
+              <button
+                key={p.label}
+                onClick={() => scheduleZoom(p.dayWidth, null)}
+                title={p.title}
+                aria-pressed={dayWidth === p.dayWidth}
+                style={{
+                  ...headerBtnStyle,
+                  border: "none", borderLeft: "1px solid var(--color-border-primary)", borderRadius: 0,
+                  padding: "4px 7px", fontSize: "11px",
+                  background: dayWidth === p.dayWidth ? "var(--color-brand-light)" : "transparent",
+                  color: dayWidth === p.dayWidth ? "var(--color-brand)" : "var(--color-text-secondary)",
+                  fontWeight: dayWidth === p.dayWidth ? "600" : "400",
+                }}
+              >{p.label}</button>
+            ))}
           </div>
         )}
       </div>
@@ -2911,6 +2993,9 @@ export function GanttView({
                     <marker id="gantt-dep-arrowhead-hover" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto" markerUnits="strokeWidth">
                       <path d="M0,0 L6,3 L0,6 Z" fill="var(--color-brand)" />
                     </marker>
+                    <marker id="gantt-dep-arrowhead-violation" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto" markerUnits="strokeWidth">
+                      <path d="M0,0 L6,3 L0,6 Z" fill="var(--color-text-danger)" />
+                    </marker>
                     {/* B6：クリティカルパス専用の矢印（濃い赤・太め）。既存の通常/ホバーとは独立した3つ目の見た目 */}
                     <marker id="gantt-dep-arrowhead-critical" markerWidth="7" markerHeight="7" refX="5.5" refY="3.5" orient="auto" markerUnits="strokeWidth">
                       <path d="M0,0 L7,3.5 L0,7 Z" fill={CRITICAL_COLOR} />
@@ -2930,16 +3015,23 @@ export function GanttView({
                     const isCriticalArrow = showCriticalPath
                       && criticalTaskIds.has(dep.predecessor_task_id) && criticalTaskIds.has(dep.successor_task_id);
                     const labelAnchor = points[1] ?? points[0];
+                    const violation = depViolations.get(dep.id);
                     return (
                       <g key={dep.id}>
+                      {violation && (
+                        // 矢印は pointerEvents:none の層にあるため、矛盾の線だけ当たり判定を持たせてツールチップを出す
+                        <path d={pointsToPathD(points)} fill="none" stroke="transparent" strokeWidth={10} style={{ pointerEvents: "stroke" }}>
+                          <title>{violation}</title>
+                        </path>
+                      )}
                       <path
                         d={pointsToPathD(points)}
                         fill="none"
-                        stroke={isCriticalArrow ? CRITICAL_COLOR : isHoveredArrow ? "var(--color-brand)" : "var(--color-border-secondary)"}
-                        strokeWidth={isCriticalArrow ? (isHoveredArrow ? 3 : 2.2) : isHoveredArrow ? 2 : 1}
-                        strokeOpacity={isCriticalArrow ? 0.95 : isHoveredArrow ? 0.9 : 0.5}
+                        stroke={violation ? "var(--color-text-danger)" : isCriticalArrow ? CRITICAL_COLOR : isHoveredArrow ? "var(--color-brand)" : "var(--color-border-secondary)"}
+                        strokeWidth={violation ? 2 : isCriticalArrow ? (isHoveredArrow ? 3 : 2.2) : isHoveredArrow ? 2 : 1}
+                        strokeOpacity={violation ? 0.95 : isCriticalArrow ? 0.95 : isHoveredArrow ? 0.9 : 0.5}
                         strokeDasharray={isPredIncomplete ? "4 3" : undefined}
-                        markerEnd={isCriticalArrow ? "url(#gantt-dep-arrowhead-critical)" : isHoveredArrow ? "url(#gantt-dep-arrowhead-hover)" : "url(#gantt-dep-arrowhead)"}
+                        markerEnd={violation ? "url(#gantt-dep-arrowhead-violation)" : isCriticalArrow ? "url(#gantt-dep-arrowhead-critical)" : isHoveredArrow ? "url(#gantt-dep-arrowhead-hover)" : "url(#gantt-dep-arrowhead)"}
                       />
                       {label && (
                         <text

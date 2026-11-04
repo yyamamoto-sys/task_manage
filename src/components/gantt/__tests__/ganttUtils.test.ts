@@ -1139,3 +1139,12 @@ describe("狭い幅の見出し（dayWidth 4〜）", () => {
     expect(7 * ZOOM_MIN).toBeGreaterThanOrEqual(24);
   });
 });
+
+describe("ZOOM_PRESETS（v3.200）", () => {
+  it("すべて連続ズームの範囲内で、日幅は降順・重複なし", async () => {
+    const { ZOOM_PRESETS, ZOOM_MIN: min, ZOOM_MAX: max } = await import("../ganttUtils");
+    const ws = ZOOM_PRESETS.map(p => p.dayWidth);
+    expect(ws).toEqual([40, 16, 6, 4]);
+    for (const w of ws) { expect(w).toBeGreaterThanOrEqual(min); expect(w).toBeLessThanOrEqual(max); }
+  });
+});

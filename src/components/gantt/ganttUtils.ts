@@ -20,6 +20,13 @@ export const DAY_WIDTH_DEFAULT = 28;
 export const ZOOM_MIN = 4;
 export const ZOOM_MAX = 80;
 export const ZOOM_STEP_RATIO = 1.25;
+/** ズームのプリセット（日幅px）。連続ズームの範囲内の値を設定するだけ（現在の日幅が一致するものを選択状態に見せる） */
+export const ZOOM_PRESETS: readonly { label: string; dayWidth: number; title: string }[] = [
+  { label: "日", dayWidth: 40, title: "日単位で見る（1日40px）" },
+  { label: "週", dayWidth: 16, title: "週単位で見る（1日16px）" },
+  { label: "月", dayWidth: 6, title: "月単位で見る（1日6px）" },
+  { label: "四半期", dayWidth: 4, title: "四半期単位で見渡す（1日4px）" },
+];
 export const STAGNANT_THRESHOLD_DAYS = 5;
 export const TODO_COLOR = "#6ee7b7";
 export const MS_COLOR   = DEFAULT_MILESTONE_FILL;

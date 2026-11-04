@@ -8637,3 +8637,9 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 * 期日の相対表示：`lib/dueRelative.ts`（`formatDueRelative`・`formatFullDateWithWeekday`）。`InlineEditDate` に任意 prop `relativeStatus` を追加（未指定なら従来表示＝カンバン・ガント等は不変）。
 * 状態・優先度バッジのその場変更：`components/common/InlineBadgeSelect.tsx`（portal のメニュー・Esc/IME考慮）。保存は `saveTask`（担当者・名前のインライン編集と同じ経路）。親の状態は導出値のため編集不可のまま。
 * テスト：`dueRelative.test.ts` 新設。MIN_CLIENT_VERSION は据え置き。
+
+# v3.200（2026-11-04）：ガント：ズームのプリセット・依存の日付矛盾の警告・担当者の絞り込みと検索
+* ズームのプリセット「日／週／月／四半期」（`ZOOM_PRESETS`＝日幅40/16/6/4px）。連続ズームはそのまま。現在の日幅に一致するものを選択表示。
+* 依存の日付矛盾：既存に検出は無かったため新設。`lib/dependencies/violation.ts` の `findDependencyViolation`（reschedule.ts と同じ式・暦日・後続が完了/中止は対象外）。矛盾する矢印は赤＋ツールチップに理由。
+* 担当者の絞り込み（全員/未割当/各メンバー）とタスク名検索をガントのヘッダーに追加（保存しない一時的な絞り込み）。`allTasks` の段で絞るため選択（pruneSelection）・一括操作は見えているタスクだけが対象。親が外れた子は最上位として表示（リストと同じ）。「/」で検索欄にフォーカス、Escで消去。
+* テスト：`violation.test.ts` 新設、`ganttUtils.test.ts` にプリセット。MIN_CLIENT_VERSION は据え置き。
