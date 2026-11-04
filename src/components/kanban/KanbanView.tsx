@@ -8,16 +8,19 @@ import { useIsMobile } from "../../hooks/useIsMobile";
 import { useBulkTaskActions } from "../../hooks/useBulkTaskActions";
 import { BulkActionBar, BULK_BAR_SCROLL_PAD_PX } from "../task/BulkActionBar";
 import type { Member, Project, Task, ToDo } from "../../lib/localData/types";
-import { active } from "../../lib/localData/localStore";
+import { active, KEYS } from "../../lib/localData/localStore";
 import { TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORITY_STYLE, TASK_PRIORITY_STRIPE_COLOR, getAssigneeIds, suppressOverdue } from "../../lib/taskMeta";
 import { computeRangeSelection } from "../../lib/selectionRange";
-import { computeKanbanOrderedIds } from "../../lib/kanbanOrder";
+import { computeKanbanOrderedIds, sortByDueDateStable } from "../../lib/kanbanOrder";
 import { useTaskKeyboardNav } from "../../hooks/useTaskKeyboardNav";
 import { isGuestMember } from "../../lib/guestMode";
 import { canGuestEdit } from "../../lib/guest/guestCapability";
 import { buildParentDerivedMap, type ParentDerived } from "../../lib/taskHierarchy";
 import { computeGroupSummary } from "../../lib/list/groupSummary";
-import { isOverWipLimit, WIP_LIMIT_DEFAULT } from "../../lib/kanbanWip";
+import {
+  isOverWipLimit, parseStoredWipLimit, parseWipLimitInput, serializeWipLimit, WIP_LIMIT_MIN, WIP_LIMIT_MAX,
+} from "../../lib/kanbanWip";
+import { isImeComposing } from "../../lib/shortcuts/keys";
 import { isTaskStagnant, STAGNANT_THRESHOLD_DAYS } from "../gantt/ganttUtils";
 import { todayStr } from "../../lib/date";
 import { TaskEditModal } from "../task/TaskEditModal";
@@ -91,6 +94,15 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
   const dropRafRef = useRef<number | null>(null);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [hideDone, setHideDone] = useState(false);
+  // WIP上限（個人設定＝localStorage。null＝上限なし）。進行中列ヘッダーの「WIP n / 上限 N」をクリックして変更する
+  const [wipLimit, setWipLimitState] = useState<number | null>(() => {
+    try { return parseStoredWipLimit(localStorage.getItem(KEYS.KANBAN_WIP_LIMIT)); } catch { return parseStoredWipLimit(null); }
+  });
+  const [wipEditing, setWipEditing] = useState(false);
+  const commitWipLimit = useCallback((limit: number | null) => {
+    setWipLimitState(limit);
+    try { localStorage.setItem(KEYS.KANBAN_WIP_LIMIT, serializeWipLimit(limit)); } catch { /* 保存できなくても表示は変える */ }
+  }, []);
   // 保留(on_hold)・中止(cancelled)は既定では列に表示しない（🙈完了を隠すの逆＝既定OFFの「見せる」トグル）
   const [showPaused, setShowPaused] = useState(false);
 
@@ -143,7 +155,8 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
         ? (!t.section_id || !known.has(t.section_id))
         : t.section_id === effectiveSectionFilter);
     }
-    return list;
+    // 列内は期日順（期日なしは末尾・同日は元の順）。表示順（orderedTaskIds）もここから導くので範囲選択と一致する
+    return sortByDueDateStable(list);
   }, [tasks, selectedProject, krTaskIds, effectiveSectionFilter, pjSections]);
 
   // Ctrl/Cmd+A・Shift+クリック範囲選択の対象となる「現在の表示順」
@@ -393,7 +406,7 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
           const isDropTarget = dragOverStatus === status;
           // WIP上限（進行中列のみ）：抱えすぎ検知のためのソフト警告。カード移動はブロックしない
           const isInProgressCol = status === "in_progress";
-          const isOverWip = isInProgressCol && isOverWipLimit(colTasks.length, WIP_LIMIT_DEFAULT);
+          const isOverWip = isInProgressCol && isOverWipLimit(colTasks.length, wipLimit);
           return (
             // ドラッグ&ドロップ専用の列（ドロップでステータス変更）。マウス操作専用でキーボード代替手段はない
             // eslint-disable-next-line jsx-a11y/no-static-element-interactions
@@ -431,20 +444,49 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
                     {cfg.label}
                   </span>
                   {isInProgressCol ? (
-                    <span
-                      title={`WIP（進行中件数） ${colTasks.length} / 上限 ${WIP_LIMIT_DEFAULT}`}
-                      style={{
-                        fontSize: "10px", fontWeight: isOverWip ? "600" : "400",
-                        color: isOverWip ? "var(--color-text-danger)" : cfg.color,
-                        opacity: isOverWip ? 1 : 0.8,
-                        background: isOverWip ? "var(--color-bg-danger)" : "rgba(255,255,255,0.6)",
-                        padding: "1px 6px", borderRadius: "var(--radius-full)",
-                        border: `1px solid ${isOverWip ? "var(--color-border-danger)" : cfg.border}`,
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      WIP {colTasks.length} / 上限 {WIP_LIMIT_DEFAULT}{isOverWip ? " ⚠" : ""}
-                    </span>
+                    wipEditing ? (
+                      <input
+                        // eslint-disable-next-line jsx-a11y/no-autofocus
+                        autoFocus
+                        type="number" min={WIP_LIMIT_MIN} max={WIP_LIMIT_MAX}
+                        defaultValue={wipLimit ?? ""}
+                        placeholder="上限なし"
+                        aria-label="WIP上限（空欄＝上限なし）"
+                        onClick={e => e.stopPropagation()}
+                        onBlur={e => {
+                          const v = parseWipLimitInput(e.currentTarget.value);
+                          if (v !== undefined) commitWipLimit(v);
+                          setWipEditing(false);
+                        }}
+                        onKeyDown={e => {
+                          if (isImeComposing(e.nativeEvent)) return;
+                          if (e.key === "Enter") e.currentTarget.blur();
+                          else if (e.key === "Escape") { e.stopPropagation(); setWipEditing(false); }
+                        }}
+                        style={{
+                          width: 64, fontSize: "10px", padding: "1px 4px",
+                          border: "1px solid var(--color-brand)", borderRadius: "var(--radius-sm)",
+                          background: "var(--color-bg-primary)", color: "var(--color-text-primary)", outline: "none",
+                        }}
+                      />
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setWipEditing(true)}
+                        title={`WIP（進行中件数） ${colTasks.length} / 上限 ${wipLimit ?? "なし"}（クリックで上限を変更。空欄＝上限なし）`}
+                        style={{
+                          fontSize: "10px", fontWeight: isOverWip ? "600" : "400", cursor: "pointer",
+                          color: isOverWip ? "var(--color-text-danger)" : cfg.color,
+                          opacity: isOverWip ? 1 : 0.8,
+                          background: isOverWip ? "var(--color-bg-danger)" : "rgba(255,255,255,0.6)",
+                          padding: "1px 6px", borderRadius: "var(--radius-full)",
+                          border: `1px solid ${isOverWip ? "var(--color-border-danger)" : cfg.border}`,
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        WIP {colTasks.length} / 上限 {wipLimit ?? "なし"}{isOverWip ? " ⚠" : ""}
+                      </button>
+                    )
                   ) : (
                     <span style={{
                       fontSize: "10px", color: cfg.color, opacity: 0.8,

@@ -8,9 +8,13 @@
 // データは必ず selectScopedTasks / selectScopedMembers を使う（素の s.tasks / s.members は
 // 使わない＝過去にAI機能でメンバー氏名が他部署へ越境漏洩した事故があり、部署スコープは厳守）。
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useAppStore, selectScopedTasks, selectScopedMembers, selectScopedTaskDependencies } from "../../stores/appStore";
 import type { Member, Project } from "../../lib/localData/types";
+import { KEYS } from "../../lib/localData/localStore";
+import {
+  formatHours, overloadThreshold as computeOverloadThreshold, parseStoredWorkloadUnit, sortWorkloadRows, workloadValue, type WorkloadUnit,
+} from "../../lib/workload/workloadMetric";
 import { computeMemberWorkloadRows, type MemberWorkloadRow } from "../../lib/workload/computeWorkload";
 import { getAssigneeIds, isActiveTaskStatus } from "../../lib/taskMeta";
 import { Avatar } from "../auth/UserSelectScreen";
@@ -33,6 +37,14 @@ export function WorkloadView({ projects, onOpenTask }: Props) {
   const isMobile = useIsMobile();
   const [pjFilter, setPjFilter] = useState<string>("all");
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
+  // 集計単位（件数／工数）。個人設定として localStorage に保存する
+  const [unit, setUnitState] = useState<WorkloadUnit>(() => {
+    try { return parseStoredWorkloadUnit(localStorage.getItem(KEYS.WORKLOAD_UNIT)); } catch { return "count"; }
+  });
+  const setUnit = useCallback((u: WorkloadUnit) => {
+    setUnitState(u);
+    try { localStorage.setItem(KEYS.WORKLOAD_UNIT, u); } catch { /* 保存できなくても表示は変える */ }
+  }, []);
 
   // 選んでいたPJが一覧から消えた（削除・表示部署の切替）ときは「全プロジェクト」に戻す。
   // 戻さないと選択肢に無い値のまま全メンバーが0件に見える
@@ -43,22 +55,15 @@ export function WorkloadView({ projects, onOpenTask }: Props) {
   );
 
   const rows = useMemo(
-    () => computeMemberWorkloadRows(scopedMembers, filteredTasks)
-      .slice()
-      .sort((a, b) => b.active_count - a.active_count),
-    [scopedMembers, filteredTasks],
+    () => sortWorkloadRows(computeMemberWorkloadRows(scopedMembers, filteredTasks), unit),
+    [scopedMembers, filteredTasks, unit],
   );
 
   const memberById = useMemo(() => new Map(scopedMembers.map(m => [m.id, m])), [scopedMembers]);
-  const maxActive = Math.max(1, ...rows.map(r => r.active_count));
+  const maxValue = Math.max(1, ...rows.map(r => workloadValue(r, unit)));
 
-  // 「突出して多い」の目安：アクティブ件数を持つメンバーの平均の1.5倍以上、かつ最低3件以上
-  // （0〜1件のメンバー同士の僅差を強調表示で目立たせないための下限）
-  const withLoad = rows.filter(r => r.active_count > 0);
-  const avgActive = withLoad.length > 0
-    ? withLoad.reduce((sum, r) => sum + r.active_count, 0) / withLoad.length
-    : 0;
-  const overloadThreshold = Math.max(3, avgActive * 1.5);
+  // 「突出して多い」の目安：負荷を持つメンバーの平均の1.5倍以上、かつ下限以上（件数＝3件／工数＝8h。workloadMetric.ts）
+  const overloadThreshold = computeOverloadThreshold(rows.map(r => workloadValue(r, unit)), unit);
 
   // 「アクティブ」の定義は computeMemberWorkloadRows と同じ（done・cancelled・on_hold は対象外。
   // 中止・保留の未割当タスクを「未割当」として騒がせない＝2026-07-21ステータス拡張時に本行が
@@ -91,6 +96,23 @@ export function WorkloadView({ projects, onOpenTask }: Props) {
             ]}
             style={{ width: "200px" }}
           />
+          <div role="group" aria-label="集計単位" style={{ display: "flex", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", overflow: "hidden", flexShrink: 0 }}>
+            {([["count", "件数"], ["hours", "工数"]] as const).map(([u, label]) => (
+              <button
+                key={u}
+                type="button"
+                onClick={() => setUnit(u)}
+                aria-pressed={unit === u}
+                title={u === "count" ? "アクティブなタスクの件数で比べる" : "アクティブなタスクの工数合計で比べる（工数未入力のタスクは合計に入りません）"}
+                style={{
+                  padding: "4px 12px", fontSize: "11px", border: "none", cursor: "pointer",
+                  background: unit === u ? "var(--color-brand-light)" : "transparent",
+                  color: unit === u ? "var(--color-brand)" : "var(--color-text-secondary)",
+                  fontWeight: unit === u ? 600 : 400,
+                }}
+              >{label}</button>
+            ))}
+          </div>
           {unassignedCount > 0 && (
             <span style={{
               fontSize: "11px", padding: "2px 9px", borderRadius: "var(--radius-full)",
@@ -117,8 +139,9 @@ export function WorkloadView({ projects, onOpenTask }: Props) {
                     key={row.member_id}
                     row={row}
                     member={memberById.get(row.member_id)}
-                    maxActive={maxActive}
-                    isOverloaded={row.active_count >= overloadThreshold}
+                    unit={unit}
+                    maxValue={maxValue}
+                    isOverloaded={workloadValue(row, unit) > 0 && workloadValue(row, unit) >= overloadThreshold}
                     isLast={i === rows.length - 1}
                     isSelected={row.member_id === selectedMemberId}
                     onSelect={() => setSelectedMemberId(row.member_id)}
@@ -147,17 +170,19 @@ export function WorkloadView({ projects, onOpenTask }: Props) {
 }
 
 function WorkloadRow({
-  row, member, maxActive, isOverloaded, isLast, isSelected, onSelect,
+  row, member, unit, maxValue, isOverloaded, isLast, isSelected, onSelect,
 }: {
   row: MemberWorkloadRow;
   member: Member | undefined;
-  maxActive: number;
+  unit: WorkloadUnit;
+  maxValue: number;
   isOverloaded: boolean;
   isLast: boolean;
   isSelected: boolean;
   onSelect: () => void;
 }) {
-  const barPct = Math.round((row.active_count / maxActive) * 100);
+  const value = workloadValue(row, unit);
+  const barPct = Math.round((value / maxValue) * 100);
   const barColor = isOverloaded ? "var(--color-text-danger)" : "var(--color-brand)";
 
   return (
@@ -200,10 +225,18 @@ function WorkloadRow({
               期限超過 {row.overdue_count}件
             </span>
           )}
-          {row.tasks_with_estimate > 0 && (
-            <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>
-              工数計 {row.total_estimated_hours}h（{row.tasks_with_estimate}件入力）
-            </span>
+          {unit === "hours" ? (
+            row.tasks_without_estimate > 0 && (
+              <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>
+                未入力 {row.tasks_without_estimate}件
+              </span>
+            )
+          ) : (
+            row.tasks_with_estimate > 0 && (
+              <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>
+                工数計 {row.total_estimated_hours}h（{row.tasks_with_estimate}件入力）
+              </span>
+            )
           )}
         </div>
         <div style={{ height: 7, background: "var(--color-bg-tertiary)", borderRadius: "var(--radius-full)", overflow: "hidden" }}>
@@ -214,12 +247,12 @@ function WorkloadRow({
         </div>
       </div>
 
-      <div style={{ width: "44px", textAlign: "right", flexShrink: 0 }}>
+      <div style={{ width: unit === "hours" ? "60px" : "44px", textAlign: "right", flexShrink: 0 }}>
         <span style={{
           fontSize: "15px", fontWeight: 700,
           color: isOverloaded ? "var(--color-text-danger)" : "var(--color-text-primary)",
         }}>
-          {row.active_count}
+          {unit === "hours" ? formatHours(value) : row.active_count}
         </span>
       </div>
     </div>

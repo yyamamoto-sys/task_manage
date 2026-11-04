@@ -8643,3 +8643,9 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 * 依存の日付矛盾：既存に検出は無かったため新設。`lib/dependencies/violation.ts` の `findDependencyViolation`（reschedule.ts と同じ式・暦日・後続が完了/中止は対象外）。矛盾する矢印は赤＋ツールチップに理由。
 * 担当者の絞り込み（全員/未割当/各メンバー）とタスク名検索をガントのヘッダーに追加（保存しない一時的な絞り込み）。`allTasks` の段で絞るため選択（pruneSelection）・一括操作は見えているタスクだけが対象。親が外れた子は最上位として表示（リストと同じ）。「/」で検索欄にフォーカス、Escで消去。
 * テスト：`violation.test.ts` 新設、`ganttUtils.test.ts` にプリセット。MIN_CLIENT_VERSION は据え置き。
+
+# v3.201（2026-11-04）：カンバン（WIP上限の変更・列内を期日順）とワークロード（件数／工数の切替）
+* WIP上限を利用者が変更可能に：進行中列ヘッダーの「WIP n / 上限 N」をクリックして数値入力（1〜99・空欄＝上限なし）。保存先は localStorage（`KEYS.KANBAN_WIP_LIMIT`＝個人設定）。部署共通で持てる既存の設定テーブル／JSON列が無く、マイグレーション無しでは載せられないため。超過は従来どおり警告のみ。`kanbanWip.ts` に parse/serialize を追加。
+* カンバンの列内を期日順に（期日なしは末尾・同日は元の順）：`sortByDueDateStable`（kanbanOrder.ts）。`visibleTasks` の段で並べるので範囲選択・Ctrl+A の表示順と一致。
+* ワークロードの集計単位「件数／工数」切替（`KEYS.WORKLOAD_UNIT`・個人設定）：`lib/workload/workloadMetric.ts`。工数モードは工数合計でバー・並び順・過負荷判定（平均×1.5以上かつ下限8h＝1人日。件数モードの下限3件に相当する値で、既存に工数の定数が無いため新設）。工数未入力の件数を「未入力N件」で併記。
+* displaySettingsReset の対象に2キーを追加。テスト：kanbanWip・kanbanOrder・workloadMetric。MIN_CLIENT_VERSION は据え置き。

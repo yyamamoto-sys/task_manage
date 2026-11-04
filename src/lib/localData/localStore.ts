@@ -90,6 +90,10 @@ const KEYS = {
   GANTT_SHOW_OVERLOAD: "gantt_show_overload",
   // リスト
   LIST_VIEW_SETTINGS:  "list_view_settings",
+  // カンバン：進行中列のWIP上限（数値の文字列／"none"＝上限なし。未保存＝既定4。v3.201）
+  KANBAN_WIP_LIMIT:    "kanban_wip_limit",
+  // ワークロード：集計単位（"count"｜"hours"。v3.201）
+  WORKLOAD_UNIT:       "workload_unit",
   // ダッシュボード
   REMINDER_DAYS:       "reminder_days",
   STAGNANT_DAYS:       "stagnant_days_threshold",

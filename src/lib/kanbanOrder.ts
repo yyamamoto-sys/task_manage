@@ -23,3 +23,16 @@ export function computeKanbanOrderedIds(
   }
   return ids;
 }
+
+/**
+ * 列内の並びを期日順にする（v3.201）。期日なしは末尾、同日・どちらも期日なしは元の並びのまま
+ * （Array.prototype.sort は安定ソート）。元の配列は変えない。
+ */
+export function sortByDueDateStable<T extends { due_date: string | null }>(tasks: readonly T[]): T[] {
+  return [...tasks].sort((a, b) => {
+    if (a.due_date === b.due_date) return 0;
+    if (a.due_date === null) return 1;
+    if (b.due_date === null) return -1;
+    return a.due_date < b.due_date ? -1 : 1;
+  });
+}
