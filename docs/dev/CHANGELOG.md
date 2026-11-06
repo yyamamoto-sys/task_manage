@@ -8672,3 +8672,10 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 * グループ軸のドロップ不可：別PJのグループ・子タスク（親と同じグループに揃える `normalizeTaskSection` と食い違うため）。ドロップ不可の列は dragover で preventDefault しない（禁止カーソル）＋列ヘッダーに理由を出す。
 * 保存は状態変更と同じ `saveTask`（`updated_by`・変更履歴）。状態以外の軸では複数選択のまとめ移動はせず、ドラッグした1枚だけを動かす。WIP 警告は状態軸のみ。
 * テスト：`lib/__tests__/kanbanAxis.test.ts`・`lib/task/__tests__/assigneeMove.test.ts` 新設。MIN_CLIENT_VERSION は据え置き。
+
+# v3.205（2026-11-06）：ワークロードの週グリッド
+* ヘッダーに表示切替「一覧／週グリッド」（`KEYS.WORKLOAD_VIEW`）と週数（4・8・12。`KEYS.WORKLOAD_WEEKS`・既定8）。どちらも個人設定・displaySettingsReset の対象。件数／工数の切替（v3.201）はそのまま効く。
+* 週グリッド（`WorkloadWeekGrid.tsx`）：行＝表示部署のメンバー＋未割り当て、列＝今週（月曜始まり）から N 週。マス＝その週に期日が入るアクティブ（todo／進行中）タスクの件数または工数合計（工数モードは「＋未入力N」を併記）。共同担当は各担当者の行に出る。右端に「期間外」（期限超過・範囲より先）と「期日なし」の件数だけの枠。過負荷の色は既存と同じ式（平均×1.5以上かつ下限＝件数3／工数8h）を全メンバーのマス値に当てる（未割り当て行は基準に入れず色も付けない）。
+* マスの数字を押すとタスクのチップが並ぶ。チップを別のマスへドラッグ：行が変わる＝移動元の担当者を移動先へ入れ替え（`lib/task/assigneeMove.ts`・カンバンと共有）／列が変わる＝期日と（あれば）開始日を週の差×7日ずらす。保存は `saveTask`（updated_by・変更履歴・依存の自動ずらしと矛盾警告は既存経路）。保存後に「元に戻す」トースト（担当者・開始日・期日を直前の値へ。`skipCascade: true`＝自動ずらしされた後続は、そちらのトーストで戻す）。
+* 集計とドロップ後の値は `lib/workload/weekGrid.ts`（純粋関数。日付は UTC 暦日で数えタイムゾーンの影響を受けない）。`WorkloadView` に `currentUserId` を渡す（MainLayout）。
+* テスト：`lib/workload/__tests__/weekGrid.test.ts` 新設（週の境目・年またぎ・開始日なし・複数担当・未割り当て）。MIN_CLIENT_VERSION は据え置き。

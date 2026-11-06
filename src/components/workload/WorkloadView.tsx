@@ -11,7 +11,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { useAppStore, selectScopedTasks, selectScopedMembers, selectScopedTaskDependencies } from "../../stores/appStore";
 import type { Member, Project } from "../../lib/localData/types";
-import { KEYS } from "../../lib/localData/localStore";
+import { KEYS, active } from "../../lib/localData/localStore";
 import {
   formatHours, overloadThreshold as computeOverloadThreshold, parseStoredWorkloadUnit, sortWorkloadRows, workloadValue, type WorkloadUnit,
 } from "../../lib/workload/workloadMetric";
@@ -21,6 +21,10 @@ import { Avatar } from "../auth/UserSelectScreen";
 import { CustomSelect } from "../common/CustomSelect";
 import { EmptyState } from "../common/EmptyState";
 import { MemberDetailPanel } from "./MemberDetailPanel";
+import { WorkloadWeekGrid } from "./WorkloadWeekGrid";
+import {
+  WEEK_COUNT_OPTIONS, parseStoredWeekCount, parseStoredWorkloadViewMode, type WeekCount, type WorkloadViewMode,
+} from "../../lib/workload/weekGrid";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { withBellReserve } from "../../lib/layout/topRightBell";
 
@@ -28,9 +32,11 @@ interface Props {
   projects: Project[];
   /** メンバー詳細パネルからタスク行をクリックした時にタスク編集モーダルを開く（MainLayoutのaiEditTaskIdを流用） */
   onOpenTask: (taskId: string) => void;
+  /** 週グリッドでタスクを動かしたときの updated_by */
+  currentUserId: string;
 }
 
-export function WorkloadView({ projects, onOpenTask }: Props) {
+export function WorkloadView({ projects, onOpenTask, currentUserId }: Props) {
   const scopedTasks = useAppStore(selectScopedTasks);
   const scopedMembers = useAppStore(selectScopedMembers);
   const scopedTaskDependencies = useAppStore(selectScopedTaskDependencies);
@@ -44,6 +50,22 @@ export function WorkloadView({ projects, onOpenTask }: Props) {
   const setUnit = useCallback((u: WorkloadUnit) => {
     setUnitState(u);
     try { localStorage.setItem(KEYS.WORKLOAD_UNIT, u); } catch { /* 保存できなくても表示は変える */ }
+  }, []);
+
+  // 表示（既存の一覧／週グリッド）と週グリッドの週数。個人設定として localStorage に保存する
+  const [viewMode, setViewModeState] = useState<WorkloadViewMode>(() => {
+    try { return parseStoredWorkloadViewMode(localStorage.getItem(KEYS.WORKLOAD_VIEW)); } catch { return "list"; }
+  });
+  const setViewMode = useCallback((v: WorkloadViewMode) => {
+    setViewModeState(v);
+    try { localStorage.setItem(KEYS.WORKLOAD_VIEW, v); } catch { /* 保存できなくても表示は変える */ }
+  }, []);
+  const [weekCount, setWeekCountState] = useState<WeekCount>(() => {
+    try { return parseStoredWeekCount(localStorage.getItem(KEYS.WORKLOAD_WEEKS)); } catch { return parseStoredWeekCount(null); }
+  });
+  const setWeekCount = useCallback((n: WeekCount) => {
+    setWeekCountState(n);
+    try { localStorage.setItem(KEYS.WORKLOAD_WEEKS, String(n)); } catch { /* 保存できなくても表示は変える */ }
   }, []);
 
   // 選んでいたPJが一覧から消えた（削除・表示部署の切替）ときは「全プロジェクト」に戻す。
@@ -60,6 +82,7 @@ export function WorkloadView({ projects, onOpenTask }: Props) {
   );
 
   const memberById = useMemo(() => new Map(scopedMembers.map(m => [m.id, m])), [scopedMembers]);
+  const activeMembers = useMemo(() => active(scopedMembers), [scopedMembers]);
   const maxValue = Math.max(1, ...rows.map(r => workloadValue(r, unit)));
 
   // 「突出して多い」の目安：負荷を持つメンバーの平均の1.5倍以上、かつ下限以上（件数＝3件／工数＝8h。workloadMetric.ts）
@@ -113,6 +136,32 @@ export function WorkloadView({ projects, onOpenTask }: Props) {
               >{label}</button>
             ))}
           </div>
+          <div role="group" aria-label="表示" style={{ display: "flex", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", overflow: "hidden", flexShrink: 0 }}>
+            {([["list", "一覧"], ["week", "週グリッド"]] as const).map(([v, label]) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setViewMode(v)}
+                aria-pressed={viewMode === v}
+                title={v === "list" ? "メンバーごとの負荷を棒グラフで比べる" : "担当者×週で、期日が入る週ごとの負荷を見る（タスクをドラッグして担当や期日を動かせる）"}
+                style={{
+                  padding: "4px 12px", fontSize: "11px", border: "none", cursor: "pointer", whiteSpace: "nowrap",
+                  background: viewMode === v ? "var(--color-brand-light)" : "transparent",
+                  color: viewMode === v ? "var(--color-brand)" : "var(--color-text-secondary)",
+                  fontWeight: viewMode === v ? 600 : 400,
+                }}
+              >{label}</button>
+            ))}
+          </div>
+          {viewMode === "week" && (
+            <div style={{ flexShrink: 0, minWidth: 90 }}>
+              <CustomSelect
+                value={String(weekCount)}
+                onChange={v => setWeekCount(parseStoredWeekCount(v))}
+                options={WEEK_COUNT_OPTIONS.map(n => ({ value: String(n), label: `${n}週` }))}
+              />
+            </div>
+          )}
           {unassignedCount > 0 && (
             <span style={{
               fontSize: "11px", padding: "2px 9px", borderRadius: "var(--radius-full)",
@@ -124,6 +173,16 @@ export function WorkloadView({ projects, onOpenTask }: Props) {
         </div>
 
         <div style={{ flex: 1, overflow: "auto" }}>
+          {viewMode === "week" ? (
+            <WorkloadWeekGrid
+              members={activeMembers}
+              tasks={filteredTasks}
+              unit={unit}
+              weekCount={weekCount}
+              currentUserId={currentUserId}
+              onOpenTask={onOpenTask}
+            />
+          ) : (
           <div style={{ padding: "16px 20px", maxWidth: "900px" }}>
             {rows.length === 0 ? (
               <EmptyState icon="🧑‍🤝‍🧑" title="メンバーが登録されていません" hint="設定の「メンバー」からメンバーを追加すると、ここに負荷が表示されます。" />
@@ -150,10 +209,11 @@ export function WorkloadView({ projects, onOpenTask }: Props) {
               </div>
             )}
           </div>
+          )}
         </div>
       </div>
 
-      {selectedMember && (
+      {viewMode === "list" && selectedMember && (
         <MemberDetailPanel
           member={selectedMember}
           tasks={filteredTasks}

@@ -96,6 +96,9 @@ const KEYS = {
   KANBAN_WIP_LIMIT:    "kanban_wip_limit",
   // ワークロード：集計単位（"count"｜"hours"。v3.201）
   WORKLOAD_UNIT:       "workload_unit",
+  // ワークロード：表示（"list"｜"week"）と週グリッドの週数（4｜8｜12。v3.205）
+  WORKLOAD_VIEW:       "workload_view",
+  WORKLOAD_WEEKS:      "workload_weeks",
   // カンバン：列の軸（"status"｜"assignee"｜"priority"｜"group"。v3.204）
   KANBAN_AXIS:         "kanban_axis",
   // ダッシュボード

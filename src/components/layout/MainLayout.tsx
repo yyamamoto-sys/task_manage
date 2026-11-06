@@ -1479,7 +1479,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
               />
             )}
             {viewMode === "workload" && (
-              <WorkloadView projects={projects} onOpenTask={setAiEditTaskId} />
+              <WorkloadView projects={projects} onOpenTask={setAiEditTaskId} currentUserId={currentUser.id} />
             )}
             {viewMode !== "dashboard" && viewMode !== "kanban" && viewMode !== "gantt" && viewMode !== "list" && viewMode !== "admin" && viewMode !== "workload" && (
               <ComingSoon view={viewMode} />
