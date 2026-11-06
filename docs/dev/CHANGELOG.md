@@ -8649,3 +8649,10 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 * カンバンの列内を期日順に（期日なしは末尾・同日は元の順）：`sortByDueDateStable`（kanbanOrder.ts）。`visibleTasks` の段で並べるので範囲選択・Ctrl+A の表示順と一致。
 * ワークロードの集計単位「件数／工数」切替（`KEYS.WORKLOAD_UNIT`・個人設定）：`lib/workload/workloadMetric.ts`。工数モードは工数合計でバー・並び順・過負荷判定（平均×1.5以上かつ下限8h＝1人日。件数モードの下限3件に相当する値で、既存に工数の定数が無いため新設）。工数未入力の件数を「未入力N件」で併記。
 * displaySettingsReset の対象に2キーを追加。テスト：kanbanWip・kanbanOrder・workloadMetric。MIN_CLIENT_VERSION は据え置き。
+
+# v3.202（2026-11-06）：リストの列の表示／非表示
+* ツールバーに「▥ 列」（チェックリストのポップオーバー・開いたまま切替・`ToolbarMenu` 流用）。☐とタスク名は常に表示（一覧に出さない）。期日・担当者・状態・優先度・工数は個人ごとに出し入れ。
+* 保存先は localStorage の `KEYS.LIST_VIEW_SETTINGS` 内の `columns`（表示する列キーの配列）。マイグレーション・Edge Function なし。`lib/list/listColumns.ts` の `parseVisibleColumns` が、配列でない・未知の列名を含む値を全列表示へ戻す（一部だけ救わない）。
+* 列幅定義は `ListView.tsx` の `LIST_COLS` 1か所に集約。ヘッダー・colSpan・クイック追加行は隠した後の `cols` から作り、`ListTaskRow` は `shownCols`（useMemoで参照安定）で同じ列を出し入れ。状態列を隠すとクイック追加行の「✕（やめる）」の置き場が無くなるため、タスク名セル側に出す。
+* 副次：uiGuide のリスト「状態」列の記述（表示のみ）が v3.199 以降の実態とずれていたため直した。
+* テスト：`lib/list/__tests__/listColumns.test.ts` 新設。MIN_CLIENT_VERSION は据え置き（保存形式は追加キーのみ・未知値は既定へ）。

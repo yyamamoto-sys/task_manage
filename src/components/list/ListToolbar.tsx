@@ -33,12 +33,13 @@ import { createPortal } from "react-dom";
 import { useFloatingPanel } from "../../hooks/useFloatingPanel";
 import type { Member, Task } from "../../lib/localData/types";
 import { withBellReserve } from "../../lib/layout/topRightBell";
+import { COLUMN_LABELS, TOGGLEABLE_COLUMNS, type ToggleableColumn } from "../../lib/list/listColumns";
 
 export type GroupBy = "project" | "assignee" | "status" | "tag";
 export type SortKey = "name" | "due_date" | "priority" | "estimated_hours" | "status" | "assignee" | "manual";
 export type SortDir = "asc" | "desc";
 
-type MenuId = "group" | "filter" | "sort" | "more";
+type MenuId = "group" | "filter" | "sort" | "columns" | "more";
 
 const GROUP_OPTIONS: { value: GroupBy; label: string; desc: string }[] = [
   { value: "project",  label: "PJ別",     desc: "プロジェクト別にまとめる" },
@@ -277,6 +278,10 @@ export interface ListToolbarProps {
   onChangeSortKey: (k: SortKey) => void;
   onToggleManualSort: () => void;
   onSortByNameNumber: () => void;
+  // 列の表示／非表示（v3.202）
+  visibleColumns: readonly ToggleableColumn[];
+  onToggleColumn: (key: ToggleableColumn) => void;
+  onShowAllColumns: () => void;
   // 検索
   searchText: string;
   onChangeSearchText: (v: string) => void;
@@ -301,6 +306,7 @@ export function ListToolbar({
   filterHideDone, onToggleHideDone,
   activeFilterCount, onClearFilters,
   sortKey, sortDir, onChangeSortKey, onToggleManualSort, onSortByNameNumber,
+  visibleColumns, onToggleColumn, onShowAllColumns,
   searchText, onChangeSearchText, searchOpen, setSearchOpen, searchInputRef,
   onExportCSV,
   taskCount, members, currentUserId,
@@ -565,6 +571,48 @@ export function ListToolbar({
               <span aria-hidden style={{ width: 12, flexShrink: 0 }} />
               <span>🔢 タスク名の番号順に並べ直す</span>
             </button>
+          </>
+        )}
+      </ToolbarMenu>
+
+      {/* ③-2 列（v3.202）：☐とタスク名は常に表示のため一覧に出さない。開いたままチェックを切り替えられる */}
+      <ToolbarMenu
+        id="columns" openMenu={openMenu} setOpenMenu={setOpenMenu}
+        label="▥ 列" ariaLabel="表示する列" title="表の列の表示・非表示（この設定はお使いのブラウザに保存されます）"
+        active={visibleColumns.length < TOGGLEABLE_COLUMNS.length}
+        panelWidth={200}
+      >
+        {() => (
+          <>
+            <div style={MENU_HEADING_STYLE}>表示する列</div>
+            {TOGGLEABLE_COLUMNS.map(k => {
+              const on = visibleColumns.includes(k);
+              return (
+                <button
+                  key={k}
+                  type="button"
+                  role="menuitemcheckbox"
+                  aria-checked={on}
+                  onClick={() => onToggleColumn(k)}
+                  style={MENU_ITEM_STYLE}
+                >
+                  <span aria-hidden style={{ width: 12, flexShrink: 0 }}>{on ? "✓" : ""}</span>
+                  <span>{COLUMN_LABELS[k]}</span>
+                </button>
+              );
+            })}
+            <div style={{ padding: "2px 10px 4px 30px", fontSize: "10px", color: "var(--color-text-tertiary)" }}>
+              ☐とタスク名は常に表示されます
+            </div>
+            {visibleColumns.length < TOGGLEABLE_COLUMNS.length && (
+              <>
+                <div style={MENU_DIVIDER_STYLE} />
+                <button type="button" role="menuitem" onClick={onShowAllColumns} style={{ ...MENU_ITEM_STYLE, color: "var(--color-text-tertiary)" }}>
+                  <span aria-hidden style={{ width: 12, flexShrink: 0 }} />
+                  <span>すべて表示</span>
+                </button>
+              </>
+            )}
           </>
         )}
       </ToolbarMenu>

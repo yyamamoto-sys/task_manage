@@ -168,6 +168,19 @@ export function ListInlineAddRow({
                   }}
                 >詳細を入れて追加</button>
               </span>
+              {/* 状態列を隠しているときは、やめるボタンの置き場（状態列）が無いのでここに出す */}
+              {!colKeys.includes("status") && (
+                <button
+                  type="button"
+                  onClick={onCancel}
+                  aria-label="入力をやめる"
+                  title="入力をやめる（Esc）"
+                  style={{
+                    padding: "0 4px", fontSize: "10px", color: "var(--color-text-tertiary)",
+                    border: "none", background: "transparent", cursor: "pointer", flexShrink: 0,
+                  }}
+                >✕</button>
+              )}
             </div>
           </td>
         );

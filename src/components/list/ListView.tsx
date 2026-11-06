@@ -33,6 +33,9 @@ import { confirmDialog } from "../../lib/dialog";
 import { showToast } from "../common/Toast";
 import { formatErrorForUser } from "../../lib/errorMessage";
 import { InlineBadgeSelect, type BadgeOption } from "../common/InlineBadgeSelect";
+import {
+  parseVisibleColumns, toggleColumn, filterVisibleColumns, DEFAULT_VISIBLE_COLUMNS, type ToggleableColumn,
+} from "../../lib/list/listColumns";
 import { ListToolbar, type GroupBy, type SortKey, type SortDir } from "./ListToolbar";
 import { ListInlineAddRow } from "./ListInlineAddRow";
 import { useListInlineAdd } from "./useListInlineAdd";
@@ -127,6 +130,19 @@ function lsSet(field: string, value: unknown) {
   } catch { /* ignore */ }
 }
 
+// 列順（v3.199）：☐ → 期日 → タスク名 → 担当者 → 状態 → 優先度 → 工数。表示は詳細のみ（旧「シンプル」切替は廃止）。
+// 列幅の定義はここ1か所（v3.202）。☐・タスク名以外は個人設定で隠せる（lib/list/listColumns.ts）。
+// ヘッダー・colSpan・クイック追加行は、隠した後の cols から作る。行（ListTaskRow）は shownCols で同じ列を出し入れする
+const LIST_COLS: { key: string; label: string; w: string; sortKey?: SortKey }[] = [
+  { key: "select",          label: "",         w: "32px" },
+  { key: "due_date",        label: "期日",     w: "112px", sortKey: "due_date" },
+  { key: "name",            label: "タスク名", w: "auto",  sortKey: "name" },
+  { key: "assignee",        label: "担当者",   w: "90px",  sortKey: "assignee" },
+  { key: "status",          label: "状態",     w: "75px",  sortKey: "status" },
+  { key: "priority",        label: "優先度",   w: "55px",  sortKey: "priority" },
+  { key: "estimated_hours", label: "工数",     w: "52px",  sortKey: "estimated_hours" },
+];
+
 export function ListView({ currentUser, selectedProject, projects, krTaskIds, myOnlyRequest = 0 }: Props) {
   const rawTasks   = useAppStore(selectScopedTasks);
   const taskDependencies = useAppStore(selectScopedTaskDependencies);
@@ -160,7 +176,13 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, my
   const [sortKey,        setSortKeyState       ] = useState<SortKey>(() => lsGet("sortKey", "due_date"));
   const [sortDir,        setSortDirState       ] = useState<SortDir>(() => lsGet("sortDir", "asc"));
 
-  const setGroupBy       = (v: GroupBy)                   => { setGroupByState(v);        lsSet("groupBy", v); };
+  // 表示する列（v3.202・個人設定）。壊れた値は parseVisibleColumns が全列表示に戻す
+  const [visibleColumns, setVisibleColumnsState] = useState<ToggleableColumn[]>(() => parseVisibleColumns(lsGet<unknown>("columns", undefined)));
+  const setVisibleColumns = (v: ToggleableColumn[]) => { setVisibleColumnsState(v); lsSet("columns", v); };
+  const cols = useMemo(() => filterVisibleColumns(LIST_COLS, visibleColumns), [visibleColumns]);
+  const shownCols = useMemo<ReadonlySet<string>>(() => new Set(cols.map(c => c.key)), [cols]);
+
+  const setGroupBy       = (v: GroupBy)                 => { setGroupByState(v);        lsSet("groupBy", v); };
   const setFilterStatus  = (v: Task["status"]|"all")      => { setFilterStatusState(v);   lsSet("filterStatus", v); };
   const setFilterPriority= (v: "all"|"high"|"mid"|"low")  => { setFilterPriorityState(v); lsSet("filterPriority", v); };
 
@@ -776,17 +798,6 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, my
     selection: { taskId: editingTaskId ?? selectedTaskId, selectedCount: selectedIds.size },
   }));
 
-  // 列順（v3.199）：☐ → 期日 → タスク名 → 担当者 → 状態 → 優先度 → 工数。表示は詳細のみ（旧「シンプル」切替は廃止）
-  const cols: { key: string; label: string; w: string; sortKey?: SortKey }[] = [
-    { key: "select",          label: "",         w: "32px" },
-    { key: "due_date",        label: "期日",     w: "112px", sortKey: "due_date" },
-    { key: "name",            label: "タスク名", w: "auto",  sortKey: "name" },
-    { key: "assignee",        label: "担当者",   w: "90px",  sortKey: "assignee" },
-    { key: "status",          label: "状態",     w: "75px",  sortKey: "status" },
-    { key: "priority",        label: "優先度",   w: "55px",  sortKey: "priority" },
-    { key: "estimated_hours", label: "工数",     w: "52px",  sortKey: "estimated_hours" },
-  ];
-
   // アクティブフィルター数（バッジ用）
   const activeFilterCount = [
     filterStatus !== "all", filterPriority !== "all",
@@ -852,6 +863,9 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, my
             if (enable) { setGroupByState("project"); lsSet("groupBy", "project"); }
           }}
           onSortByNameNumber={handleSortByNameNumber}
+          visibleColumns={visibleColumns}
+          onToggleColumn={k => setVisibleColumns(toggleColumn(visibleColumns, k))}
+          onShowAllColumns={() => setVisibleColumns([...DEFAULT_VISIBLE_COLUMNS])}
           searchText={searchText}
           onChangeSearchText={setSearchText}
           searchOpen={searchOpen}
@@ -1020,6 +1034,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, my
                             myZone={myZone}
                             dropBlocked={dragBlockedIds !== null && dragBlockedIds.has(task.id)}
                             groupBy={groupBy}
+                            shownCols={shownCols}
                             currentUser={currentUser}
                             draggingId={draggingId}
                             saveTask={saveTask}
@@ -1421,6 +1436,8 @@ interface ListTaskRowProps {
   /** ドラッグ中のタスク（と子孫）の行＝ここへは落とせない（循環になる） */
   dropBlocked: boolean;
   groupBy: GroupBy;
+  /** 表示している列（v3.202）。☐・タスク名は常に描画する。参照安定（memo のため useMemo で作る） */
+  shownCols: ReadonlySet<string>;
   currentUser: Member;
   draggingId: string | null;
   saveTask: (task: Task) => Promise<void>;
@@ -1448,7 +1465,7 @@ const ROW_TD_PADDING_FIRST = "3px 6px 3px 12px";
 const ListTaskRow = memo(function ListTaskRow({
   task, depth, parentNote, isParent, closesGroup, isEven, pj, todoItem,
   dispStatus, isSelected, isChecked, canAddChild, isCollapsed, prog,
-  canDrag, showHandleCol, myZone, dropBlocked, groupBy, currentUser,
+  canDrag, showHandleCol, myZone, dropBlocked, groupBy, shownCols, currentUser,
   draggingId, saveTask, onRowClick, onCheckboxClick, toggleCollapse,
   openAddChild, setDraggingId, setDropZone, handleTaskDrop,
 }: ListTaskRowProps) {
@@ -1532,7 +1549,7 @@ const ListTaskRow = memo(function ListTaskRow({
         </div>
       </td>
       {/* 期日（インライン編集） */}
-      <td style={{ padding: ROW_TD_PADDING, whiteSpace: "nowrap" }}
+      {shownCols.has("due_date") && <td style={{ padding: ROW_TD_PADDING, whiteSpace: "nowrap" }}
         onClick={e => e.stopPropagation()}>
         {task.start_date && (
           <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>
@@ -1545,7 +1562,7 @@ const ListTaskRow = memo(function ListTaskRow({
           relativeStatus={dispStatus}
           onSave={due_date => saveTask({ ...task, due_date, updated_by: currentUser.id })}
         />
-      </td>
+      </td>}
       {/* タスク名（depth に応じたインデント＋親トグル＋子注記） */}
       <td style={{ padding: ROW_TD_PADDING, paddingLeft: 10 + indentLevelOf(depth) * 22, maxWidth: 0, overflow: "hidden" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
@@ -1642,7 +1659,7 @@ const ListTaskRow = memo(function ListTaskRow({
         )}
       </td>
       {/* 担当者（インライン編集） */}
-      <td style={{ padding: ROW_TD_PADDING, whiteSpace: "nowrap" }}
+      {shownCols.has("assignee") && <td style={{ padding: ROW_TD_PADDING, whiteSpace: "nowrap" }}
         onClick={e => e.stopPropagation()}>
         {/* inline-block のままだとベースライン下の余白（約4px）が行高に乗るため flex で包む */}
         <div style={{ display: "flex", alignItems: "center" }}>
@@ -1652,9 +1669,9 @@ const ListTaskRow = memo(function ListTaskRow({
             onSave={ids => saveTask({ ...task, assignee_member_ids: ids, assignee_member_id: ids[0] ?? "", updated_by: currentUser.id })}
           />
         </div>
-      </td>
+      </td>}
       {/* 状態（クリックでその場変更。親は導出値＝子から自動算出のためバッジのみ） */}
-      <td style={{ padding: ROW_TD_PADDING, whiteSpace: "nowrap" }}
+      {shownCols.has("status") && <td style={{ padding: ROW_TD_PADDING, whiteSpace: "nowrap" }}
         onClick={e => e.stopPropagation()}>
         {isParent ? (
           <span title="子から自動算出" style={{
@@ -1669,9 +1686,9 @@ const ListTaskRow = memo(function ListTaskRow({
             title="クリックで状態を変更"
           />
         )}
-      </td>
+      </td>}
       {/* 優先度（クリックでその場変更） */}
-      <td style={{ padding: ROW_TD_PADDING, whiteSpace: "nowrap" }}
+      {shownCols.has("priority") && <td style={{ padding: ROW_TD_PADDING, whiteSpace: "nowrap" }}
         onClick={e => e.stopPropagation()}>
         <InlineBadgeSelect
           value={task.priority ?? null}
@@ -1680,9 +1697,9 @@ const ListTaskRow = memo(function ListTaskRow({
           onSelect={priority => { void saveTask({ ...task, priority, updated_by: currentUser.id }); }}
           title="クリックで優先度を変更"
         />
-      </td>
+      </td>}
       {/* 工数 */}
-      {(
+      {shownCols.has("estimated_hours") && (
         <td style={{ padding: ROW_TD_PADDING, color: "var(--color-text-tertiary)", textAlign: "right" }}>
           {task.estimated_hours != null ? `${task.estimated_hours}h` : "—"}
         </td>
