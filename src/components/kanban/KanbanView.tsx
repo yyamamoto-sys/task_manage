@@ -1,7 +1,7 @@
 // src/components/kanban/KanbanView.tsx
 import { useState, useMemo, useCallback, useRef, useEffect, memo, Fragment } from "react";
 import type { MouseEvent as ReactMouseEvent, KeyboardEvent as ReactKeyboardEvent, DragEvent as ReactDragEvent } from "react";
-import { useAppStore, selectScopedTasks, selectScopedProjects } from "../../stores/appStore";
+import { useAppStore, selectScopedTasks, selectScopedProjects, selectScopedMembers } from "../../stores/appStore";
 import { sharedProjectId } from "../../lib/members/assigneeCandidates";
 import { useAssigneeCandidates } from "../../hooks/useAssigneeCandidates";
 import { useIsMobile } from "../../hooks/useIsMobile";
@@ -38,6 +38,11 @@ import { DeliverableLink } from "../task/DeliverableLink";
 import { useSnapshotProvider } from "../../hooks/useSnapshotProvider";
 import { shouldIgnoreCommandKey } from "../../lib/shortcuts/keys";
 import { isModalOpen } from "../../lib/autoUpdate";
+import { showToast } from "../common/Toast";
+import {
+  KANBAN_AXES, KANBAN_AXIS_LABEL, buildAxisColumns, computeAxisDropPatch, dropRejectReason, parseStoredKanbanAxis,
+  type AxisContext, type KanbanAxis,
+} from "../../lib/kanbanAxis";
 
 interface Props {
   currentUser: Member;
@@ -54,6 +59,7 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
   const saveTask         = useAppStore(s => s.saveTask);
   const scopedProjects   = useAppStore(selectScopedProjects);
   const projectSections  = useAppStore(s => s.projectSections);
+  const scopedMembers    = useAppStore(selectScopedMembers);
   const isMobile = useIsMobile();
 
   const tasks = useMemo(() => active(allTasks), [allTasks]);
@@ -80,11 +86,13 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
   // null=閉じている。値ありならその列のステータスでQuickAddTaskModalを開く
   const [addingStatus, setAddingStatus] = useState<Task["status"] | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
-  const [dragOverStatus, setDragOverStatus] = useState<Task["status"] | null>(null);
+  const [dragOverStatus, setDragOverStatus] = useState<string | null>(null);
+  // ドラッグを始めた列のキー（担当者軸で、複数担当のどの担当者を入れ替えるかに使う）
+  const dragFromKeyRef = useRef<string>("");
   // ドロップ位置プレースホルダ：ドラッグ中のカードがどの列の何番目（0=先頭〜colTasks.length=末尾）に
   // 入るかを表す。並び順自体は持たない実装（display_orderで管理していない）ため、ここは純粋に
   // 視覚フィードバックのみ。ドロップの確定ロジック（handleDrop）はこの値を一切参照しない
-  const [dropIndicator, setDropIndicator] = useState<{ status: Task["status"]; index: number } | null>(null);
+  const [dropIndicator, setDropIndicator] = useState<{ status: string; index: number } | null>(null);
   // 各列のカード一覧コンテナ実要素（DOM実測でプレースホルダの挿入位置を求めるための参照。
   // ガントのB2依存矢印と同じ「座標を数式で再計算せず実測する」設計方針を踏襲）
   const cardListRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -102,6 +110,14 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
   const commitWipLimit = useCallback((limit: number | null) => {
     setWipLimitState(limit);
     try { localStorage.setItem(KEYS.KANBAN_WIP_LIMIT, serializeWipLimit(limit)); } catch { /* 保存できなくても表示は変える */ }
+  }, []);
+  // 列の軸（個人設定＝localStorage。既定＝状態）
+  const [axis, setAxisState] = useState<KanbanAxis>(() => {
+    try { return parseStoredKanbanAxis(localStorage.getItem(KEYS.KANBAN_AXIS)); } catch { return "status"; }
+  });
+  const setAxis = useCallback((a: KanbanAxis) => {
+    setAxisState(a);
+    try { localStorage.setItem(KEYS.KANBAN_AXIS, a); } catch { /* 保存できなくても表示は変える */ }
   }, []);
   // 保留(on_hold)・中止(cancelled)は既定では列に表示しない（🙈完了を隠すの逆＝既定OFFの「見せる」トグル）
   const [showPaused, setShowPaused] = useState(false);
@@ -161,10 +177,27 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
 
   // Ctrl/Cmd+A・Shift+クリック範囲選択の対象となる「現在の表示順」
   // （列＝todo→in_progress→done を左→右、各列内は上→下でフラット化。hideDone中はdone列を除外）
-  const orderedTaskIds = useMemo(
-    () => computeKanbanOrderedIds(visibleTasks, hideDone, showPaused),
-    [visibleTasks, hideDone, showPaused],
-  );
+  const axisCtx = useMemo<AxisContext>(() => ({
+    members: scopedMembers.filter(m => !m.is_deleted).map(m => ({ id: m.id, display_name: m.display_name })),
+    sections: projectSections,
+    projects: projects.map(p => ({ id: p.id, name: p.name })),
+    selectedProjectId: selectedProject?.id ?? null,
+  }), [scopedMembers, projectSections, projects, selectedProject?.id]);
+  // 状態以外の軸の列。完了・保留・中止のカードは「完了を隠す」「保留・中止を表示」に従う（状態軸と同じ条件）
+  const axisColumns = useMemo(() => {
+    if (axis === "status") return [];
+    const shown = visibleTasks.filter(t =>
+      !(hideDone && t.status === "done") && !(!showPaused && (t.status === "on_hold" || t.status === "cancelled")));
+    return buildAxisColumns(axis, shown, axisCtx);
+  }, [axis, visibleTasks, hideDone, showPaused, axisCtx]);
+  const orderedTaskIds = useMemo(() => {
+    if (axis === "status") return computeKanbanOrderedIds(visibleTasks, hideDone, showPaused);
+    // 担当者軸は同じカードが複数の列に出る。最初に出た位置だけを数える
+    const seen = new Set<string>();
+    const ids: string[] = [];
+    for (const c of axisColumns) for (const t of c.tasks) if (!seen.has(t.id)) { seen.add(t.id); ids.push(t.id); }
+    return ids;
+  }, [axis, axisColumns, visibleTasks, hideDone, showPaused]);
 
   // 表示中のPJ/KR/自分フィルタが変わって見えなくなったカードは選択から外す
   useEffect(() => {
@@ -194,7 +227,10 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
   }, [tasks, saveTask, currentUser.id]);
 
   // TaskCard に渡すコールバックは useCallback で参照を固定する（React.memo が効くようにするため）
-  const handleDragStart = useCallback((taskId: string) => setDraggingId(taskId), []);
+  const handleDragStart = useCallback((taskId: string, colKey: string) => {
+    dragFromKeyRef.current = colKey;
+    setDraggingId(taskId);
+  }, []);
   // ドラッグ終了（ドロップ成功／キャンセルの両方でdragendは必ず発火する）でプレースホルダ・
   // ハイライトを消す。handleDropの成功パスでも重ねて呼ばれるが、状態を消すだけなので無害
   const handleDragEnd = useCallback(() => {
@@ -207,7 +243,10 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
   // 列内のドロップ挿入位置を実測して求める。カード要素（data-kanban-card）の中点Yと
   // マウスのclientYを比較し、最初に「マウスより下にある」カードの手前を挿入位置とする
   // （全カードより下ならその列の末尾＝colTasks.length）
-  const handleColumnDragOver = useCallback((e: ReactDragEvent<HTMLDivElement>, status: Task["status"]) => {
+  const handleColumnDragOver = useCallback((e: ReactDragEvent<HTMLDivElement>, status: string) => {
+    // 状態以外の軸で落とせない列は preventDefault しない＝ドロップ不可のカーソルになり、drop も発火しない
+    const dragged = draggingId ? tasks.find(t => t.id === draggingId) : undefined;
+    if (axis !== "status" && dragged && dropRejectReason(axis, dragged, status, axisCtx)) return;
     e.preventDefault();
     if (!draggingId) return;
     const clientY = e.clientY;
@@ -224,7 +263,7 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
       }
       setDropIndicator(prev => (prev && prev.status === status && prev.index === index) ? prev : { status, index });
     });
-  }, [draggingId]);
+  }, [draggingId, tasks, axis, axisCtx]);
 
   // カードクリック：修飾キー無し＝従来どおり詳細を開く＋アンカー更新。Ctrl/Cmd+クリック＝
   // 選択のみトグル（詳細は開かない）。Shift+クリック＝アンカー〜クリック先の範囲を現在の
@@ -265,6 +304,21 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
     }
     setDragOverStatus(null);
     setDropIndicator(null);
+  };
+
+  // 状態以外の軸のドロップ：その軸の値だけを変えて、状態変更と同じ saveTask 経路で保存する（編集履歴にも載る）。
+  // 複数選択のまとめ移動は状態軸だけ（担当者の入れ替えなどはカードごとに結果が違うため、ドラッグした1枚だけを動かす）
+  const handleAxisDrop = (toKey: string) => {
+    const dragged = draggingId ? tasks.find(t => t.id === draggingId) : undefined;
+    setDraggingId(null);
+    setDragOverStatus(null);
+    setDropIndicator(null);
+    if (!dragged || axis === "status") return;
+    const reason = dropRejectReason(axis, dragged, toKey, axisCtx);
+    if (reason) { showToast(reason, "info"); return; }
+    const patch = computeAxisDropPatch(axis, dragged, dragFromKeyRef.current, toKey, axisCtx);
+    if (!patch) return;
+    saveTask({ ...dragged, ...patch, updated_by: currentUser.id }).catch(() => {});
   };
 
   // ===== キーボードショートカット（Ctrl/Cmd+A=表示中の全選択／Esc=選択解除） =====
@@ -351,6 +405,14 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
             />
           </div>
         )}
+        {/* 列の軸（状態／担当者／優先度／グループ。個人設定） */}
+        <div style={{ flexShrink: 0, minWidth: 140 }}>
+          <CustomSelect
+            value={axis}
+            onChange={v => setAxis(parseStoredKanbanAxis(v))}
+            options={KANBAN_AXES.map(a => ({ value: a, label: `列：${KANBAN_AXIS_LABEL[a]}` }))}
+          />
+        </div>
         {/* 完了を隠すトグル */}
         <button onClick={() => setHideDone(v => !v)} style={{
           padding: "3px 10px", fontSize: "10px", borderRadius: "var(--radius-full)", cursor: "pointer",
@@ -398,7 +460,7 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
         WebkitOverflowScrolling: "touch",
         alignItems: "flex-start",
       }}>
-        {(["todo", "in_progress", "done"] as const).map(status => {
+        {axis === "status" && (["todo", "in_progress", "done"] as const).map(status => {
           const colTasks = visibleTasks.filter(t => t.status === status);
           const colSummary = computeGroupSummary(colTasks);
           const cfg = { label: TASK_STATUS_LABEL[status], ...TASK_STATUS_STYLE[status] };
@@ -543,6 +605,7 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
                           parentName={task.parent_task_id ? taskNameById.get(task.parent_task_id) : undefined}
                           childCount={childCountByParent.get(task.id) ?? 0}
                           progress={parentDerivedById.get(task.id)}
+                          colKey={status}
                           onDragStart={handleDragStart}
                           onDragEnd={handleDragEnd}
                           onStatusChange={handleStatusChange}
@@ -582,7 +645,7 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
         {/* ===== 保留・中止列（showPaused=true のときのみ。既存3列とは独立した追加ブロック。
             既存3列のD&D・WIP・一括操作ロジックには一切手を入れず、同じ土台（handleColumnDragOver/
             handleDrop/TaskCard）を流用するだけの薄い追加として実装する） ===== */}
-        {showPaused && (["on_hold", "cancelled"] as const).map(status => {
+        {axis === "status" && showPaused && (["on_hold", "cancelled"] as const).map(status => {
           const colTasks = visibleTasks.filter(t => t.status === status);
           const cfg = { label: TASK_STATUS_LABEL[status], ...TASK_STATUS_STYLE[status] };
           const isDropTarget = dragOverStatus === status;
@@ -644,6 +707,7 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
                       parentName={task.parent_task_id ? taskNameById.get(task.parent_task_id) : undefined}
                       childCount={childCountByParent.get(task.id) ?? 0}
                       progress={parentDerivedById.get(task.id)}
+                      colKey={status}
                       onDragStart={handleDragStart}
                       onDragEnd={handleDragEnd}
                       onStatusChange={handleStatusChange}
@@ -673,6 +737,119 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
                 >
                   ＋ タスクを追加
                 </button>
+              </div>
+            </div>
+          );
+        })}
+
+        {/* ===== 状態以外の軸の列（担当者／優先度／グループ） ===== */}
+        {axis !== "status" && axisColumns.map(col => {
+          const isDropTarget = dragOverStatus === col.key;
+          const dragged = draggingId ? tasks.find(t => t.id === draggingId) : undefined;
+          const reject = dragged ? dropRejectReason(axis, dragged, col.key, axisCtx) : null;
+          const colSummary = computeGroupSummary(col.tasks);
+          const pStyle = axis === "priority" ? TASK_PRIORITY_STYLE[col.key] : undefined;
+          const cfg = {
+            bg: pStyle?.bg ?? "var(--color-bg-tertiary)",
+            color: pStyle?.color ?? "var(--color-text-secondary)",
+            border: "var(--color-border-primary)",
+          };
+          return (
+            // ドラッグ&ドロップ専用の列。マウス操作専用でキーボード代替手段はない
+            // eslint-disable-next-line jsx-a11y/no-static-element-interactions
+            <div
+              key={col.key}
+              style={{
+                width: isMobile ? "calc(100vw - 40px)" : "260px",
+                flexShrink: 0,
+                scrollSnapAlign: isMobile ? "start" : undefined,
+                borderRadius: "var(--radius-lg)",
+                border: isDropTarget ? `2px solid ${reject ? "var(--color-border-danger)" : cfg.border}` : "2px solid transparent",
+                background: isDropTarget ? (reject ? "var(--color-bg-danger)" : cfg.bg) : "transparent",
+                cursor: isDropTarget && reject ? "not-allowed" : undefined,
+                transition: "border-color 0.15s, background 0.15s",
+                padding: "2px",
+              }}
+              onDragOver={e => handleColumnDragOver(e, col.key)}
+              onDragEnter={() => setDragOverStatus(col.key)}
+              onDragLeave={e => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                  setDragOverStatus(null);
+                  setDropIndicator(prev => (prev && prev.status === col.key) ? null : prev);
+                }
+              }}
+              onDrop={() => handleAxisDrop(col.key)}
+            >
+              <div style={{
+                display: "flex", flexDirection: "column", gap: "5px",
+                padding: "6px 10px", borderRadius: "var(--radius-md)",
+                background: cfg.bg, marginBottom: "8px",
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: cfg.color, display: "inline-block", flexShrink: 0 }} />
+                  <span title={col.label} style={{ fontSize: "12px", fontWeight: "500", color: cfg.color, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {col.label}
+                  </span>
+                  <span style={{
+                    fontSize: "10px", color: cfg.color, opacity: 0.8,
+                    background: "rgba(255,255,255,0.6)", padding: "1px 6px",
+                    borderRadius: "var(--radius-full)", border: `1px solid ${cfg.border}`,
+                  }}>
+                    {col.tasks.length}
+                  </span>
+                </div>
+                {isDropTarget && reject && (
+                  <div role="status" style={{ fontSize: "10px", color: "var(--color-text-danger)" }}>🚫 {reject}</div>
+                )}
+                {colSummary.total > 0 && (
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <span
+                      title={`${colSummary.doneCount}/${colSummary.total}（${Math.round(colSummary.completionRate * 100)}%）`}
+                      style={{ flex: 1, height: "3px", borderRadius: "var(--radius-full)", background: "rgba(255,255,255,0.6)", overflow: "hidden", display: "inline-block" }}
+                    >
+                      <span style={{ display: "block", height: "100%", width: `${Math.round(colSummary.completionRate * 100)}%`, background: cfg.color, borderRadius: "var(--radius-full)" }} />
+                    </span>
+                    {colSummary.totalHours != null && (
+                      <span style={{ fontSize: "9px", color: cfg.color, opacity: 0.8, whiteSpace: "nowrap", flexShrink: 0 }}>
+                        計 {colSummary.totalHours}h
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div
+                style={{ display: "flex", flexDirection: "column", gap: "6px" }}
+                ref={el => { cardListRefs.current[col.key] = el; }}
+              >
+                {col.tasks.map((task, i) => (
+                  <Fragment key={task.id}>
+                    {dropIndicator && dropIndicator.status === col.key && dropIndicator.index === i && !reject && (
+                      <DropPlaceholder />
+                    )}
+                    <TaskCard
+                      task={task}
+                      project={task.project_id ? projectById.get(task.project_id) : undefined}
+                      todo={task.todo_ids?.length ? todoById.get(task.todo_ids[0]) : undefined}
+                      parentName={task.parent_task_id ? taskNameById.get(task.parent_task_id) : undefined}
+                      childCount={childCountByParent.get(task.id) ?? 0}
+                      progress={parentDerivedById.get(task.id)}
+                      colKey={col.key}
+                      showStatusBadge
+                      onDragStart={handleDragStart}
+                      onDragEnd={handleDragEnd}
+                      onStatusChange={handleStatusChange}
+                      isDragging={draggingId === task.id}
+                      onClick={handleCardClick}
+                      isSelected={selectedIds.has(task.id)}
+                      onSaveTask={saveTask}
+                      currentUserId={currentUser.id}
+                    />
+                  </Fragment>
+                ))}
+                {dropIndicator && dropIndicator.status === col.key && dropIndicator.index === col.tasks.length && !reject && (
+                  <DropPlaceholder />
+                )}
               </div>
             </div>
           );
@@ -743,7 +920,7 @@ function DropPlaceholder() {
 // ===== タスクカード =====
 
 const TaskCard = memo(function TaskCard({
-  task, project, todo, parentName, childCount = 0, progress, onDragStart, onDragEnd, onStatusChange, isDragging, onClick, isSelected, onSaveTask, currentUserId,
+  task, project, todo, parentName, childCount = 0, progress, colKey, showStatusBadge = false, onDragStart, onDragEnd, onStatusChange, isDragging, onClick, isSelected, onSaveTask, currentUserId,
 }: {
   task: Task;
   project?: Project;
@@ -752,7 +929,11 @@ const TaskCard = memo(function TaskCard({
   childCount?: number;
   /** 親タスク（子を持つ）のみ渡される、子からのロールアップ進捗（done/total/pct） */
   progress?: ParentDerived;
-  onDragStart: (taskId: string) => void;
+  /** このカードが載っている列のキー（ドラッグ開始時に渡す。担当者軸で入れ替える担当者の特定に使う） */
+  colKey: string;
+  /** 状態以外の軸の列では、カードの状態をバッジで見せる */
+  showStatusBadge?: boolean;
+  onDragStart: (taskId: string, colKey: string) => void;
   /** ドロップ成功／キャンセル問わず必ず発火（ドロッププレースホルダ・ハイライトの後始末用） */
   onDragEnd: () => void;
   onStatusChange: (id: string, status: Task["status"]) => void;
@@ -784,7 +965,7 @@ const TaskCard = memo(function TaskCard({
       draggable
       data-kanban-card="true"
       data-task-focus-id={task.id}
-      onDragStart={() => onDragStart(task.id)}
+      onDragStart={() => onDragStart(task.id, colKey)}
       onDragEnd={onDragEnd}
       onClick={e => onClick(e, task.id)}
       role="button" tabIndex={0}
@@ -930,6 +1111,15 @@ const TaskCard = memo(function TaskCard({
           </div>
         )}
         <span style={{ flex: 1 }} />
+        {showStatusBadge && (
+          <span style={{
+            fontSize: "9px", padding: "1px 6px", borderRadius: "var(--radius-full)", flexShrink: 0, whiteSpace: "nowrap",
+            background: TASK_STATUS_STYLE[task.status].bg, color: TASK_STATUS_STYLE[task.status].color,
+            border: `1px solid ${TASK_STATUS_STYLE[task.status].border}`,
+          }}>
+            {TASK_STATUS_LABEL[task.status]}
+          </span>
+        )}
         {/* 工数バッジ */}
         {task.estimated_hours != null && (
           <span style={{ fontSize: "9px", color: "var(--color-text-tertiary)", flexShrink: 0 }}>

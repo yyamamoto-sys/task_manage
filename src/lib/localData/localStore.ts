@@ -96,6 +96,8 @@ const KEYS = {
   KANBAN_WIP_LIMIT:    "kanban_wip_limit",
   // ワークロード：集計単位（"count"｜"hours"。v3.201）
   WORKLOAD_UNIT:       "workload_unit",
+  // カンバン：列の軸（"status"｜"assignee"｜"priority"｜"group"。v3.204）
+  KANBAN_AXIS:         "kanban_axis",
   // ダッシュボード
   REMINDER_DAYS:       "reminder_days",
   STAGNANT_DAYS:       "stagnant_days_threshold",
