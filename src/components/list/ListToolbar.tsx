@@ -33,13 +33,14 @@ import { createPortal } from "react-dom";
 import { useFloatingPanel } from "../../hooks/useFloatingPanel";
 import type { Member, Task } from "../../lib/localData/types";
 import { withBellReserve } from "../../lib/layout/topRightBell";
+import { ListSavedViewsPanel, type SavedViewsMenuProps } from "./ListSavedViewsPanel";
 import { COLUMN_LABELS, TOGGLEABLE_COLUMNS, type ToggleableColumn } from "../../lib/list/listColumns";
 
 export type GroupBy = "project" | "assignee" | "status" | "tag";
 export type SortKey = "name" | "due_date" | "priority" | "estimated_hours" | "status" | "assignee" | "manual";
 export type SortDir = "asc" | "desc";
 
-type MenuId = "group" | "filter" | "sort" | "columns" | "more";
+type MenuId = "group" | "filter" | "sort" | "columns" | "views" | "more";
 
 const GROUP_OPTIONS: { value: GroupBy; label: string; desc: string }[] = [
   { value: "project",  label: "PJ別",     desc: "プロジェクト別にまとめる" },
@@ -282,6 +283,8 @@ export interface ListToolbarProps {
   visibleColumns: readonly ToggleableColumn[];
   onToggleColumn: (key: ToggleableColumn) => void;
   onShowAllColumns: () => void;
+  // 保存ビュー（v3.203）
+  viewsMenu: SavedViewsMenuProps & { activeName: string | null };
   // 検索
   searchText: string;
   onChangeSearchText: (v: string) => void;
@@ -307,6 +310,7 @@ export function ListToolbar({
   activeFilterCount, onClearFilters,
   sortKey, sortDir, onChangeSortKey, onToggleManualSort, onSortByNameNumber,
   visibleColumns, onToggleColumn, onShowAllColumns,
+  viewsMenu,
   searchText, onChangeSearchText, searchOpen, setSearchOpen, searchInputRef,
   onExportCSV,
   taskCount, members, currentUserId,
@@ -614,6 +618,26 @@ export function ListToolbar({
               </>
             )}
           </>
+        )}
+      </ToolbarMenu>
+
+      {/* ③-3 ビュー（v3.203）：適用中の名前を表示。適用後に条件を変えたら（変更あり） */}
+      <ToolbarMenu
+        id="views" openMenu={openMenu} setOpenMenu={setOpenMenu}
+        label={viewsMenu.activeName
+          ? `★ ${viewsMenu.activeName.length > 12 ? `${viewsMenu.activeName.slice(0, 12)}…` : viewsMenu.activeName}${viewsMenu.dirty ? "（変更あり）" : ""}`
+          : "★ ビュー"}
+        ariaLabel="保存したビュー"
+        title={viewsMenu.activeName ? `適用中のビュー：${viewsMenu.activeName}${viewsMenu.dirty ? "（変更あり）" : ""}` : "表示の組み合わせを保存・呼び出し（この設定はお使いのブラウザに保存されます）"}
+        active={viewsMenu.activeName !== null}
+        panelWidth={280}
+      >
+        {close => (
+          <ListSavedViewsPanel
+            {...viewsMenu}
+            onApply={id => { viewsMenu.onApply(id); close(); }}
+            onReset={() => { viewsMenu.onReset(); close(); }}
+          />
         )}
       </ToolbarMenu>
 

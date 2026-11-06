@@ -36,6 +36,11 @@ import { InlineBadgeSelect, type BadgeOption } from "../common/InlineBadgeSelect
 import {
   parseVisibleColumns, toggleColumn, filterVisibleColumns, DEFAULT_VISIBLE_COLUMNS, type ToggleableColumn,
 } from "../../lib/list/listColumns";
+import {
+  DEFAULT_LIST_SETTINGS, addView, canAddView, isSameSettings, newViewId, normalizeViewName, overwriteView,
+  parseSavedViews, removeView, renameView, sanitizeListSettings, savedViewsKey, serializeSavedViews,
+  type ListViewSettings, type SavedView,
+} from "../../lib/list/savedViews";
 import { ListToolbar, type GroupBy, type SortKey, type SortDir } from "./ListToolbar";
 import { ListInlineAddRow } from "./ListInlineAddRow";
 import { useListInlineAdd } from "./useListInlineAdd";
@@ -203,6 +208,85 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, my
     () => buildAssigneeCandidates({ allMembers: members, scopedMembers, currentIds: filterMember !== "all" ? [filterMember] : [] }),
     [members, scopedMembers, filterMember],
   );
+
+  // ===== 保存ビュー（v3.203・個人設定・部署ごと）=====
+  // 保存するのは まとめ方・フィルター・並べ替え・列。検索語・選択・折りたたみ・「自分担当のみ」は保存しない。
+  // 部署が切り替わったら（currentGroupId が変わったら）その部署のビューを読み直し、適用中の表示は外す
+  const groupId = useAppStore(s => s.currentGroupId);
+  const viewsKey = savedViewsKey(KEYS.LIST_SAVED_VIEWS, groupId);
+  const readViews = (k: string): SavedView[] => {
+    try { return parseSavedViews(localStorage.getItem(k), null); } catch { return []; }
+  };
+  const [savedViews, setSavedViews] = useState<SavedView[]>(() => readViews(viewsKey));
+  const [activeViewId, setActiveViewId] = useState<string | null>(null);
+  const [loadedViewsKey, setLoadedViewsKey] = useState(viewsKey);
+  if (loadedViewsKey !== viewsKey) {
+    setLoadedViewsKey(viewsKey);
+    setSavedViews(readViews(viewsKey));
+    setActiveViewId(null);
+  }
+  const commitViews = (next: SavedView[]) => {
+    setSavedViews(next);
+    try { localStorage.setItem(viewsKey, serializeSavedViews(next)); } catch { /* ignore */ }
+  };
+  const memberIdSet = useMemo(() => new Set(members.map(m => m.id)), [members]);
+  const currentSettings: ListViewSettings = {
+    groupBy, filterStatus, filterPriority, sortKey, sortDir,
+    filterHideDone, filterThisWeek, filterMember, columns: visibleColumns,
+  };
+  const applySettings = (raw: ListViewSettings) => {
+    const st = sanitizeListSettings(raw, memberIdSet);
+    setGroupBy(st.groupBy);
+    setFilterStatus(st.filterStatus);
+    setFilterPriority(st.filterPriority);
+    setSortKeyState(st.sortKey); lsSet("sortKey", st.sortKey);
+    setSortDirState(st.sortDir); lsSet("sortDir", st.sortDir);
+    setFilterHideDone(st.filterHideDone);
+    setFilterThisWeek(st.filterThisWeek);
+    setFilterMember(st.filterMember);
+    setFilterMyOnly(false);
+    setVisibleColumns(st.columns);
+  };
+  const activeView = savedViews.find(v => v.id === activeViewId) ?? null;
+  // 「自分担当のみ」は保存対象外だが、適用後に入れたら見える範囲が変わるので変更ありとして扱う
+  const viewDirty = activeView !== null
+    && (filterMyOnly || !isSameSettings(currentSettings, sanitizeListSettings(activeView.settings, memberIdSet)));
+  const viewsMenu = {
+    items: savedViews,
+    activeId: activeView?.id ?? null,
+    activeName: activeView?.name ?? null,
+    dirty: viewDirty,
+    canAdd: canAddView(savedViews),
+    onApply: (id: string) => {
+      const v = savedViews.find(x => x.id === id);
+      if (!v) return;
+      applySettings(v.settings);
+      setActiveViewId(id);
+    },
+    onSave: (name: string) => {
+      const n = normalizeViewName(name);
+      if (n === null || !canAddView(savedViews)) return;
+      const id = newViewId();
+      commitViews(addView(savedViews, { id, name: n, settings: currentSettings }));
+      setActiveViewId(id);
+    },
+    onRename: (id: string, name: string) => commitViews(renameView(savedViews, id, name)),
+    onDelete: (id: string) => {
+      const v = savedViews.find(x => x.id === id);
+      if (!v) return;
+      void confirmDialog(`ビュー「${v.name}」を削除します。よろしいですか？`).then(ok => {
+        if (!ok) return;
+        // 確認を待つ間に別の操作でビューが増減しても壊れないよう、保存済みの最新を読み直してから消す
+        commitViews(removeView(readViews(viewsKey), id));
+        setActiveViewId(cur => (cur === id ? null : cur));
+      });
+    },
+    onOverwrite: () => {
+      if (!activeView) return;
+      commitViews(overwriteView(savedViews, activeView.id, currentSettings));
+    },
+    onReset: () => { applySettings(DEFAULT_LIST_SETTINGS); setActiveViewId(null); },
+  };
   const [searchText,     setSearchText    ] = useState("");
   // 検索欄はツールバーの同じ行にインライン展開する（既定は閉じた状態＝🔍アイコンのみ）。
   // searchText が空でないときは ListToolbar 側で常に展開されるため、ここは「明示的に開いたか」だけを持つ。
@@ -866,6 +950,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, my
           visibleColumns={visibleColumns}
           onToggleColumn={k => setVisibleColumns(toggleColumn(visibleColumns, k))}
           onShowAllColumns={() => setVisibleColumns([...DEFAULT_VISIBLE_COLUMNS])}
+          viewsMenu={viewsMenu}
           searchText={searchText}
           onChangeSearchText={setSearchText}
           searchOpen={searchOpen}

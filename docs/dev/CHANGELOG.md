@@ -8656,3 +8656,11 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 * 列幅定義は `ListView.tsx` の `LIST_COLS` 1か所に集約。ヘッダー・colSpan・クイック追加行は隠した後の `cols` から作り、`ListTaskRow` は `shownCols`（useMemoで参照安定）で同じ列を出し入れ。状態列を隠すとクイック追加行の「✕（やめる）」の置き場が無くなるため、タスク名セル側に出す。
 * 副次：uiGuide のリスト「状態」列の記述（表示のみ）が v3.199 以降の実態とずれていたため直した。
 * テスト：`lib/list/__tests__/listColumns.test.ts` 新設。MIN_CLIENT_VERSION は据え置き（保存形式は追加キーのみ・未知値は既定へ）。
+
+# v3.203（2026-11-06）：リストの保存ビュー
+* ツールバーに「★ ビュー」。保存済みビューの一覧（クリックで適用）・名前変更（✎）・削除（🗑・確認ダイアログ）・「現在の表示を保存…」（名前入力）・「既定に戻す」。適用中はトリガーに名前を出し、適用後に条件を変えると「（変更あり）」＋「上書き保存」。中身は `ListSavedViewsPanel.tsx`、永続化と適用は `ListView.tsx`。
+* 保存対象：groupBy・filterStatus・filterPriority・sortKey/sortDir・filterHideDone・filterThisWeek・filterMember・列の表示（v3.202）。保存しない：検索語・選択・折りたたみ・「自分担当のみ」（担当者フィルターと排他の一時切替。適用時は解除し、適用後に入れたら「変更あり」扱い）。
+* 保存先は localStorage（個人設定）。キーは `KEYS.LIST_SAVED_VIEWS` ＋ `:部署id`（`appStore.currentGroupId`・未確定は `none`）で部署ごとに分ける。部署が変わったらその部署のビューを読み直し、適用中表示は外す。上限20件・名前30字。マイグレーション・Edge Function なし。
+* 保存形式は `{version:1, views:[{id,name,settings}]}`。`lib/list/savedViews.ts`：読み込みは項目単位で既定へ落とす（ビュー全体は捨てない。壊れたビュー1件・重複id・空の名前だけ除外。未知の version は空）。存在しないメンバー id の検証は適用時（保存データは書き換えない＝メンバー読み込み前の parse で有効な担当者条件を消さないため）。手動並べ替えのビューは groupBy を project に固定（ツールバーの手動切替と同じ）。
+* 「表示の設定を初期化」（displaySettingsReset のホワイトリスト）には含めない：利用者が作ったビューであり、キーが部署ごとに可変でホワイトリスト方式と合わないため。
+* テスト：`lib/list/__tests__/savedViews.test.ts` 新設。MIN_CLIENT_VERSION は据え置き。

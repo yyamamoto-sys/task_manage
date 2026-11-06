@@ -90,6 +90,8 @@ const KEYS = {
   GANTT_SHOW_OVERLOAD: "gantt_show_overload",
   // リスト
   LIST_VIEW_SETTINGS:  "list_view_settings",
+  // リスト：保存ビュー一覧（実キーは末尾に ":部署id" を付けて部署ごとに分ける＝savedViewsKey。v3.203）
+  LIST_SAVED_VIEWS:    "list_saved_views",
   // カンバン：進行中列のWIP上限（数値の文字列／"none"＝上限なし。未保存＝既定4。v3.201）
   KANBAN_WIP_LIMIT:    "kanban_wip_limit",
   // ワークロード：集計単位（"count"｜"hours"。v3.201）
