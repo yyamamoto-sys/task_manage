@@ -12,6 +12,7 @@
 // return { ..., undo, canUndo, undoStack }
 // useUndoStack内部で使用し、undo/canUndo/undoStackをexportする。
 
+import { normalizeConsultModel, loadConsultModel } from "../lib/ai/consultModels";
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useAppStore, selectScopedTasks, selectScopedProjects, selectScopedMembers } from "../stores/appStore";
 import { useConsultSessionStore } from "../stores/consultSessionStore";
@@ -52,10 +53,11 @@ export interface SubmitOptions {
   responseVolume?: ResponseVolume;
   /** この1回の送信だけに添える資料。履歴には本文を残さない（v3.144） */
   attachments?: FileAttachment[];
+  /** 使うモデル（consultModels.ts の選択肢）。未指定は画面で選んで保存してあるモデル（無ければ Sonnet 5.5）。提案カードの「見送る」等の自動送信も同じモデルになる */
+  model?: string;
 }
 
-// Sonnet 5.5 は思考が既定で有効（content の先頭が thinking ブロックになる。apiClient は text を探して読む）
-const THINKING_MODEL = "claude-sonnet-5-5";
+// Sonnet 5.5 / Haiku 5.5 は思考が既定で有効（content の先頭が thinking ブロックになる。apiClient は text を探して読む）
 
 // ===== Hook本体 =====
 
@@ -121,7 +123,7 @@ export function useAIConsultation(targetPjId: string | null, currentMemberId: st
       // リセットされたあとに届いた返答で、消したはずの会話を復活させないための世代番号
       const generation = generationRef.current;
 
-      const model = THINKING_MODEL;
+      const model = normalizeConsultModel(opts.model ?? loadConsultModel());
 
       setCallState("loading");
       setErrorMessage("");

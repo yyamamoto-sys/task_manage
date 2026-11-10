@@ -44,6 +44,8 @@ const KEYS = {
   CONSULT_PANEL_WIDTH: "consultation_panel_width",
   /** AI相談パネルの「次の相談候補」折りたたみ開閉状態 */
   CONSULT_FOLLOWUP_OPEN: "consult_followup_open",
+  /** AI相談で使うモデル（標準＝Sonnet 5.5／高速＝Haiku 5.5。v3.209） */
+  CONSULT_MODEL: "consult_model",
   /** 色選択（ColorPicker）の「最近使ったカスタム色」。"#rrggbb" のJSON配列（v3.190） */
   RECENT_CUSTOM_COLORS: "recent_custom_colors",
   /** OKR個人ビューのAIパネル（PersonalOkrAiPanel。ConsultationPanelと同じ型）の幅（v3.52） */

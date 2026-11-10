@@ -97,11 +97,11 @@ export function ProposalCard({
             {proposal.action_label}
           </div>
           <div style={{ fontSize: "13px", fontWeight: "600", color: "var(--color-text-primary)", lineHeight: 1.4 }}>
-            🆕 新規プロジェクト：{proposal.title}
+            🆕 新規プロジェクト：<TaskRefText text={proposal.title} shortIdMap={shortIdMap} />
           </div>
           {proposal.description && (
             <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
-              {proposal.description}
+              <TaskRefText text={proposal.description} shortIdMap={shortIdMap} />
             </div>
           )}
 
@@ -125,7 +125,7 @@ export function ProposalCard({
                     alignItems: "baseline",
                   }}
                 >
-                  <span style={{ fontWeight: "500" }}>{t.name}</span>
+                  <span style={{ fontWeight: "500" }}><TaskRefText text={t.name} shortIdMap={shortIdMap} /></span>
                   {t.suggested_assignee && (
                     <span style={{ color: "var(--color-text-tertiary)" }}>担当：{t.suggested_assignee}</span>
                   )}
@@ -206,7 +206,7 @@ export function ProposalCard({
         }}
       >
         <div style={{ fontSize: "11px", fontWeight: "600", color: "var(--color-text-secondary)", marginBottom: "6px" }}>
-          📋 {proposal.title}
+          📋 <TaskRefText text={proposal.title} shortIdMap={shortIdMap} />
         </div>
         <div style={{
           fontSize: "11px",
@@ -322,7 +322,7 @@ export function ProposalCard({
             lineHeight: 1.4,
           }}
         >
-          {proposal.title}
+          <TaskRefText text={proposal.title} shortIdMap={shortIdMap} />
         </div>
 
         {/* 説明 */}
@@ -358,7 +358,7 @@ export function ProposalCard({
                 }}
               >
                 <span style={{ color: "var(--color-text-tertiary)" }}>└</span>
-                <span style={{ fontWeight: "500" }}>{t.name}</span>
+                <span style={{ fontWeight: "500" }}><TaskRefText text={t.name} shortIdMap={shortIdMap} /></span>
                 {t.suggested_assignee && (
                   <span style={{ color: "var(--color-text-tertiary)" }}>担当：{t.suggested_assignee}</span>
                 )}

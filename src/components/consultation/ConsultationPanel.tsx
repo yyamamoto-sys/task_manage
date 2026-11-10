@@ -1,6 +1,6 @@
 // src/components/consultation/ConsultationPanel.tsx
 
-import { useState, useRef, useEffect, useMemo, useCallback, Suspense } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback, Suspense } from "react";
 import { setAutoUpdateAiBlock } from "../../lib/autoUpdate";
 import { createPortal } from "react-dom";
 import { saveChatSession } from "../../lib/ai/chatHistoryStorage";
@@ -18,6 +18,9 @@ import { ErrorView } from "./ErrorView";
 import { ProposalCard } from "./ProposalCard";
 import { AIReplyBubble } from "./AIReplyBubble";
 import { parseAIResponse } from "../../lib/ai/responseParser";
+import { stripAliasIds } from "../../lib/ai/displayText";
+import { CONSULT_MODEL_OPTIONS, loadConsultModel, saveConsultModel } from "../../lib/ai/consultModels";
+import { useAliasNameResolver } from "../../hooks/useAliasNameResolver";
 import { ChangeHistoryModal } from "./ChangeHistoryModal";
 import type { UIProposal } from "../../lib/ai/proposalMapper";
 import { inferConsultationType } from "../../lib/ai/inferConsultationType";
@@ -42,6 +45,8 @@ const GanttPreviewPanel  = lazyWithRetry(() => import("./GanttPreviewPanel").the
 const MeetingImportPanel = lazyWithRetry(() => import("../meeting/MeetingImportPanel").then(m => ({ default: m.MeetingImportPanel })), "MeetingImportPanel");
 
 type PanelMode = "consult" | "meeting";
+
+const CONSULT_DESCRIPTION = "変更の影響確認・What-if・現状診断など、プロジェクトの課題をAIと一緒に考えます。タスクの追加や新規プロジェクトの作成もここから依頼できます";
 
 interface Props {
   isOpen: boolean;
@@ -92,6 +97,8 @@ export function ConsultationPanel({
   const [lastSubmittedText, setLastSubmittedText] = useState(() => useConsultSessionStore.getState().lastSubmittedText);
   // 回答ボリューム：short=簡潔 / normal=普通（既定） / detailed=詳細
   const [responseVolume, setResponseVolume] = useState<ResponseVolume>("normal");
+  // 使うモデル（標準＝Sonnet 5.5／高速＝Haiku 5.5）。選んだものはこのブラウザに覚えておく
+  const [consultModel, setConsultModel] = useState<string>(() => loadConsultModel());
   // 添付資料（その1回の送信だけに使う。送信したら消す）
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
   const [attachLoading, setAttachLoading] = useState(false);
@@ -159,6 +166,12 @@ export function ConsultationPanel({
   } = useAIConsultation(effectiveTargetPjId, currentUser.id);
 
   const hasHistory = session.turns.length > 0;
+  // 次の相談候補は識別記号（task_001 等）を除いた表示用の文にする。入力欄へ入るのもこの文
+  const aliasResolver = useAliasNameResolver(shortIdMap);
+  const followUpDisplay = useMemo(
+    () => followUpSuggestions.map(f => stripAliasIds(f, aliasResolver)),
+    [followUpSuggestions, aliasResolver],
+  );
   // 対象PJの切替確認（M83）が最新の状態を読むための参照
   const targetChangeRef = useRef({
     raw: targetPjId, current: effectiveTargetPjId, turnCount: 0, proposalCount: 0, loading: false, isOpen, inputText: "",
@@ -294,6 +307,14 @@ ${marker}` : text);
       setAttachments(prev => (prev.length === 0 ? sentAttachments : prev));
     }
   };
+
+  // 入力欄は入力に応じて伸ばす（上限は CSS の maxHeight。超えたら欄内スクロール）
+  useLayoutEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight + 2}px`;
+  }, [inputText, panelMode, isOpen]);
 
   const handleFollowUpSelect = (text: string) => {
     setInputText(text);
@@ -515,10 +536,10 @@ ${marker}` : text);
         {/* ===== ヘッダー（グラデーション） ===== */}
         <div className="ai-shimmer" style={{
           background: "var(--gradient-ai)",
-          flexShrink: 0, padding: "12px 14px 10px",
+          flexShrink: 0, padding: "8px 12px 8px",
         }}>
           {/* タイトル行 */}
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "10px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
             <span style={{ fontSize: "16px", lineHeight: 1 }}>✨</span>
             <span style={{ fontSize: "13px", fontWeight: "700", color: "#fff", flex: 1 }}>
               AIアシスタント
@@ -552,7 +573,7 @@ ${marker}` : text);
                 onClick={() => setPanelMode(mode)}
                 {...(mode === "meeting" ? { "data-tour-id": "ai-mode-tab-meeting" } : {})}
                 style={{
-                  padding: "5px 12px", fontSize: "11px", fontWeight: "600",
+                  padding: "3px 12px", fontSize: "11px", fontWeight: "600",
                   borderRadius: "var(--radius-full)", border: "none", cursor: "pointer",
                   background: panelMode === mode ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.18)",
                   color: panelMode === mode ? "var(--color-ai-from)" : "rgba(255,255,255,0.85)",
@@ -565,28 +586,25 @@ ${marker}` : text);
           </div>
         </div>
 
-        {/* ===== 対象PJ（両タブ共通。AIに送る範囲） ===== */}
+        {/* ===== 対象PJ（両タブ共通。AIに送る範囲）。件数の目安は同じ行に置いて縦を取らない ===== */}
         <div style={{
-          display: "flex", flexDirection: "column", gap: "4px",
-          padding: "8px 14px 6px", flexShrink: 0,
+          display: "flex", alignItems: "center", gap: "4px 8px", flexWrap: "wrap",
+          padding: "5px 12px", flexShrink: 0,
           borderBottom: "1px solid var(--color-border-primary)",
         }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <span style={{ fontSize: "11px", fontWeight: 600, color: "var(--color-text-secondary)", flexShrink: 0 }}>対象PJ</span>
-            <ProjectTargetSelect
-              projects={scopedProjects}
-              value={effectiveTargetPjId}
-              onChange={requestTargetChange}
-              style={{ flex: 1, minWidth: 0 }}
-            />
-          </div>
+          <span style={{ fontSize: "11px", fontWeight: 600, color: "var(--color-text-secondary)", flexShrink: 0 }}>対象PJ</span>
+          <ProjectTargetSelect
+            projects={scopedProjects}
+            value={effectiveTargetPjId}
+            onChange={requestTargetChange}
+            style={{ flex: "1 1 140px", minWidth: 0 }}
+          />
           <span
             data-testid="ai-scope-count"
-            title="AIに送る範囲の目安です。件数が多いほど応答に時間がかかります。完了・中止のタスクは送りません"
-            style={{ fontSize: "10px", color: "var(--color-text-tertiary)", lineHeight: 1.4 }}
+            title={`AIに送る範囲の目安です。件数が多いほど応答に時間がかかります。完了・中止のタスクは送りません${effectiveTargetPjId == null ? "（アーカイブ・完了のPJは含みません）" : ""}`}
+            style={{ fontSize: "10px", color: "var(--color-text-tertiary)", lineHeight: 1.4, whiteSpace: "nowrap" }}
           >
-            対象：{scopeCount.projects}PJ・{scopeCount.tasks}タスク
-            {effectiveTargetPjId == null && "（アーカイブ・完了のPJは含みません）"}
+            {scopeCount.projects}PJ・{scopeCount.tasks}タスク
           </span>
         </div>
 
@@ -595,8 +613,8 @@ ${marker}` : text);
             ゲスト以外ではnullとして描画自体させず、余分な余白を生まない（gapは実際に
             描画された子要素間にしか効かない）ため */}
         <div style={{
-          display: "flex", flexDirection: "column", gap: "6px",
-          padding: "6px 14px",
+          display: "flex", flexDirection: "column", gap: "4px",
+          padding: "4px 12px",
           background: "rgba(99,102,241,0.06)",
           borderBottom: "1px solid rgba(99,102,241,0.12)",
           fontSize: "11px",
@@ -605,7 +623,15 @@ ${marker}` : text);
           flexShrink: 0,
           lineHeight: 1.4,
         }}>
-          {panelMode === "consult" && "変更の影響確認・What-if・現状診断など、プロジェクトの課題をAIと一緒に考えます。タスクの追加や新規プロジェクトの作成もここから依頼できます"}
+          {panelMode === "consult" && (
+            // 会話が始まったら1行に畳む（全文は title で読める）。チャット欄の縦を確保するため
+            <span
+              title={CONSULT_DESCRIPTION}
+              style={hasHistory ? { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } : undefined}
+            >
+              {CONSULT_DESCRIPTION}
+            </span>
+          )}
           {panelMode === "meeting" && "議事録・資料などを読み込み、新規タスクとステータス変更を自動で提案・登録します"}
           <GuestAiQuotaNotice variant="inline" />
         </div>
@@ -628,7 +654,7 @@ ${marker}` : text);
         {/* トークン警告 */}
         {tokenStatus === "warning" && (
           <div style={{
-            padding: "8px 14px",
+            padding: "5px 12px",
             background: "var(--color-bg-warning)", borderBottom: "1px solid var(--color-border-warning)",
             fontSize: "11px", color: "var(--color-text-warning)",
             display: "flex", alignItems: "center", gap: "6px",
@@ -645,35 +671,7 @@ ${marker}` : text);
         )}
 
         {/* ===== スクロール可能エリア ===== */}
-        <div ref={scrollAreaRef} style={{ flex: 1, overflow: "auto", padding: "12px 14px", display: "flex", flexDirection: "column", gap: "10px" }}>
-
-          {/* 回答ボリューム切替（short=簡潔 / normal=普通 / detailed=詳細） */}
-          <div style={{ display: "flex", alignItems: "center", gap: "6px", alignSelf: "flex-start" }}>
-            <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", flexShrink: 0 }}>回答量</span>
-            {(["short", "normal", "detailed"] as const).map(vol => {
-              const labels: Record<ResponseVolume, string> = { short: "短め", normal: "普通", detailed: "詳細" };
-              const active = responseVolume === vol;
-              return (
-                <button
-                  key={vol}
-                  onClick={() => setResponseVolume(vol)}
-                  title={vol === "short" ? "2〜3文で簡潔に回答" : vol === "detailed" ? "背景・手順・注意点まで詳しく回答" : "標準的な回答量"}
-                  style={{
-                    padding: "4px 10px",
-                    border: `1px solid ${active ? "var(--color-brand)" : "var(--color-border-primary)"}`,
-                    borderRadius: "var(--radius-full)",
-                    background: active ? "var(--color-brand)" : "transparent",
-                    color: active ? "#fff" : "var(--color-text-tertiary)",
-                    cursor: "pointer",
-                    fontSize: "10px",
-                    fontWeight: active ? "600" : "400",
-                  }}
-                >
-                  {labels[vol]}
-                </button>
-              );
-            })}
-          </div>
+        <div ref={scrollAreaRef} style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "8px 12px", display: "flex", flexDirection: "column", gap: "8px" }}>
 
           {/* 会話履歴（古い→新しいの順。最新のやりとりは下部に表示するので、ここはそれより前のターン） */}
           {hasOlderHistory && (
@@ -762,69 +760,105 @@ ${marker}` : text);
 
           {/* フォローアップボタン */}
           {followUpSuggestions.length > 0 && (
-            <FollowUpButtons suggestions={followUpSuggestions} onSelect={handleFollowUpSelect} />
+            <FollowUpButtons suggestions={followUpDisplay} onSelect={handleFollowUpSelect} />
           )}
 
           {/* スクロール余白 */}
-          <div style={{ height: "8px" }} />
+          <div style={{ height: "2px", flexShrink: 0 }} />
         </div>
 
         {/* ===== 固定フッター：入力エリア ===== */}
-
+        {/* 縦を食わないよう、入力欄（既定2行・入力で伸びる）＋「添付・回答量・送信」の1行だけにする */}
         <div style={{
           borderTop: "1px solid var(--color-border-primary)",
-          padding: "10px 14px 12px",
+          padding: "6px 12px 8px",
           background: "var(--color-bg-primary)",
           flexShrink: 0,
-          display: "flex", flexDirection: "column", gap: "8px",
+          display: "flex", flexDirection: "column", gap: "6px",
         }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "2px" }}>
-            <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>
-              Ctrl+Enter で送信
-            </span>
-          </div>
-          <ConsultAttachments attachments={attachments} onChange={setAttachments} disabled={callState === "loading"} onLoadingChange={setAttachLoading}>
+          {/* 選択中提案バッジ */}
+          {selectedProposalIds.size > 0 && (
+            <div style={{ fontSize: "10px", color: "var(--color-accent, #3b82f6)", background: "var(--color-accent-bg, #eff6ff)", border: "1px solid var(--color-accent, #3b82f6)", borderRadius: "var(--radius-sm)", padding: "3px 8px" }}>
+              提案 {selectedProposalIds.size}件を選択中 — 送信すると選択した提案へのフィードバックとして送られます
+            </div>
+          )}
+          <ConsultAttachments
+            attachments={attachments}
+            onChange={setAttachments}
+            disabled={callState === "loading"}
+            onLoadingChange={setAttachLoading}
+            trailing={
+              <div style={{ flex: "1 1 auto", display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "6px", minWidth: 0 }}>
+                {/* 回答ボリューム（short=簡潔 / normal=普通 / detailed=詳細） */}
+                <label style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "10px", color: "var(--color-text-tertiary)", flexShrink: 0 }}>
+                  回答量
+                  <select
+                    value={responseVolume}
+                    onChange={e => setResponseVolume(e.target.value as ResponseVolume)}
+                    title="短め＝2〜3文で簡潔に／普通＝標準／詳細＝背景・手順・注意点まで詳しく"
+                    style={{
+                      fontSize: "11px", padding: "3px 4px",
+                      border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)",
+                      background: "var(--color-bg-secondary)", color: "var(--color-text-secondary)",
+                    }}
+                  >
+                    <option value="short">短め</option>
+                    <option value="normal">普通</option>
+                    <option value="detailed">詳細</option>
+                  </select>
+                </label>
+                <label style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "10px", color: "var(--color-text-tertiary)", flexShrink: 0 }}>
+                  モデル
+                  <select
+                    value={consultModel}
+                    onChange={e => { setConsultModel(e.target.value); saveConsultModel(e.target.value); }}
+                    title={CONSULT_MODEL_OPTIONS.map(o => `${o.label}：${o.hint}`).join("\n")}
+                    style={{
+                      fontSize: "11px", padding: "3px 4px", maxWidth: "130px",
+                      border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)",
+                      background: "var(--color-bg-secondary)", color: "var(--color-text-secondary)",
+                    }}
+                  >
+                    {CONSULT_MODEL_OPTIONS.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
+                  </select>
+                </label>
+                <button
+                  onClick={handleSubmit}
+                  disabled={!canSubmit}
+                  title="Ctrl+Enter（Macは ⌘+Enter）でも送信できます"
+                  style={{
+                    fontSize: "12px", padding: "5px 14px",
+                    background: canSubmit ? "var(--color-brand)" : "var(--color-bg-tertiary)",
+                    border: "none", borderRadius: "var(--radius-md)",
+                    color: canSubmit ? "#fff" : "var(--color-text-tertiary)",
+                    cursor: canSubmit ? "pointer" : "not-allowed",
+                    fontWeight: "500", transition: "all 0.15s", whiteSpace: "nowrap",
+                  }}
+                >
+                  {callState === "loading" ? "生成中..." : attachLoading ? "資料を読み込み中..." : selectedProposalIds.size > 0 ? `${selectedProposalIds.size}件の提案に返信` : "AIに相談する"}
+                </button>
+              </div>
+            }
+          >
             <textarea
               ref={textareaRef}
               value={inputText}
               onChange={e => setInputText(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="相談内容を入力してください（例：○○さんが来週から休みに入ります。タスクへの影響を確認して）"
-              rows={3}
+              placeholder="相談内容を入力（Ctrl+Enterで送信）例：○○さんが来週から休みに入ります。タスクへの影響を確認して"
+              rows={2}
               disabled={callState === "loading"}
               style={{
-                fontSize: "12px", padding: "8px 10px",
+                fontSize: "12px", padding: "6px 10px",
                 border: "1px solid var(--color-border-primary)",
                 borderRadius: "var(--radius-md)",
                 background: callState === "loading" ? "var(--color-bg-tertiary)" : "var(--color-bg-secondary)",
                 color: "var(--color-text-primary)",
-                resize: "vertical", lineHeight: 1.6, minHeight: "72px", maxHeight: "200px", overflowY: "auto",
+                resize: "none", lineHeight: 1.6, minHeight: "54px", maxHeight: "35vh", overflowY: "auto",
                 outline: "none",
               }}
             />
           </ConsultAttachments>
-          {/* 選択中提案バッジ */}
-          {selectedProposalIds.size > 0 && (
-            <div style={{ fontSize: "10px", color: "var(--color-accent, #3b82f6)", background: "var(--color-accent-bg, #eff6ff)", border: "1px solid var(--color-accent, #3b82f6)", borderRadius: "var(--radius-sm)", padding: "4px 8px" }}>
-              提案 {selectedProposalIds.size}件を選択中 — 送信すると選択した提案へのフィードバックとして送られます
-            </div>
-          )}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "8px" }}>
-            <button
-              onClick={handleSubmit}
-              disabled={!canSubmit}
-              style={{
-                fontSize: "12px", padding: "7px 18px",
-                background: canSubmit ? "var(--color-brand)" : "var(--color-bg-tertiary)",
-                border: "none", borderRadius: "var(--radius-md)",
-                color: canSubmit ? "#fff" : "var(--color-text-tertiary)",
-                cursor: canSubmit ? "pointer" : "not-allowed",
-                fontWeight: "500", transition: "all 0.15s", whiteSpace: "nowrap",
-              }}
-            >
-              {callState === "loading" ? "生成中..." : attachLoading ? "資料を読み込み中..." : selectedProposalIds.size > 0 ? `${selectedProposalIds.size}件の提案に返信` : "AIに相談する"}
-            </button>
-          </div>
         </div>
 
         </>}

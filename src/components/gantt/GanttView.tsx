@@ -41,6 +41,7 @@ import {
   type GanttRow, buildPjViewGanttRows, buildPersonViewGanttRows, computeGanttBlockRanges,
 } from "./ganttUtils";
 import { TaskBarRow, GanttPjLabelRow, GanttTodoLabelRow, GanttPersonLabelRow, GanttQuickAddTaskRow, ZoomIcon, type TaskBarLinkUi } from "./GanttParts";
+import { CHANGE_STYLES, describeChange, type TaskChange } from "../../lib/ai/ganttPreviewDiff";
 import { GanttMobileView } from "./GanttMobileView";
 import { useT } from "../../hooks/useT";
 import { ShortcutsPanel } from "../common/ShortcutsPanel";
@@ -105,6 +106,8 @@ interface Props {
   isPreview?: boolean;
   /** プレビューモード：変更されたタスクIDのセット（ハイライト表示） */
   previewChangedTaskIds?: Set<string>;
+  /** プレビューモード：変更の種類つきの差分（行の色帯・バーの色・記号・変更前の点線を出す。v3.209）。変更の無い行は薄くなる */
+  previewChanges?: Map<string, TaskChange>;
   /**
    * キーボードショートカット（T/+-/Ctrl+A/Enter）を有効にするか。既定 true。
    * AI相談のガントプレビュー（GanttPreviewPanel）は1画面に2つの GanttView を同時に
@@ -132,6 +135,7 @@ export function GanttView({
   previewTasks,
   isPreview = false,
   previewChangedTaskIds,
+  previewChanges,
   enableKeyboardShortcuts = true,
   shortcutsOpen: shortcutsOpenProp,
   onToggleShortcuts,
@@ -1780,6 +1784,20 @@ export function GanttView({
   // 純粋なJSXビルダー（hooksではない・普通の関数）で、参照する状態・ハンドラは全てこの上で
   // 既に宣言済み。renderLabelRow/renderBarRowは行の「見た目」だけを担い、「どの行が存在するか」
   // の判断はganttRows組み立て側（ganttUtils.ts）に一元化されている。
+  // 「ガントで比較」の変更表示。変更の無い行は薄くする（変更が1件も無いときは全行を通常表示）
+  const hasPreviewChanges = isPreview && !!previewChanges && previewChanges.size > 0;
+  const changeKindOf = (id: string) => (hasPreviewChanges ? previewChanges!.get(id)?.kind : undefined);
+  const isDimmedInPreview = (id: string) => hasPreviewChanges && !previewChanges!.has(id);
+  const getChangeRender = (task: Task) => {
+    const c = hasPreviewChanges ? previewChanges!.get(task.id) : undefined;
+    if (!c) return { kind: undefined, text: undefined, ghost: null, color: undefined, dimmed: isDimmedInPreview(task.id) };
+    // 日程変更は変更前の位置を点線の影として出す（TaskBarRow の ghostBar と同じ枠）
+    const ghost = c.kind === "date"
+      ? calcTaskBar({ ...task, start_date: c.beforeStart, due_date: c.beforeDue }, rangeStart, dayWidth)
+      : null;
+    return { kind: c.kind, text: describeChange(c), ghost, color: CHANGE_STYLES[c.kind].color, dimmed: false };
+  };
+
   function renderLabelRow(row: GanttRow) {
     switch (row.kind) {
       case "pj-header": {
@@ -1871,6 +1889,8 @@ export function GanttView({
             rowHeight={row.height}
             scale={rowScale}
             task={task}
+            changeKind={changeKindOf(task.id)}
+            dimmed={isDimmedInPreview(task.id)}
             isChild={depth > 0}
             depth={depth}
             childCount={childCount}
@@ -1990,6 +2010,8 @@ export function GanttView({
             rowHeight={row.height}
             scale={rowScale}
             task={row.task}
+            changeKind={changeKindOf(row.task.id)}
+            dimmed={isDimmedInPreview(row.task.id)}
             isHovered={hoveredTaskId === row.task.id}
             onEdit={guardedHandleRowEdit}
             onHoverEnter={handleRowHoverEnter}
@@ -2077,6 +2099,8 @@ export function GanttView({
             rowHeight={row.height}
             scale={rowScale}
             task={task}
+            changeKind={changeKindOf(task.id)}
+            dimmed={isDimmedInPreview(task.id)}
             isHovered={hoveredTaskId === task.id}
             isOverdue={isOverdue}
             pj={pj}
@@ -2189,10 +2213,11 @@ export function GanttView({
         const isStagnant = isTaskStagnant(task);
         const { hasRange, dateLabel } = formatBarDateLabel(effectiveTask, due);
         const isHovered = hoveredTaskId === task.id;
-        const barColor = isChanged ? "var(--color-brand)" : resolveGanttBarColor(isDone, !!isOverdue, pj.color_tag);
+        const barColor = getChangeRender(task).color ?? (isChanged ? "var(--color-brand)" : resolveGanttBarColor(isDone, !!isOverdue, pj.color_tag));
         const tooltip = `${depth > 0 ? "↳ 子タスク\n" : ""}${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}\n担当：${memberById.get(task.assignee_member_id)?.short_name}${formatBarTooltipSuffix(isStagnant, criticalTaskIds.has(task.id))}`;
         const { left: depBadgeLeft, right: depBadgeRight } = getDepBadgeTitles(task.id);
         const { ghostBar, delayLabel, isDelayed } = getBaselineRender(task, bar);
+        const changeRender = getChangeRender(task);
         return (
           <TaskBarRow
             key={row.key}
@@ -2210,7 +2235,10 @@ export function GanttView({
             isPreview={isPreview}
             dateLabel={dateLabel}
             tooltip={tooltip}
-            ghostBar={ghostBar}
+            ghostBar={changeRender.ghost ?? ghostBar}
+            changeKind={changeRender.kind}
+            changeText={changeRender.text}
+            dimmed={changeRender.dimmed}
             delayLabel={delayLabel}
             isDelayed={isDelayed}
             depBadgeLeftTitle={depBadgeLeft}
@@ -2290,6 +2318,7 @@ export function GanttView({
         const tooltip = `${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}${formatBarTooltipSuffix(isStagnant, criticalTaskIds.has(task.id))}`;
         const { left: depBadgeLeft, right: depBadgeRight } = getDepBadgeTitles(task.id);
         const { ghostBar, delayLabel, isDelayed } = getBaselineRender(task, bar);
+        const changeRender = getChangeRender(task);
         return (
           <TaskBarRow
             key={row.key}
@@ -2297,7 +2326,7 @@ export function GanttView({
             scale={rowScale}
             taskId={task.id}
             bar={bar}
-            barColor={resolveGanttBarColor(isDone, !!isOverdue, TODO_COLOR)}
+            barColor={changeRender.color ?? resolveGanttBarColor(isDone, !!isOverdue, TODO_COLOR)}
             borderRadius={hasRange ? "4px" : "9px"}
             isDone={isDone}
             isStagnant={isStagnant}
@@ -2305,7 +2334,10 @@ export function GanttView({
             isPreview={isPreview}
             dateLabel={dateLabel}
             tooltip={tooltip}
-            ghostBar={ghostBar}
+            ghostBar={changeRender.ghost ?? ghostBar}
+            changeKind={changeRender.kind}
+            changeText={changeRender.text}
+            dimmed={changeRender.dimmed}
             delayLabel={delayLabel}
             isDelayed={isDelayed}
             depBadgeLeftTitle={depBadgeLeft}
@@ -2362,12 +2394,13 @@ export function GanttView({
         const isOverdue = due && due < today && !suppressOverdue(task.status);
         const isStagnant = isTaskStagnant(task);
         const pj = task.project_id ? projectById.get(task.project_id) : undefined;
-        const barColor = resolveGanttBarColor(isDone, !!isOverdue, pj?.color_tag ?? m.color_text);
+        const barColor = getChangeRender(task).color ?? resolveGanttBarColor(isDone, !!isOverdue, pj?.color_tag ?? m.color_text);
         const { hasRange, dateLabel } = formatBarDateLabel(effectiveTask, due);
         const isHovered = hoveredTaskId === task.id;
         const tooltip = `${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}${pj ? `\nPJ：${pj.name}` : ""}${formatBarTooltipSuffix(isStagnant, criticalTaskIds.has(task.id))}`;
         const { left: depBadgeLeft, right: depBadgeRight } = getDepBadgeTitles(task.id);
         const { ghostBar, delayLabel, isDelayed } = getBaselineRender(task, bar);
+        const changeRender = getChangeRender(task);
         return (
           <TaskBarRow
             key={row.key}
@@ -2383,7 +2416,10 @@ export function GanttView({
             isPreview={isPreview}
             dateLabel={dateLabel}
             tooltip={tooltip}
-            ghostBar={ghostBar}
+            ghostBar={changeRender.ghost ?? ghostBar}
+            changeKind={changeRender.kind}
+            changeText={changeRender.text}
+            dimmed={changeRender.dimmed}
             delayLabel={delayLabel}
             isDelayed={isDelayed}
             depBadgeLeftTitle={depBadgeLeft}

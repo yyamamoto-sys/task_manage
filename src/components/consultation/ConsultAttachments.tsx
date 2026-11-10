@@ -19,10 +19,12 @@ interface Props {
   disabled?: boolean;
   /** 読み込み中かどうかを親へ伝える（読み込み中は送信できないようにするため） */
   onLoadingChange?: (loading: boolean) => void;
+  /** 「資料を添付」ボタンと同じ行の右側に置く要素（送信ボタンなど。縦を取らないため） */
+  trailing?: React.ReactNode;
   children: React.ReactNode;
 }
 
-export function ConsultAttachments({ attachments, onChange, disabled, onLoadingChange, children }: Props) {
+export function ConsultAttachments({ attachments, onChange, disabled, onLoadingChange, trailing, children }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const attachmentsRef = useRef(attachments);
   attachmentsRef.current = attachments;
@@ -130,7 +132,7 @@ export function ConsultAttachments({ attachments, onChange, disabled, onLoadingC
 
       {children}
 
-      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
         <input
           ref={inputRef} type="file" multiple accept={CONSULT_ATTACHMENT_ACCEPT} style={{ display: "none" }}
           onChange={e => { const files = Array.from(e.target.files ?? []); e.target.value = ""; void addFiles(files); }}
@@ -146,6 +148,7 @@ export function ConsultAttachments({ attachments, onChange, disabled, onLoadingC
         >
           <span>📎</span><span>{loading ? "読み込み中..." : "資料を添付"}</span>
         </button>
+        {trailing}
       </div>
 
       {isDragOver && (

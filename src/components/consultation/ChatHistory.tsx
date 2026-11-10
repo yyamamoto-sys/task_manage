@@ -12,6 +12,8 @@ import type { ConsultationSession } from "../../lib/ai/sessionManager";
 import type { UndoSnapshot } from "../../hooks/useUndoStack";
 import { ProposalCard } from "./ProposalCard";
 import { useTypingEffect } from "../../hooks/useTypingEffect";
+import { stripAliasIds } from "../../lib/ai/displayText";
+import { useAliasNameResolver } from "../../hooks/useAliasNameResolver";
 
 interface Props {
   session: ConsultationSession;
@@ -36,6 +38,7 @@ export function ChatHistory({
   onProposalApplied,
   onOpenTask,
 }: Props) {
+  const resolveAlias = useAliasNameResolver(shortIdMap);
   if (session.turns.length === 0) return null;
 
   return (
@@ -101,7 +104,7 @@ export function ChatHistory({
                 wordBreak: "break-word",
               }}
             >
-              {isLatest ? <AnimatedText text={turn.content} /> : turn.content}
+              {isLatest ? <AnimatedText text={stripAliasIds(turn.content, resolveAlias)} /> : stripAliasIds(turn.content, resolveAlias)}
             </div>
           );
         }

@@ -29,7 +29,8 @@ const DEFAULT_MODEL = "claude-sonnet-4-6";
 // 未知の値は無視して既定にフォールバック（任意モデル指定の悪用を防ぐ）
 // claude-sonnet-5-5 はAI相談のメイン（AI相談 第2段・2026-11〜）。思考が既定で有効なので、返答の content は
 // thinking ブロックが text より前に来る（呼び出し側は type==="text" を探して読むこと）。
-const ALLOWED_MODELS = ["claude-sonnet-4-6", "claude-haiku-4-5", "claude-sonnet-5-5"];
+// claude-haiku-5-5 はAI相談の「高速」選択肢（v3.209）。Sonnet 5.5 と同じパラメータ（effort・構造化出力）が使える。
+const ALLOWED_MODELS = ["claude-sonnet-4-6", "claude-haiku-4-5", "claude-sonnet-5-5", "claude-haiku-5-5"];
 // クライアント指定 max_tokens の上限（コスト暴走防止。レート制限と併用）
 // 2026-07-24: メイン相談（apiClient.ts）が複数タスクの構造化提案等で出力が
 // 4096を超えて途中で切れる不具合があったため、16384に引き上げ（v2.93の

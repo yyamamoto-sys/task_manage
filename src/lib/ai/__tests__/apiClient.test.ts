@@ -281,3 +281,25 @@ describe("callAIConsultation：ゲストのAI利用回数表示（参考値）�
     expect(mockRecordGuestAiUse).not.toHaveBeenCalled();
   });
 });
+
+describe("callAIConsultation: モデル指定が通らなかったとき", () => {
+  const okData = (model: string) => ({
+    data: { content: [{ type: "text", text: "{}" }], model, stop_reason: "end_turn", usage: { input_tokens: 1, output_tokens: 1 } },
+    error: null,
+  });
+
+  it("指定どおりのモデルで返れば成功（Haiku 5.5）", async () => {
+    mockInvoke.mockResolvedValue(okData("claude-haiku-5-5"));
+    const r = await callAIConsultation(PAYLOAD, "change", [], "claude-haiku-5-5");
+    expect(r.text).toBe("{}");
+    expect((mockInvoke.mock.calls[0][1].body as { model: string }).model).toBe("claude-haiku-5-5");
+  });
+
+  it("サーバーが指定モデルを知らず既定で実行したときは、黙って返さず分かる文言で止める", async () => {
+    mockInvoke.mockResolvedValue(okData("claude-sonnet-4-6"));
+    await expect(callAIConsultation(PAYLOAD, "change", [], "claude-haiku-5-5")).rejects.toMatchObject({
+      code: "INVALID_RESPONSE",
+      message: expect.stringContaining("モデルがサーバー側でまだ使えない"),
+    });
+  });
+});

@@ -293,6 +293,16 @@ export async function callAIConsultation(
   // 429（GUEST_DAILY_LIMIT_EXCEEDED等）や他のエラー時は加算されない。
   if (isGuestMode()) recordGuestAiUse();
 
+  // サーバー（Edge Function）が選んだモデルを知らないと、黙って既定モデルで実行される。
+  // 返ってきたモデルが指定と違うときは、別のモデルの答えを黙って出さず、原因を示して止める
+  if (model && data.model && data.model !== model) {
+    throw new AIError(
+      "INVALID_RESPONSE",
+      "選んだモデルがサーバー側でまだ使えない状態です。モデルを「標準（Sonnet 5.5）」に戻してお試しください。続く場合は管理者に連絡してください。",
+      data.usage,
+    );
+  }
+
   return {
     text,
     usage: data.usage ?? { input_tokens: 0, output_tokens: 0 },

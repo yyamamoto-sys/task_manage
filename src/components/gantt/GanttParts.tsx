@@ -9,6 +9,18 @@ import { InlineEditText } from "../common/InlineEditText";
 import type { LinkSide } from "../../lib/dependencies/linkDirection";
 import { CRITICAL_COLOR, resizeHandleWidth, ganttRowMetrics } from "./ganttUtils";
 import { indentLevelOf } from "../../lib/taskHierarchy";
+import { CHANGE_STYLES, type ChangeKind } from "../../lib/ai/ganttPreviewDiff";
+
+// ===== 「ガントで比較」の変更表示（v3.209） =====
+// 変更のあった行を色の帯・薄い背景・記号で示す。色だけに頼らず記号（↔／＋／−／👤）を併記する。
+function ChangeBadge({ kind }: { kind: ChangeKind }) {
+  const st = CHANGE_STYLES[kind];
+  return (
+    <span title={st.label} aria-label={st.label} style={{ flexShrink: 0, fontSize: "11px", fontWeight: 700, color: st.color, lineHeight: 1 }}>
+      {st.symbol}
+    </span>
+  );
+}
 
 // ===== TaskBarLinkUi（B5：ドラッグ結線のハンドル用プロップ束） =====
 //
@@ -55,6 +67,11 @@ export interface TaskBarRowProps {
   isDone: boolean;
   isStagnant: boolean;
   isChanged?: boolean;
+  /** 「ガントで比較」：変更の種類（色・記号）と、バー横に出す短い説明。ghostBar は変更前の位置として点線で描く */
+  changeKind?: ChangeKind;
+  changeText?: string;
+  /** 「ガントで比較」：変更のない行を控えめ（薄く）にする */
+  dimmed?: boolean;
   isHovered: boolean;
   isPreview: boolean;
   dateLabel: string;
@@ -104,7 +121,7 @@ export interface TaskBarRowProps {
 
 function TaskBarRowImpl({
   taskId, rowHeight: rowHeightProp, scale = 1, bar, barColor, barHeight: barHeightProp, borderRadius = "9px",
-  isDone, isStagnant, isChanged = false,
+  isDone, isStagnant, isChanged = false, changeKind, changeText, dimmed = false,
   isHovered, isPreview,
   dateLabel, tooltip, depBadgeLeftTitle, depBadgeRightTitle,
   ghostBar, delayLabel, isDelayed = false, linkUi, isMoving = false, isSelected = false,
@@ -112,6 +129,7 @@ function TaskBarRowImpl({
   onEdit, onResize, onResizeStart, onMoveStart, onMouseEnter, onMouseLeave, onEmptyDragStart,
 }: TaskBarRowProps) {
   const m = ganttRowMetrics(scale);
+  const changeStyle = changeKind ? CHANGE_STYLES[changeKind] : undefined;
   const rowHeight = rowHeightProp ?? m.heights.task;
   const barHeight = barHeightProp ?? m.barHeight;
   // 期日未登録タスク（bar===null）の空行ドラッグで期間を新規作成できるかどうか
@@ -145,11 +163,14 @@ function TaskBarRowImpl({
       style={{
         height: rowHeight, position: "relative",
         borderBottom: "1px solid var(--color-border-primary)",
-        background: isChanged
+        background: changeStyle
+          ? changeStyle.bg
+          : isChanged
           ? "rgba(127,119,221,0.06)"
           : isHovered ? "var(--color-bg-secondary)" : "var(--color-bg-primary)",
         cursor: canDragEmptyRow ? "crosshair" : undefined,
         transition: "background 0.1s",
+        opacity: dimmed ? 0.5 : 1,
       }}
     >
       {/* 期日未登録タスクの空行ヒント（ホバー時のみ。ドラッグ操作の当たり判定は行自身が担うため
@@ -163,18 +184,33 @@ function TaskBarRowImpl({
           pointerEvents: "none",
         }}>ドラッグして期間を設定</div>
       )}
-      {/* B4：ベースライン（当初計画）のゴーストバー。実バーより下の層（zIndex 1）に描く */}
+      {/* 変更の説明（記号＋「月/日 → 月/日」）。バーの右隣に置く */}
+      {changeStyle && changeKind && (
+        <div
+          data-change-kind={changeKind}
+          style={{
+            position: "absolute", left: Number.isFinite(rightEdge) ? rightEdge + 8 : 8, top: "50%", transform: "translateY(-50%)",
+            zIndex: 4, pointerEvents: "none", whiteSpace: "nowrap",
+            fontSize: "10px", fontWeight: 600, lineHeight: 1.4, padding: "0 6px",
+            color: changeStyle.color, background: changeStyle.bg, border: `1px solid ${changeStyle.color}`, borderRadius: "9px",
+          }}
+        >
+          {changeStyle.symbol} {changeText ?? changeStyle.label}
+        </div>
+      )}
+      {/* B4：ベースライン（当初計画）のゴーストバー。実バーより下の層（zIndex 1）に描く。
+          「ガントで比較」では同じ枠を「変更前の位置」として使う */}
       {ghostBar && (
         <div
-          title="当初計画（ベースライン）"
+          title={changeStyle ? "変更前の位置" : "当初計画（ベースライン）"}
           style={{
             position: "absolute",
             left: ghostBar.barX, top: "50%", transform: "translateY(-50%)",
             width: ghostBar.barWidth, height: barHeight,
             borderRadius,
             background: "transparent",
-            border: "1.5px dashed var(--color-text-tertiary)",
-            opacity: 0.55,
+            border: `1.5px dashed ${changeStyle ? changeStyle.color : "var(--color-text-tertiary)"}`,
+            opacity: changeStyle ? 0.85 : 0.55,
             zIndex: 1,
             boxSizing: "border-box",
             pointerEvents: "none",
@@ -207,6 +243,8 @@ function TaskBarRowImpl({
               zIndex: 2,
               outline: isSelected
                 ? "2px solid var(--color-text-info)"
+                : changeStyle
+                ? `2px solid ${changeStyle.color}`
                 : isChanged
                 ? "2px solid var(--color-brand)"
                 : isCritical
@@ -370,6 +408,9 @@ function barRowPropsEqual(prev: TaskBarRowProps, next: TaskBarRowProps): boolean
     prev.isDone === next.isDone &&
     prev.isStagnant === next.isStagnant &&
     prev.isChanged === next.isChanged &&
+    prev.changeKind === next.changeKind &&
+    prev.changeText === next.changeText &&
+    (prev.dimmed ?? false) === (next.dimmed ?? false) &&
     prev.isHovered === next.isHovered &&
     prev.isPreview === next.isPreview &&
     prev.dateLabel === next.dateLabel &&
@@ -442,6 +483,9 @@ export interface GanttPjLabelRowProps {
   /** 木の深さ（最上位=0）。インデントに使う（MAX_INDENT_LEVEL で頭打ち）。省略時は isChild から 0/1 */
   depth?: number;
   childCount: number;
+  /** 「ガントで比較」：変更の種類（左の色帯・薄い背景・記号）／変更なしの行を薄くする */
+  changeKind?: ChangeKind;
+  dimmed?: boolean;
   isHovered: boolean;
   isCollapsed: boolean;
   onEdit: (taskId: string) => void;
@@ -471,7 +515,7 @@ export interface GanttPjLabelRowProps {
 }
 
 export const GanttPjLabelRow = memo(function GanttPjLabelRow({
-  task, rowHeight: rowHeightProp, scale = 1, isChild, depth: depthProp, childCount, isHovered, isCollapsed, isSelected, onCheckboxClick,
+  task, rowHeight: rowHeightProp, scale = 1, isChild, depth: depthProp, childCount, changeKind, dimmed = false, isHovered, isCollapsed, isSelected, onCheckboxClick,
   onEdit, onHoverEnter, onHoverLeave, onToggleCollapse, onSaveAssignees,
   onSaveName, autoEditName, onInsertAfter, onAddChild,
   draggingId, dropZone, onDragHandleStart, onDragHandleEnd, onRowDragOver, onRowDragLeave, onRowDrop,
@@ -494,6 +538,8 @@ export const GanttPjLabelRow = memo(function GanttPjLabelRow({
   if (dropZone === "nest") shadowLayers.push("inset 0 0 0 2px var(--color-brand)");
   if (dropZone === "before") shadowLayers.push("inset 0 2px 0 var(--color-brand)");
   if (dropZone === "after") shadowLayers.push("inset 0 -2px 0 var(--color-brand)");
+  const changeStyle = changeKind ? CHANGE_STYLES[changeKind] : undefined;
+  if (changeStyle) shadowLayers.unshift(`inset 4px 0 0 ${changeStyle.color}`);
   return (
     <div key={task.id} data-task-focus-id={task.id} onClick={() => onEdit(task.id)}
       onMouseEnter={() => { onHoverEnter(task.id); setIsRowHovered(true); }}
@@ -508,18 +554,19 @@ export const GanttPjLabelRow = memo(function GanttPjLabelRow({
       gap: "5px", padding: isChild ? `0 8px 0 ${10 + 30 * indentLevelOf(depthProp ?? 1)}px` : "0 8px 0 10px",
       borderBottom: "1px solid var(--color-border-primary)",
       borderTop: (!isChild && childCount > 0) ? "2px solid var(--color-border-primary)" : undefined,
-      background: isHovered
+      background: changeStyle ? changeStyle.bg : isHovered
         ? "var(--color-bg-secondary)"
         : childCount > 0 ? "var(--color-bg-secondary)"
         : "var(--color-bg-primary)",
       boxShadow: shadowLayers.length > 0 ? shadowLayers.join(", ") : "none",
-      opacity: isDraggingSelf ? 0.4 : 1,
+      opacity: isDraggingSelf ? 0.4 : dimmed ? 0.5 : 1,
       cursor: "pointer", transition: "background 0.1s",
       // 【重要】「＋」オーバーレイ（行間挿入UI）はこのposition:relativeを基準にposition:absoluteで
       // 配置する。相対配置自体はflowに影響せず高さ30pxを一切変えない（①の行ズレ再発防止が
       // 最優先制約。CLAUDE.md v3.06）
       position: "relative",
     }}>
+      {changeKind && <ChangeBadge kind={changeKind} />}
       {/* ドラッグハンドル（並べ替え専用。依存の無い兄弟同士のみ実際に反映される）。
           マウスのドラッグ操作専用でキーボード代替手段はない（B5結線ハンドル等と同じ扱い） */}
       {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events */}
@@ -651,6 +698,9 @@ export interface GanttTodoLabelRowProps {
   rowHeight?: number;
   /** ズームに連動した行スケール（ganttRowScale）。既定1.0 */
   scale?: number;
+  /** 「ガントで比較」：変更の種類（左の色帯・薄い背景・記号）／変更なしの行を薄くする */
+  changeKind?: ChangeKind;
+  dimmed?: boolean;
   isHovered: boolean;
   onEdit: (taskId: string) => void;
   onHoverEnter: (taskId: string) => void;
@@ -661,8 +711,9 @@ export interface GanttTodoLabelRowProps {
 
 export const GanttTodoLabelRow = memo(function GanttTodoLabelRow({
   task, rowHeight: rowHeightProp, scale = 1, isHovered, onEdit, onHoverEnter, onHoverLeave, onSaveAssignees,
-  onSaveName, isSelected, onCheckboxClick,
+  onSaveName, isSelected, onCheckboxClick, changeKind, dimmed = false,
 }: GanttTodoLabelRowProps) {
+  const changeStyle = changeKind ? CHANGE_STYLES[changeKind] : undefined;
   const m = ganttRowMetrics(scale);
   const rowHeight = rowHeightProp ?? m.heights.task;
   return (
@@ -675,9 +726,12 @@ export const GanttTodoLabelRow = memo(function GanttTodoLabelRow({
       height: rowHeight, display: "flex", alignItems: "center",
       gap: "6px", padding: "0 8px 0 26px",
       borderBottom: "1px solid var(--color-border-primary)",
-      background: isHovered ? "var(--color-bg-secondary)" : "var(--color-bg-primary)",
+      background: changeStyle ? changeStyle.bg : isHovered ? "var(--color-bg-secondary)" : "var(--color-bg-primary)",
+      boxShadow: changeStyle ? `inset 4px 0 0 ${changeStyle.color}` : undefined,
+      opacity: dimmed ? 0.5 : 1,
       cursor: "pointer", transition: "background 0.1s",
     }}>
+      {changeKind && <ChangeBadge kind={changeKind} />}
       {onCheckboxClick && <GanttRowCheckbox task={task} checked={!!isSelected} onCheckboxClick={onCheckboxClick} />}
       <StatusDot status={task.status} size={m.dotPx} />
       {/* 行クリックでタスク編集モーダルが開くため、名前のインライン編集はそちらに伝播させない（クリックしても何も起きないラッパー） */}
@@ -722,6 +776,9 @@ export interface GanttPersonLabelRowProps {
   rowHeight?: number;
   /** ズームに連動した行スケール（ganttRowScale）。既定1.0 */
   scale?: number;
+  /** 「ガントで比較」：変更の種類（左の色帯・薄い背景・記号）／変更なしの行を薄くする */
+  changeKind?: ChangeKind;
+  dimmed?: boolean;
   isHovered: boolean;
   isOverdue: boolean;
   pj: Project | undefined;
@@ -733,8 +790,9 @@ export interface GanttPersonLabelRowProps {
 
 export const GanttPersonLabelRow = memo(function GanttPersonLabelRow({
   task, rowHeight: rowHeightProp, scale = 1, isHovered, isOverdue, pj, onEdit, onHoverEnter, onHoverLeave,
-  onSaveName, isSelected, onCheckboxClick, arrowPrefix,
+  onSaveName, isSelected, onCheckboxClick, arrowPrefix, changeKind, dimmed = false,
 }: GanttPersonLabelRowProps) {
+  const changeStyle = changeKind ? CHANGE_STYLES[changeKind] : undefined;
   const m = ganttRowMetrics(scale);
   const rowHeight = rowHeightProp ?? m.heights.task;
   return (
@@ -747,9 +805,12 @@ export const GanttPersonLabelRow = memo(function GanttPersonLabelRow({
       height: rowHeight, display: "flex", alignItems: "center",
       gap: "5px", padding: "0 8px 0 26px",
       borderBottom: "1px solid var(--color-border-primary)",
-      background: isHovered ? "var(--color-bg-secondary)" : "var(--color-bg-primary)",
+      background: changeStyle ? changeStyle.bg : isHovered ? "var(--color-bg-secondary)" : "var(--color-bg-primary)",
+      boxShadow: changeStyle ? `inset 4px 0 0 ${changeStyle.color}` : undefined,
+      opacity: dimmed ? 0.5 : 1,
       cursor: "pointer", transition: "background 0.1s",
     }}>
+      {changeKind && <ChangeBadge kind={changeKind} />}
       {onCheckboxClick && <GanttRowCheckbox task={task} checked={!!isSelected} onCheckboxClick={onCheckboxClick} />}
       <StatusDot status={task.status} size={m.dotPx} />
       {pj && (

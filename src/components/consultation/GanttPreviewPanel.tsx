@@ -3,16 +3,22 @@
 // 【設計意図】
 // ガントチャートを「現在」と「AI提案適用後（仮）」に分割表示するパネル。
 // 画面下からスライドインするオーバーレイ。
-// - 上半分（50vh）：通常のGanttView（DBデータそのまま）
-// - 下半分（50vh）：プレビュー用GanttView（proposalを適用した仮のタスクデータ）
+// - 最上部：凡例・変更件数・「変更のある行だけ表示」（v3.209）
+// - 上半分：通常のGanttView（DBデータそのまま）
+// - 下半分：プレビュー用GanttView（proposalを適用した仮のタスクデータ）
 // DBは変更しない（React stateの一時的な上書きのみ）。
+// v3.209：変更のあった行を種類別の色・記号で目立たせる（lib/ai/ganttPreviewDiff.ts）。上部に凡例・件数・
+// 「変更のある行だけ表示」の切替を置く。変更前の位置は下のガントのバーに点線で重ねる。
 
 import { useMemo, useState, useEffect } from "react";
 import type { UIProposal } from "../../lib/ai/proposalMapper";
-import { useAppStore, selectScopedTasks, selectScopedProjects } from "../../stores/appStore";
+import { useAppStore, selectScopedTasks, selectScopedProjects, selectScopedMembers } from "../../stores/appStore";
 import { active } from "../../lib/localData/localStore";
 import { GanttView } from "../gantt/GanttView";
-import type { Member, Project, Task } from "../../lib/localData/types";
+import type { Member, Project } from "../../lib/localData/types";
+import {
+  applyProposalToPreview, diffTasksForPreview, summarizeChanges, onlyChangedTasks, CHANGE_STYLES, type ChangeKind,
+} from "../../lib/ai/ganttPreviewDiff";
 
 interface Props {
   proposal: UIProposal;
@@ -31,6 +37,8 @@ export function GanttPreviewPanel({
 }: Props) {
   const tasks    = useAppStore(selectScopedTasks);
   const projects = useAppStore(selectScopedProjects);
+  const members  = useAppStore(selectScopedMembers);
+  const [onlyChanged, setOnlyChanged] = useState(false);
 
   // アニメーション用state
   const [visible, setVisible] = useState(false);
@@ -48,36 +56,24 @@ export function GanttPreviewPanel({
 
   // ===== プレビュー用タスクの計算 =====
 
-  const { previewTasks, changedTaskIds } = useMemo(() => {
-    const changed = new Set<string>();
-
+  const { previewTasks, changes, summary } = useMemo(() => {
     // proposalのtarget_task_idsをshortIdMap経由でUUIDに変換
     const targetUuids = proposal.target_task_ids
       .map(shortId => shortIdMap.get(shortId))
       .filter((uuid): uuid is string => !!uuid);
+    const findMemberId = (shortName: string) =>
+      members.find(m => !m.is_deleted && (m.short_name === shortName || m.display_name === shortName))?.id;
+    const after = applyProposalToPreview(tasks, proposal, targetUuids, findMemberId);
+    const diff = diffTasksForPreview(tasks, after);
+    return { previewTasks: after, changes: diff, summary: summarizeChanges(diff) };
+  }, [tasks, proposal, shortIdMap, members]);
 
-    const modified = tasks.map((task): Task => {
-      if (!targetUuids.includes(task.id)) return task;
-
-      let updated = { ...task };
-
-      if (proposal.action_type === "date_change" && proposal.suggested_date) {
-        updated = { ...updated, due_date: proposal.suggested_date };
-        changed.add(task.id);
-      } else if (proposal.action_type === "assignee" && proposal.suggested_assignee) {
-        // suggested_assigneeはshort_name。membersから逆引きしてUUIDを取得
-        // 注意：ここではハイライトのみ行う（担当者名の解決はGanttView内で行われる）
-        changed.add(task.id);
-      } else {
-        // その他のaction_typeはハイライトのみ（due_date変更なし）
-        changed.add(task.id);
-      }
-
-      return updated;
-    });
-
-    return { previewTasks: modified, changedTaskIds: changed };
-  }, [tasks, proposal, shortIdMap]);
+  // 「変更のある行だけ表示」は下（変更後）のガントだけに効かせる。上（現在）は常に全体を見せる
+  const shownPreviewTasks = useMemo(
+    () => (onlyChanged && changes.size > 0 ? onlyChangedTasks(previewTasks, changes) : previewTasks),
+    [onlyChanged, previewTasks, changes],
+  );
+  const changedTaskIds = useMemo(() => new Set(changes.keys()), [changes]);
 
   const visibleProjects = selectedProject ? [selectedProject] : active(projects);
 
@@ -94,10 +90,55 @@ export function GanttPreviewPanel({
         pointerEvents: "auto",
       }}
     >
+      {/* 変更の見方：凡例（記号つき）・変更件数・変更のある行だけ表示 */}
+      <div
+        data-testid="gantt-preview-legend"
+        style={{
+          flexShrink: 0, display: "flex", alignItems: "center", flexWrap: "wrap", gap: "6px 12px",
+          padding: "6px 12px", background: "var(--color-bg-secondary)",
+          borderBottom: "1px solid var(--color-border-secondary)",
+          fontSize: "11px", color: "var(--color-text-secondary)",
+        }}
+      >
+        <span style={{ fontWeight: 600, color: "var(--color-text-primary)" }}>
+          {summary.total > 0 ? `変更 ${summary.total}件` : "変更される行はありません"}
+        </span>
+        {(Object.keys(CHANGE_STYLES) as ChangeKind[]).map(kind => {
+          const st = CHANGE_STYLES[kind];
+          const n = summary[kind];
+          return (
+            <span
+              key={kind}
+              style={{
+                display: "inline-flex", alignItems: "center", gap: "4px", padding: "1px 8px",
+                borderRadius: "var(--radius-full)", border: `1px solid ${st.color}`,
+                color: st.color, background: st.bg, fontWeight: 600, opacity: n > 0 ? 1 : 0.45,
+              }}
+            >
+              <span aria-hidden="true">{st.symbol}</span>
+              {st.label}
+              <span>{n}</span>
+            </span>
+          );
+        })}
+        <span style={{ color: "var(--color-text-tertiary)" }}>
+          点線の枠＝変更前の位置 ／ 変更のない行は薄く表示
+        </span>
+        <label style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: "4px", cursor: summary.total > 0 ? "pointer" : "default" }}>
+          <input
+            type="checkbox"
+            checked={onlyChanged}
+            disabled={summary.total === 0}
+            onChange={e => setOnlyChanged(e.target.checked)}
+          />
+          変更のある行だけ表示（下の画面）
+        </label>
+      </div>
+
       {/* 上半分：現在のガント */}
       <div
         style={{
-          height: "50vh",
+          flex: 1, minHeight: 0,
           display: "flex",
           flexDirection: "column",
           borderBottom: "2px solid var(--color-border-secondary)",
@@ -136,7 +177,7 @@ export function GanttPreviewPanel({
       {/* 下半分：プレビューガント */}
       <div
         style={{
-          height: "50vh",
+          flex: 1, minHeight: 0,
           display: "flex",
           flexDirection: "column",
           background: "var(--color-bg-primary)",
@@ -148,9 +189,10 @@ export function GanttPreviewPanel({
           currentUser={currentUser}
           selectedProject={selectedProject}
           projects={visibleProjects}
-          previewTasks={previewTasks}
+          previewTasks={shownPreviewTasks}
           isPreview={true}
           previewChangedTaskIds={changedTaskIds}
+          previewChanges={changes}
           enableKeyboardShortcuts={false}
         />
 

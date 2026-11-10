@@ -8,6 +8,7 @@
 import { useState } from "react";
 import type { SavedChatSession } from "../../lib/ai/chatHistoryStorage";
 import { loadChatHistory, deleteChatSession, MAX_HISTORY } from "../../lib/ai/chatHistoryStorage";
+import { stripAliasIds } from "../../lib/ai/displayText";
 
 interface Props {
   userId: string;
@@ -56,15 +57,15 @@ function parseAssistantContent(content: string): ParsedAssistant {
     const proposals: ParsedProposal[] = Array.isArray(parsed.proposals)
       ? (parsed.proposals as { title?: string; description?: string }[])
           .map(p => ({
-            title: typeof p.title === "string" ? p.title : "",
-            description: typeof p.description === "string" ? p.description : "",
+            title: typeof p.title === "string" ? stripAliasIds(p.title) : "",
+            description: typeof p.description === "string" ? stripAliasIds(p.description) : "",
           }))
           .filter(p => p.title || p.description)
       : [];
     const followUps: string[] = Array.isArray(parsed.follow_up_suggestions)
-      ? (parsed.follow_up_suggestions as unknown[]).filter((s): s is string => typeof s === "string")
+      ? (parsed.follow_up_suggestions as unknown[]).filter((s): s is string => typeof s === "string").map(s => stripAliasIds(s))
       : [];
-    const reply = typeof parsed.reply === "string" && parsed.reply.trim() ? parsed.reply.trim() : undefined;
+    const reply = typeof parsed.reply === "string" && parsed.reply.trim() ? stripAliasIds(parsed.reply.trim()) : undefined;
     return { reply, proposals, followUps };
   } catch {
     return { proposals: [], followUps: [] };
