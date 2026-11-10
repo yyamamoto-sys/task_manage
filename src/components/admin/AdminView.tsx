@@ -28,6 +28,7 @@ import { resolveInviteStatus, PROJECT_INVITE_STATUS_LABEL, type ProjectInviteSta
 import { canAdministerGroup, canChangeHomeGroup, canDeleteMember, canEditMemberRow, visibleInviteGroupIds } from "../../lib/admin/memberPermission";
 import { isGuestOnlyMember, withGuestOnlyMembers, isGuestMemberOf, withGuestLabel, inviteGroupIdsInScope } from "../../lib/admin/guestMembers";
 import { effectiveTfQuarter } from "../../lib/okr/tfQuarter";
+import { applyProjectTaskForceLinks } from "../../lib/project/projectTaskForceLinks";
 import { keyResultsInGroup, taskForcesInGroup, pickCurrentObjectiveForGroup } from "../../lib/okr/deptScope";
 import { currentQuarter } from "../../lib/date";
 import { getErrorMessage, formatErrorForUser } from "../../lib/errorMessage";
@@ -1456,14 +1457,10 @@ function PJSection({ currentUser, onDirtyChange, selectedGroupId }: { currentUse
         if (existing) await saveProject({ ...existing, ...projectFields, owner_member_id, updated_by: currentUser.id });
       }
       // TF 紐付けの差分適用
-      const before = new Set(rawProjectTaskForces.filter(p => p.project_id === projectId).map(p => p.tf_id));
-      const after  = new Set(tf_ids);
-      const toAdd    = [...after].filter(id => !before.has(id));
-      const toRemove = [...before].filter(id => !after.has(id));
-      await Promise.all([
-        ...toAdd.map(tfId => addProjectTaskForce({ project_id: projectId, tf_id: tfId })),
-        ...toRemove.map(tfId => removeProjectTaskForce(projectId, tfId)),
-      ]);
+      await applyProjectTaskForceLinks({
+        projectId, desiredTfIds: tf_ids, existingLinks: rawProjectTaskForces,
+        add: addProjectTaskForce, remove: removeProjectTaskForce,
+      });
     }, "保存に失敗しました");
     if (ok) setEditId(null);
   };

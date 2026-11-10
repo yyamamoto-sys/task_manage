@@ -39,6 +39,15 @@ export interface ReleaseNoteEntry {
 
 export const RELEASE_NOTES: ReleaseNoteEntry[] = [
   {
+    version: "v3.213",
+    date: "2026-11-10",
+    title: "プロジェクトの設定画面から、PJが貢献するTF（KR）を選べるようになりました",
+    highlights: [
+      "「⚙ このPJの設定」の基本情報に「紐づくTF（KR）」欄を追加しました。KRごとにまとまった今期のTFから、このPJが貢献するものを複数選べます（これまでは管理画面だけでした）。",
+      "今期以外のTFへの紐づけは、ここでは表示されず、保存しても変わりません。",
+    ],
+  },
+  {
     version: "v3.212",
     date: "2026-11-10",
     title: "起動時の読み込みバーが、データの量に合わせて滑らかに進むようになりました",

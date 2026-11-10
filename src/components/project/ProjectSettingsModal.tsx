@@ -27,6 +27,8 @@ import { active } from "../../lib/localData/localStore";
 import { getAssigneeIds } from "../../lib/taskMeta";
 import { computeProjectMembers, type ProjectMemberRole } from "../../lib/project/projectMembers";
 import { canEditProjectBasicInfo } from "../../lib/project/projectEditPermission";
+import { applyProjectTaskForceLinks, buildCurrentQuarterKrTfGroups } from "../../lib/project/projectTaskForceLinks";
+import { keyResultsInGroup, taskForcesInGroup } from "../../lib/okr/deptScope";
 import { CustomSelect } from "../common/CustomSelect";
 import { Avatar } from "../auth/UserSelectScreen";
 import { modalOverlayStyle, modalBoxStyle, MODAL_BODY_STYLE, MODAL_FOOTER_STYLE } from "../common/modalStyles";
@@ -112,6 +114,13 @@ export function ProjectSettingsModal({ project, currentUser, onClose }: Props) {
   const scopedMembers = useAppStore(selectScopedMembers);
   const rawTpjs = useAppStore(s => s.taskProjects);
   const saveProject = useAppStore(s => s.saveProject);
+  const rawKeyResults = useAppStore(s => s.keyResults);
+  const rawTaskForces = useAppStore(s => s.taskForces);
+  const rawObjectives = useAppStore(s => s.objectives);
+  const rawProjectTaskForces = useAppStore(s => s.projectTaskForces);
+  const addProjectTaskForce = useAppStore(s => s.addProjectTaskForce);
+  const removeProjectTaskForce = useAppStore(s => s.removeProjectTaskForce);
+  const currentGroupId = useAppStore(s => s.currentGroupId);
   const deleteProject = useAppStore(s => s.deleteProject);
   const restoreProject = useAppStore(s => s.restoreProject);
   const members = useMemo(() => active(rawMembers), [rawMembers]);
@@ -134,6 +143,29 @@ export function ProjectSettingsModal({ project, currentUser, onClose }: Props) {
     start_date: project.start_date ?? "",
     end_date: project.end_date ?? "",
   });
+  // 紐づくTF（PJ↔TF）。選択肢は今期のTFだけ。今期以外の既存紐づけは tfIds に残したまま
+  // managedTfIds の外として扱い、保存で消さない（lib/project/projectTaskForceLinks.ts）。
+  const [tfIds, setTfIds] = useState<string[]>(
+    () => rawProjectTaskForces.filter(p => p.project_id === project.id).map(p => p.tf_id),
+  );
+  const tfGroupId = project.group_id ?? currentGroupId;
+  const krTfGroups = useMemo(() => {
+    const krs = keyResultsInGroup(active(rawKeyResults), rawObjectives, tfGroupId);
+    const tfs = taskForcesInGroup(active(rawTaskForces), krs, rawObjectives, tfGroupId);
+    return buildCurrentQuarterKrTfGroups(krs, tfs);
+  }, [rawKeyResults, rawTaskForces, rawObjectives, tfGroupId]);
+  const managedTfIds = useMemo(
+    () => new Set(krTfGroups.flatMap(g => g.tfs.map(t => t.tf.id))),
+    [krTfGroups],
+  );
+  const savedTfIds = useMemo(
+    () => rawProjectTaskForces.filter(p => p.project_id === project.id && managedTfIds.has(p.tf_id)).map(p => p.tf_id),
+    [rawProjectTaskForces, project.id, managedTfIds],
+  );
+  const tfDirty = useMemo(() => {
+    const now = tfIds.filter(id => managedTfIds.has(id));
+    return now.length !== savedTfIds.length || now.some(id => !savedTfIds.includes(id));
+  }, [tfIds, savedTfIds, managedTfIds]);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [archiving, setArchiving] = useState(false);
@@ -147,7 +179,8 @@ export function ProjectSettingsModal({ project, currentUser, onClose }: Props) {
     || form.start_date !== (project.start_date ?? "")
     || form.end_date !== (project.end_date ?? "")
     || JSON.stringify(form.owner_member_ids) !== JSON.stringify(project.owner_member_ids?.length ? project.owner_member_ids : (project.owner_member_id ? [project.owner_member_id] : []))
-  ), [form, project]);
+    || tfDirty
+  ), [form, project, tfDirty]);
 
   const saveBasicInfo = useCallback(async () => {
     if (!canEditBasicInfo || saving) return;
@@ -179,12 +212,16 @@ export function ProjectSettingsModal({ project, currentUser, onClose }: Props) {
         end_date: form.end_date,
         updated_by: currentUser.id,
       });
+      await applyProjectTaskForceLinks({
+        projectId: project.id, desiredTfIds: tfIds, existingLinks: rawProjectTaskForces,
+        managedTfIds, add: addProjectTaskForce, remove: removeProjectTaskForce,
+      });
     } catch (e) {
       setSaveError(formatErrorForUser("保存に失敗しました", e));
     } finally {
       setSaving(false);
     }
-  }, [canEditBasicInfo, saving, form, project, saveProject, currentUser.id]);
+  }, [canEditBasicInfo, saving, form, project, saveProject, currentUser.id, tfIds, rawProjectTaskForces, managedTfIds, addProjectTaskForce, removeProjectTaskForce]);
 
   // 「1クリックでアーカイブ」：フォームの下書き（未保存の編集）を巻き込まず、常に現在の
   // project（正本）を元にstatusだけを変える。他の下書き中フィールドを誤って一緒に
@@ -395,6 +432,44 @@ export function ProjectSettingsModal({ project, currentUser, onClose }: Props) {
                     </div>
                   </div>
 
+                  <div>
+                    <FieldLabel>紐づくTF（KR）</FieldLabel>
+                    {krTfGroups.length === 0 ? (
+                      <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>今期のTFがありません。</div>
+                    ) : (
+                      <div style={{
+                        border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)",
+                        padding: "8px 10px", maxHeight: "200px", overflowY: "auto",
+                        display: "flex", flexDirection: "column", gap: "8px",
+                      }}>
+                        {krTfGroups.map(g => (
+                          <div key={g.kr.id}>
+                            <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", fontWeight: 600, marginBottom: "3px" }}>
+                              {g.krLabel}：{g.kr.title}
+                            </div>
+                            <div style={{ display: "flex", flexDirection: "column", gap: "3px", paddingLeft: "8px" }}>
+                              {g.tfs.map(({ tf, label }) => (
+                                <label key={tf.id} style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", color: "var(--color-text-primary)", cursor: "pointer", padding: "2px 0" }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={tfIds.includes(tf.id)}
+                                    onChange={e => setTfIds(ids => e.target.checked ? [...ids, tf.id] : ids.filter(id => id !== tf.id))}
+                                    style={{ accentColor: "var(--color-brand)", flexShrink: 0 }}
+                                  />
+                                  <span style={{ color: "var(--color-text-tertiary)", flexShrink: 0 }}>{label}</span>
+                                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tf.name}</span>
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <p style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginTop: "4px", lineHeight: 1.6 }}>
+                      このPJが貢献するTF（今期分）を複数選べます。今期以外の紐づけはここには出ず、保存しても変わりません。
+                    </p>
+                  </div>
+
                   {saveError && <div style={{ fontSize: "12px", color: "var(--color-text-danger)" }}>{saveError}</div>}
 
                   <div style={{ display: "flex", gap: "8px", marginTop: "4px" }}>
@@ -441,6 +516,10 @@ export function ProjectSettingsModal({ project, currentUser, onClose }: Props) {
                   <ReadOnlyValue>{project.start_date || "—"} 〜 {project.end_date || "—"}</ReadOnlyValue>
                   <FieldLabel>ステータス</FieldLabel>
                   <ReadOnlyValue>{STATUS_LABELS[project.status]}</ReadOnlyValue>
+                  <FieldLabel>紐づくTF（KR）</FieldLabel>
+                  <ReadOnlyValue>
+                    {krTfGroups.flatMap(g => g.tfs.filter(t => savedTfIds.includes(t.tf.id)).map(t => `${g.krLabel}：${g.kr.title} ＞ ${t.label} ${t.tf.name}`)).join(" ／ ") || "なし"}
+                  </ReadOnlyValue>
                 </div>
               )}
 

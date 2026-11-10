@@ -8742,3 +8742,12 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 * `fetchCriticalData` の進捗コールバックを `(表の完了数, 表数)` から `(全9表の TableLoad 配列)` に変更（表の内部でもページごとに通知）。`fetchGroups` も任意の `onProgress` を受ける。`appStore.load()` は9表＋groups の10表を `rowFraction` に渡す。リトライ時は進行度を0に戻し、従来どおりヒント「接続タイムアウト — n秒後に再接続」で説明する。
 * 起動の3段（認証確認＝不定バー／Phase 1＝0〜90%／自動同定＝95%→画面切替直前に100%）と文言は v3.211 のまま。
 * テスト：`loadProgress.test.ts`（rowFraction・createMonotonic）、`fetchAllRows.test.ts`（onProgress の呼び出し列・total=null・未指定でも結果同一）、`loadProgressFlow.test.ts`（総行数が後から判明しても後退しない・ページごとに値が増える）。MIN_CLIENT_VERSION は据え置き。
+
+# v3.213（2026-11-10）：PJの設定画面から PJ↔TF（KR）の紐づけを設定できるようにする
+* 依頼：「プロジェクトごとにKRを紐づけられるように」。KRは TF の kr_id 経由でつながる既存構造（project_task_forces）をそのまま使い、管理画面（AdminView）だけだった編集口を、通常画面の `ProjectSettingsModal`（ダッシュボード「⚙ このPJの設定」／サイドバーPJ行「⋮」から開く）の基本情報タブにも追加した。1PJに複数TFを紐づけ可（従来どおり）。
+* ピッカー：`buildCurrentQuarterKrTfGroups`（今期＝`effectiveTfQuarter`・削除済み除外・TFの無いKRは出さない）で「KR1：〇〇 ＞ TF1-2 △△」形式のKRグループにする。KR・TFはPJの部署（`project.group_id`、無ければ表示部署）で `deptScope` により絞る。
+* 保存は `lib/project/projectTaskForceLinks.ts` の `applyProjectTaskForceLinks` に集約し、AdminView と共用（重複実装なし）。設定画面では `managedTfIds`（ピッカーに出した今期TF）を渡し、**今期以外の既存紐づけは選択肢に無くても消さない**。AdminView は従来どおり全件が対象（managedTfIds 省略）。
+* 権限：`project_task_forces` の RLS（`project_task_forces_group`、20260723）は「PJの属する部署にアクセスできれば FOR ALL」。`projects_group` と同じ部署スコープで、PJ基本情報編集を「同じ部署なら誰でも」にした v3.109 と揃っているため **RLS 変更・マイグレーションは不要**。
+* 反映：`addProjectTaskForce`／`removeProjectTaskForce` が store を即更新し、realtime（`project_task_forces`）も購読済み。ダッシュボード・カルテ・AIペイロードは store を読むため追加対応なし。
+* 一般ユーザーは編集可。`canEditBasicInfo` が偽になる場合は読み取り表示（今期分のみ）。
+* `uiGuide.ts` FEATURE_LIST に追記。テスト：`projectTaskForceLinks.test.ts`（差分適用・今期外を消さない・他PJに触れない・KRグループ化）。
