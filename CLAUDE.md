@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.207
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.208
 #
-最終更新：2026-11-10（v3.207）
+最終更新：2026-11-10（v3.208）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -39,7 +39,7 @@
 |---|---|---|
 | フロントエンド | TypeScript + React | 型安全・AI補助開発との相性 |
 | データベース | Supabase（PostgreSQL） | 無料枠で十分・多対多リレーション対応・RLS設定可 |
-| AI連携 | Anthropic Claude API（claude-sonnet-4-6） | OKR/PJ/タスクの相談・分析・レポート生成等に使用（2026-05-13以降 OKR関連情報も投入可） |
+| AI連携 | Anthropic Claude API（AI相談の本体＝`claude-sonnet-5-5`・effort=medium・構造化出力・プロンプトキャッシュ。`invokeAI` 経由のその他の機能＝個人OKR関連などは従来の `claude-sonnet-4-6`／一部 `claude-haiku-4-5` のまま） | OKR/PJ/タスクの相談・分析・レポート生成等に使用（2026-05-13以降 OKR関連情報も投入可）。`invokeAI` は `content[0].text` を読むため、thinking ブロックが先頭に来る Sonnet 5.5 へは未移行（docs/dev/sections/s6_ai-integration.md 6-18） |
 | AI中継 | Supabase Edge Function（ai-consult） | APIキーをサーバーサイドにのみ保持するため |
 | 通知連携 | Web Push＋アプリ内通知（Edge Function push-reminders・backup-daily） | 期限リマインド・管理者向け通知（Section 66〜68）。Teams 通知は v3.136 で撤去（KRレポートの「Teams送信」ボタンは別機能で残る） |
 | ホスティング | Vercel | GitHubへのpushで自動デプロイ（main branch） |

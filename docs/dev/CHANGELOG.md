@@ -8699,3 +8699,11 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 * Undo：引き直しの記録（延長前の日付・前後のベースライン）を `appStore` のモジュール内 Map にタスクごとのスタックで持ち、直後に日付が延長前へ戻され、ベースラインがまだ引き直した値なら引き直す前へ戻す。トースト・Ctrl+Z・変更履歴の Undo のどれでも効く。記録はセッション内のみ（再読み込み後の変更履歴 Undo では日付だけ戻り、ベースラインは引き直した値のまま）。
 * 既に過去の延長で「遅延」が出ているタスクは遡って直さない（いつ延ばしたか記録が無い）。
 * テスト：`stores/__tests__/parentMoveAndRebaseline.test.ts`（親＋深い子孫・完了/中止/日付なしは不動・子孫内の依存は押さない・外の後続は1回・Undo 1回で全部戻る／選択の二重適用なし／期日＝今日の境界で引き直し→Undo で戻る・DBにも反映／期限切れ後は据え置き／前倒し・改名は据え置き／未凍結は従来どおり／自動ずらしの後続も追従→Undo で戻る）・`lib/baseline/__tests__/resolveBaselineOnSave.test.ts`・`components/gantt/__tests__/parentMoveTargets.test.ts`。MIN_CLIENT_VERSION は据え置き（DB・形式の変更なし）。
+
+# v3.208（2026-11-10）：AI相談 第2段（プロンプトキャッシュ・Sonnet 5.5・構造化出力）
+
+* メイン相談のモデルを `claude-sonnet-5-5` に変更（`useAIConsultation.ts` の `THINKING_MODEL`・effort=medium）。他の AI 機能（`invokeAI` 経由）は `content[0].text` を読むため未移行で、従来モデルのまま。
+* system を「本文（`cache_control: ephemeral`）＋可変の追記」の2ブロックで送る（`apiClient.ts`・`systemPrompt.ts` の `buildSystemPromptParts`）。返答は構造化出力（`output_config.format=json_schema`、スキーマは新設の `responseSchema.ts`・`Record<keyof Proposal>` で型と一致を強制）。thinking ブロックが先頭に来ても `type==="text"` を探して読む。usage の `cache_*` を保持。
+* payload から `consultation_type` を削除（使用量ログには従来どおり記録）。プロンプトから JSON の厳格な作法の文を削除。
+* Edge Function ai-consult：system は文字列またはブロック配列を受ける（cache_control は ephemeral のみ・1〜4個・合計20万字）。`output_config` は format／effort だけ通し、他は 400。ALLOWED_MODELS に `claude-sonnet-5-5` を追加。**Edge は先にデプロイ済み**。
+* テスト：`responseSchema.test.ts` を新設、`apiClient`／`systemPrompt`／`payloadBuilder` 系を更新。docs s6 に 6-18 を追記。MIN_CLIENT_VERSION は据え置き（旧クライアントも新 Edge で動く）。

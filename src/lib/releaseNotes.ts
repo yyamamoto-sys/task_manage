@@ -39,6 +39,15 @@ export interface ReleaseNoteEntry {
 
 export const RELEASE_NOTES: ReleaseNoteEntry[] = [
   {
+    version: "v3.208",
+    date: "2026-11-10",
+    title: "AI相談の返答が、速く・安定した形式になりました",
+    highlights: [
+      "AI相談の返答が速くなり、提案の形式（返答・タスクの提案など）が崩れにくくなりました。",
+      "AI相談に使うAIモデルを新しいものに切り替えました。使い方は今までと変わりません。",
+    ],
+  },
+  {
     version: "v3.207",
     date: "2026-11-10",
     title: "ガントで親タスクを動かすと、子タスクも一緒に動くようになりました",
