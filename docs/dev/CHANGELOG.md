@@ -8724,3 +8724,12 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 * 表示：`lib/ai/replyLayout.ts` を新設。`normalizeReplyBreaks`（「【」の直前、および区切りの「・」＝直前が句点・】・空白のもの、の直前に改行を補う。タスク名内部の「・」は直前の文字で判定するため割らない）と `parseReplyLines`（行を 見出し／箇条書き／通常／空行 に分類）。`AIReplyBubble.tsx` の `FormattedReplyText` が行単位で描画（見出しの【…】は太字・上余白、箇条書きはぶら下げインデント）。返答の吹き出しと提案カードの説明（情報カード含む）で使う。識別記号の非表示・タスクリンク（v3.209）は維持。保存データは変えない（表示の直前だけ）。
 * プロンプト（`systemPrompt.ts` 回答の書き方）：見出しは独立行・箇条書きは1項目1行で必ず改行／タスク属性は「タスク名(task_001)（担当：岩井／期限：11/05／優先度：高）」の形（名前の後に全角括弧でまとめる）／内部フィールド名（linked_tf_numbers 等）を書かない／タスク名を「…」で省略しない／冒頭は結論1〜2行・件数は簡潔に。リリース間に合う？の例も同形に更新。`responseSchema.ts` の reply・description に改行ルールの description を追加。
 * `displayText` は「名前直後の識別記号だけの括弧」を消す正規表現のため、属性括弧「（担当：…）」は消えない（`replyLayout.test.ts` で確認）。Edge Function は変更なし。MIN_CLIENT_VERSION は 3.197 のまま。
+
+# v3.211（2026-11-10）：起動画面を認証確認〜自動同定まで同じバーで出し続ける
+
+* 問題：起動画面は「認証確認（バー無し）→ Phase 1 データ取得（バー付き・n/9表）→ Phase 1 完了で進行度を0へ戻す → 自動同定（バー無し）」と見た目が途切れ、100%が一度も見えなかった。Phase 1 の後に `fetchGroups` を直列に待っていたのも、バーが止まって見える原因だった。
+* 進行度の計算は `lib/loadProgress.ts` に集約（`phase1Percent`・`PHASE1_DATA_MAX`=90・`PREPARING_PROGRESS`=95・`READY_PROGRESS`=100・`CRITICAL_TABLE_COUNT`=9）。データ取得は0〜90%、自動同定の間は95%を保ち、`App.tsx` の `autoMatch` が `onLogin` の直前に `loadProgress` を100にして1回だけ描画させる（`setTimeout(0)`。待ちは入れない）。
+* `appStore`：Phase 1 完了の set で `loadProgress` を0に戻さず `PREPARING_PROGRESS` にする。Phase 2（OKR）の上端3pxバーは別の state `backgroundProgress`（0から開始・完了で100）へ分離。`loadProgress` は起動画面専用。リトライ時は従来どおり進行度を戻しヒント「接続タイムアウト — n秒後に再接続」を出す。
+* `fetchGroups` を Phase 1 の9表と並列に取る（リトライ対象にはせず1回。失敗は握りつぶして空配列＝従来仕様）。進行度の分母は9表＋groups の10。
+* 文言を段階別にした（ja/en）：認証確認＝`layout.app.loading.authChecking`「ログイン情報を確認しています...」（バーは不定表示＝`FullScreenLoading` の新 prop `indeterminate`、既存CSS `progress-bar-indeterminate`）／Phase 1＝`dataLoading`「メンバー・タスクを読み込んでいます...」／自動同定・ウィザード判定・招待確認＝`preparing`「画面を準備しています...」（進行度付き）。縦位置を動かさない構造（トラック常設・補足行の高さ保持）は変更なし。
+* テスト：`loadProgress.test.ts`・`loadProgressFlow.test.ts`（Phase 1 完了で0に戻らない／Phase 2 は backgroundProgress が0から／Phase 1 中は単調増加で上限90／fetchGroups 失敗でも起動）を新設。前2件は修正前のコードで落ちることを確認済み。MIN_CLIENT_VERSION は据え置き。

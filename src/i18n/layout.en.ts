@@ -8,8 +8,9 @@ import type { layoutJa } from "./layout.ja";
 export const layoutEn: Record<keyof typeof layoutJa, string> = {
   "layout.app.configError.title": "⚠️ Configuration error",
   "layout.app.configError.body": "Please set the following in Vercel's Environment Variables",
-  "layout.app.loading.preparing": "Preparing...",
-  "layout.app.loading.dataLoading": "Loading data...",
+  "layout.app.loading.authChecking": "Checking your sign-in...",
+  "layout.app.loading.preparing": "Preparing the screen...",
+  "layout.app.loading.dataLoading": "Loading members and tasks...",
   "layout.app.error.retry": "Retry",
   "layout.app.partialLoadWarning.body": "Some data ({tables}) could not be loaded. Please reload.",
   "layout.app.reloadNotice.body": "An important update is available. Continuing to use this page may cause saving to fail. Please reload.",

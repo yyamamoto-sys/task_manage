@@ -10,6 +10,7 @@
 
 import { supabase } from "./client";
 import { fetchAllRows } from "./fetchAllRows";
+import { CRITICAL_TABLE_COUNT } from "../loadProgress";
 import { getAssigneeIds } from "../taskMeta";
 import { formatErrorForUser } from "../errorMessage";
 import type {
@@ -251,7 +252,7 @@ export interface FetchCriticalDataResult {
 export async function fetchCriticalData(onProgress?: (done: number, total: number) => void): Promise<FetchCriticalDataResult> {
   // B1（依存ゲート）: task_dependencies は「タスク完了時に先行が終わっているか」を
   // 最初の描画時点から判定できる必要があるため、OKR系（Phase 2）ではなく Phase 1 で取得する。
-  const TOTAL = 9;
+  const TOTAL = CRITICAL_TABLE_COUNT;
   let done = 0;
   // 主キーは乱数UUIDのため、id だけで並べると従来の（ほぼ作成順の）並びが崩れる。作成順を第1キーにする。
   const tick = <T>(r: T): T => { onProgress?.(++done, TOTAL); return r; };

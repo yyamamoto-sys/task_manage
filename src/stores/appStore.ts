@@ -69,6 +69,7 @@ import type { DemoDataset } from "../lib/demo/types";
 import { isGuestMode } from "../lib/guestMode";
 import { normalizeProjectRow, normalizeTaskRow } from "../lib/supabase/rowNormalize";
 import { recordLoad } from "../lib/diagnostics/loadCounter";
+import { phase1Percent, PREPARING_PROGRESS, CRITICAL_TABLE_COUNT } from "../lib/loadProgress";
 import { fetchChangesSince } from "../lib/supabase/store";
 import { noteRemoteEcho } from "../lib/diagnostics/realtimeEchoWatch";
 
@@ -113,7 +114,8 @@ export interface AppState {
   loadingTips: LoadingTip[];
   loading: boolean;
   backgroundLoading: boolean;   // Phase-2（OKRデータ）取得中。メイン UI はブロックしない
-  loadProgress: number;         // 現フェーズの進捗 0-100（フェーズ切替で 0 にリセット）
+  loadProgress: number;         // 起動画面の進行度 0-100（認証確認後〜Phase 1〜自動同定まで連続。Phase 1 完了で 0 に戻さない。src/lib/loadProgress.ts）
+  backgroundProgress: number;   // Phase 2（OKR）の上端バー用の進行度 0-100（起動画面の loadProgress とは別系統）
   loadingHint: string;          // ローディング画面の補足メッセージ（再試行中など）
   error: string | null;
   // 【M41是正・v3.122】周辺表（milestones/member_tags/member_tag_members）の取得に部分的に
@@ -617,6 +619,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   loading: true,
   backgroundLoading: false,
   loadProgress: 0,
+  backgroundProgress: 0,
   loadingHint: "",
   error: null,
   partialLoadWarning: [],
@@ -639,32 +642,40 @@ export const useAppStore = create<AppState>()((set, get) => ({
     if (_firstLoadStartedAt === null) _firstLoadStartedAt = Date.now();
     _loadQueue = [];
     _savedDuringLoad = new Map();
-    set({ loading: true, backgroundLoading: false, loadProgress: 0, loadingHint: "", error: null, partialLoadWarning: [] });
+    set({ loading: true, backgroundLoading: false, loadProgress: 0, backgroundProgress: 0, loadingHint: "", error: null, partialLoadWarning: [] });
     _activeLoad = (async () => {
       try {
         // Phase 1: メンバー・PJ・タスク・マイルストーン（7テーブル）→ UI解放
         // タイムアウト時は最大 MAX_RETRIES 回まで指数バックオフで自動リトライ
+        // groups は周辺データ（失敗してもメイン UI はブロックしない）。Phase 1 の9表と並列に取り、
+        // 進行度の分母にも1表分として含める。リトライ対象にはせず1回だけ取る。
+        let critDone = 0;
+        let groupsDone = 0;
+        const reportProgress = () => {
+          set({ loadProgress: phase1Percent(critDone + groupsDone, CRITICAL_TABLE_COUNT + 1) });
+        };
+        const groupsPromise: Promise<Group[]> = fetchGroups().catch(() => {
+          // groups テーブル未適用環境でもアプリを起動できるよう握りつぶす
+          return [] as Group[];
+        }).then(g => { groupsDone = 1; reportProgress(); return g; });
         const critical = await withRetry(
           () => {
-            set({ loadingHint: "", loadProgress: 0 }); // リトライ開始時にリセット
-            return fetchCriticalData((done, total) => {
-              set({ loadProgress: Math.round((done / total) * 100) });
+            critDone = 0;
+            set({ loadingHint: "", loadProgress: phase1Percent(groupsDone, CRITICAL_TABLE_COUNT + 1) }); // リトライ開始時にリセット
+            return fetchCriticalData((done) => {
+              critDone = done;
+              reportProgress();
             });
           },
           (attempt, delaySec) => {
+            critDone = 0;
             set({
-              loadProgress: 0,
+              loadProgress: phase1Percent(groupsDone, CRITICAL_TABLE_COUNT + 1),
               loadingHint: `接続タイムアウト — ${delaySec}秒後に再接続 (${attempt}/${MAX_RETRIES})`,
             });
           },
         );
-        // groups はサイレントフェッチ（失敗してもメイン UI はブロックしない）
-        let fetchedGroups: Group[] = [];
-        try {
-          fetchedGroups = await fetchGroups();
-        } catch {
-          // groups テーブル未適用環境でもアプリを起動できるよう握りつぶす
-        }
+        const fetchedGroups: Group[] = await groupsPromise;
 
         const cur = get();
         set({
@@ -681,7 +692,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
           partialLoadWarning: critical.partialFailures, // 【M41是正】周辺表の部分失敗をApp.tsxの警告バナーへ
           loading:          false,          // ← ここでUIが表示される
           backgroundLoading: true,          // ← OKRをバックグラウンド取得中
-          loadProgress:     0,              // ← Phase 2 のプログレスを 0 にリセット
+          loadProgress:     PREPARING_PROGRESS, // ← 起動画面は続く（自動同定の段階）。0 に戻さない
+          backgroundProgress: 0,            // ← Phase 2 の上端バーは別の値で 0 から始める
           loadingHint:      "",             // ← ヒントをクリア
         });
         replayLoadQueue(); // 取得中に届いた realtime 差分を、置き換えの上に重ね直す（Section 76）
@@ -709,7 +721,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         // partialFailuresはPhase 1の警告を上書きせず追記する（CLAUDE.md Section 61）。
         try {
           const okr = await fetchOkrData((done, total) => {
-            set({ loadProgress: Math.round((done / total) * 100) });
+            set({ backgroundProgress: Math.round((done / total) * 100) });
           });
           set(state => ({
             objectives:            keepNewerLocal("objectives", state.objectives, okr.objectives),
@@ -725,11 +737,11 @@ export const useAppStore = create<AppState>()((set, get) => ({
             taskTaskForces:        okr.taskTaskForces,
             partialLoadWarning:    [...state.partialLoadWarning, ...okr.partialFailures],
             backgroundLoading:     false,
-            loadProgress:          100,
+            backgroundProgress:    100,
           }));
           replayLoadQueue();
         } catch {
-          set({ backgroundLoading: false, loadProgress: 100 });
+          set({ backgroundLoading: false, backgroundProgress: 100 });
         }
       } catch (e) {
         const raw = e instanceof Error ? e.message : "データの読み込みに失敗しました";
@@ -737,7 +749,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         const msg = isRetryable(e)
           ? `接続がタイムアウトしました（${MAX_RETRIES}回リトライ後）。右の「再試行」を押してください。`
           : raw;
-        set({ error: msg, loading: false, backgroundLoading: false, loadProgress: 0, loadingHint: "", partialLoadWarning: [] });
+        set({ error: msg, loading: false, backgroundLoading: false, loadProgress: 0, backgroundProgress: 0, loadingHint: "", partialLoadWarning: [] });
       } finally {
         _activeLoad = null;
         _loadQueue = [];
@@ -773,6 +785,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       loading: false,
       backgroundLoading: false,
       loadProgress: 100,
+      backgroundProgress: 100,
       loadingHint: "",
       error: null,
       partialLoadWarning: [],

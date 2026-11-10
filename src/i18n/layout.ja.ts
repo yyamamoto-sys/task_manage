@@ -10,8 +10,9 @@ export const layoutJa = {
   // ----- App.tsx -----
   "layout.app.configError.title": "⚠️ 設定エラー",
   "layout.app.configError.body": "Vercel の Environment Variables に以下を設定してください",
-  "layout.app.loading.preparing": "準備しています...",
-  "layout.app.loading.dataLoading": "データを読み込み中...",
+  "layout.app.loading.authChecking": "ログイン情報を確認しています...",
+  "layout.app.loading.preparing": "画面を準備しています...",
+  "layout.app.loading.dataLoading": "メンバー・タスクを読み込んでいます...",
   "layout.app.error.retry": "再試行",
   "layout.app.partialLoadWarning.body": "一部のデータ（{tables}）を読み込めませんでした。再読み込みしてください。",
   "layout.app.reloadNotice.body": "重要な更新があります。このまま使うと保存に失敗するおそれがあります。再読み込みしてください",

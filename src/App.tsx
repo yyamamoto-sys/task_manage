@@ -32,6 +32,7 @@ import {
   useAppStore, setRemoteResyncRequester, catchUpRemoteChanges,
   setEchoRecoveryRequesters, requestEchoSlowRecovery, requestEchoStuckRecovery,
 } from "./stores/appStore";
+import { READY_PROGRESS } from "./lib/loadProgress";
 import { subscribeToRealtime } from "./lib/supabase/realtime";
 import { createHiddenReturnGate, createResyncRunner, createUnsubscribeClock } from "./lib/supabase/resync";
 import { requestPersonalOkrResync } from "./lib/personalOkr/resyncRegistry";
@@ -281,7 +282,7 @@ export default function App() {
   };
 
   if (loading) {
-    return <FullScreenLoading message={t("layout.app.loading.preparing")} />;
+    return <FullScreenLoading message={t("layout.app.loading.authChecking")} indeterminate />;
   }
 
   // パスワード再設定中：他のどの分岐（ゲスト・ログイン・認証済みアプリ）より先に判定する。
@@ -361,6 +362,7 @@ function AuthenticatedApp({
   const loading            = useAppStore(s => s.loading);
   const backgroundLoading  = useAppStore(s => s.backgroundLoading);
   const loadProgress       = useAppStore(s => s.loadProgress);
+  const backgroundProgress = useAppStore(s => s.backgroundProgress);
   const loadingHint        = useAppStore(s => s.loadingHint);
   const error              = useAppStore(s => s.error);
   const partialLoadWarning = useAppStore(s => s.partialLoadWarning);
@@ -557,6 +559,12 @@ function AuthenticatedApp({
       return resolveRestoredCurrentGroupId(stored, homeGroupId, accessibleGroupIds);
     }
 
+    // 画面が切り替わる直前に起動画面のバーを 100% にして、1回だけ描画させる（待ちは入れない。タイマーは 0ms）
+    async function showReadyProgress() {
+      useAppStore.setState({ loadProgress: READY_PROGRESS });
+      await new Promise<void>(r => setTimeout(r, 0));
+    }
+
     async function autoMatch() {
       // ① Auth email が members.email と一致するメンバーを優先（セキュアな自動同定）
       const authEmail = await getAuthEmail();
@@ -569,6 +577,8 @@ function AuthenticatedApp({
           setCurrentGroupId(resolveGroupIdForLogin(matched));
           setCurrentUserIsSuperAdmin(matched.is_super_admin === true);
           setCurrentUserGroupIds(matched.group_ids ?? []);
+          await showReadyProgress();
+          if (cancelled) return;
           setMatchState("matched");
           onLogin(matched);
           return;
@@ -583,6 +593,8 @@ function AuthenticatedApp({
         setCurrentGroupId(resolveGroupIdForLogin(member));
         setCurrentUserIsSuperAdmin(member.is_super_admin === true);
         setCurrentUserGroupIds(member.group_ids ?? []);
+        await showReadyProgress();
+        if (cancelled) return;
         setMatchState("matched");
         onLogin(member);
         return;
@@ -708,7 +720,7 @@ function AuthenticatedApp({
   // プロジェクト招待：保留中の招待の自動受諾チェックが終わるまで、
   // SetupWizard/AccessDeniedScreen/UserSelectScreenのどれも出さない（上のuseEffect参照）。
   if (!loading && !currentUser && !inviteAutoAcceptChecked) {
-    return <FullScreenLoading message={t("layout.app.loading.preparing")} />;
+    return <FullScreenLoading message={t("layout.app.loading.preparing")} progress={loadProgress} />;
   }
 
   // 初回の取得に失敗した（通信エラー等）。アクセス拒否画面と取り違えないよう、先に取得失敗を案内する
@@ -722,7 +734,7 @@ function AuthenticatedApp({
       return <SetupWizard onComplete={onWizardComplete} />;
     }
     if (bootstrapStatus === "checking") {
-      return <FullScreenLoading message={t("layout.app.loading.preparing")} />;
+      return <FullScreenLoading message={t("layout.app.loading.preparing")} progress={loadProgress} />;
     }
     // "populated"（既に他のメンバーがいる＝自分に権限が無いだけ）または
     // "error"（is_system_bootstrapped() 呼び出し失敗。マイグレ未適用の環境など）は
@@ -737,7 +749,7 @@ function AuthenticatedApp({
   // メンバー未選択かつ自動マッチング判定中 → ローディング表示
   // （email 一致/localStorage 復元の判定が終わるまで選択画面を出さない）
   if (!currentUser && !loading && matchState === "matching") {
-    return <FullScreenLoading message={t("layout.app.loading.preparing")} />;
+    return <FullScreenLoading message={t("layout.app.loading.preparing")} progress={loadProgress} />;
   }
 
   // メンバー未選択かつ自動マッチング不成立確定 → 選択画面（復元できなかった場合のフォールバック）
@@ -750,7 +762,7 @@ function AuthenticatedApp({
   if (!currentUser) {
     return (
       <FullScreenLoading
-        message={t("layout.app.loading.dataLoading")}
+        message={t(loading ? "layout.app.loading.dataLoading" : "layout.app.loading.preparing")}
         progress={loadProgress}
         hint={loadingHint}
       />
@@ -768,7 +780,7 @@ function AuthenticatedApp({
         }}>
           <div style={{
             height: "100%",
-            width: `${loadProgress}%`,
+            width: `${backgroundProgress}%`,
             background: "var(--color-brand)",
             transition: "width 0.25s ease",
           }} />

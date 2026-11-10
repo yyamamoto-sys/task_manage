@@ -29,16 +29,19 @@ interface FullScreenLoadingProps {
   progress?: number;
   /** 補足行に出す再試行メッセージ等。省略時は progress があれば "n%"、無ければ空 */
   hint?: string;
+  /** true のときバーは「不定」表示（進行度が取れない認証確認の間。progress は無視し、補足行は空にする） */
+  indeterminate?: boolean;
 }
 
 export function FullScreenLoading({
   message,
   progress,
   hint,
+  indeterminate,
 }: FullScreenLoadingProps) {
   const t = useT();
   const effectiveMessage = message ?? t("common.loading");
-  const subText = hint || (progress !== undefined ? `${progress}%` : " ");
+  const subText = hint || (!indeterminate && progress !== undefined ? `${progress}%` : " ");
 
   return (
     <div style={{
@@ -64,7 +67,11 @@ export function FullScreenLoading({
           height: "5px", borderRadius: "3px",
           background: "var(--color-bg-tertiary)", overflow: "hidden",
         }}>
-          {progress !== undefined && (
+          {indeterminate ? (
+            <div className="progress-bar-indeterminate" style={{
+              height: "100%", background: "var(--color-brand)", borderRadius: "3px",
+            }} />
+          ) : progress !== undefined && (
             <div style={{
               height: "100%",
               width: `${progress}%`,
