@@ -163,6 +163,9 @@ describe("形式の受付", () => {
   it("その他は拒否", () => { expect(f("a.zip").ok).toBe(false); });
 });
 
+type SystemBlocks = { type: string; text: string; cache_control?: unknown }[];
+const systemText = (blocks: SystemBlocks) => blocks.map((b) => b.text).join("\n\n");
+
 describe("AIへの経路（callAIConsultation）", () => {
   beforeEach(() => mockInvoke.mockReset());
   const ok = { data: { content: [{ type: "text", text: "{}" }], stop_reason: "end_turn", usage: { input_tokens: 1, output_tokens: 1 } }, error: null };
@@ -171,18 +174,19 @@ describe("AIへの経路（callAIConsultation）", () => {
   it("添付が最後のuserメッセージに載り、systemに注意書きが付く／履歴は文字列のまま", async () => {
     mockInvoke.mockResolvedValue(ok);
     await callAIConsultation(PAYLOAD, "change", [{ role: "user", content: "前回\n\n📎 x（3字）", timestamp: "" }], undefined, undefined, undefined, [txt("a.docx", 3)]);
-    const body = mockInvoke.mock.calls[0][1].body as { system: string; messages: { content: unknown }[] };
-    expect(body.system).toContain(CONSULT_ATTACHMENT_NOTICE.trim());
+    const body = mockInvoke.mock.calls[0][1].body as { system: SystemBlocks; messages: { content: unknown }[] };
+    expect(systemText(body.system)).toContain(CONSULT_ATTACHMENT_NOTICE.trim());
+    expect(body.system[body.system.length - 1].cache_control).toBeUndefined();
     expect(body.messages[0].content).toBe("前回\n\n📎 x（3字）");
     expect(String(body.messages[1].content)).toMatch(/<<<添付資料 id=\w+ 開始：a\.docx>>>\nあああ\n<<<添付資料 id=\w+ 終了>>>/);
   });
 
-  it("添付なしならsystemは従来どおり", async () => {
+  it("添付なしならsystemは本文1ブロックだけ（従来の本文と同じ）", async () => {
     mockInvoke.mockResolvedValue(ok);
     await callAIConsultation(PAYLOAD, "change", []);
-    const body = mockInvoke.mock.calls[0][1].body as { system: string };
-    expect(body.system).toBe(buildSystemPrompt("change", "normal"));
-    expect(body.system).not.toContain("添付資料の扱い");
+    const body = mockInvoke.mock.calls[0][1].body as { system: SystemBlocks };
+    expect(systemText(body.system)).toBe(buildSystemPrompt("change", "normal"));
+    expect(systemText(body.system)).not.toContain("添付資料の扱い");
   });
 });
 
@@ -203,8 +207,8 @@ describe("自己修正リトライでも添付を渡す（runAIConsultation）",
     await runAIConsultation(PAYLOAD, "change", [], undefined, undefined, [txt("a.docx", 3)]);
     expect(mockInvoke).toHaveBeenCalledTimes(2);
     for (const call of mockInvoke.mock.calls) {
-      const body = call[1].body as { system: string; messages: { role: string; content: unknown }[] };
-      expect(body.system).toContain("添付資料の扱い");
+      const body = call[1].body as { system: SystemBlocks; messages: { role: string; content: unknown }[] };
+      expect(systemText(body.system)).toContain("添付資料の扱い");
       const firstUser = body.messages.find(m => m.role === "user");
       expect(String(firstUser?.content)).toContain("あああ");
     }

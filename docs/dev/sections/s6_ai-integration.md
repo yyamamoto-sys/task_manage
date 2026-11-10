@@ -267,3 +267,14 @@ return {
 - 返答JSONは `reply`（1〜3文・結論から）＋`proposals`＋`follow_up_suggestions`。単純な質問は reply のみ（proposals は空配列）。`reply` はパーサ上は任意（過去の履歴JSONに無い）。表示は `AIReplyBubble`（`ChatHistory`・`ConsultationPanel` の最新の提案・`SessionHistoryPanel`）。
 - 表示はプレーンテキスト（pre-wrap）なので、Markdown の表・#・** を使わせない。見出し【】・箇条「・」・全角スペース字下げ。タスク参照は「タスク名(task_001)」（半角括弧。`TaskRefText` がクリック可能にする）。
 - 回帰テスト：`src/lib/ai/__tests__/systemPrompt.test.ts`。
+- 6-17 の「consultation_type を payload の参考情報として渡す」は 6-18 で廃止した。
+
+### 6-18. AI相談 第2段：プロンプトキャッシュ・Sonnet 5.5・構造化出力（2026-11）
+
+- **system はブロック配列で送る**（`apiClient.ts` の `buildConsultationSystemBlocks`）。1つ目＝本文（`buildSystemPromptParts().cached`）に `cache_control: {type:"ephemeral"}`、2つ目＝回答ボリューム・添付の注意（`variable`。空なら送らない）。**可変の文を本文の前や途中に入れないこと**（キャッシュが毎回外れる）。キャッシュは tools→system→messages の順の前方一致で、5分で切れる（使われるたびに延長）。
+- **メイン相談のモデルは `claude-sonnet-5-5`**（`useAIConsultation.ts` の `THINKING_MODEL`）。他の AI 機能は既定（sonnet-4-6）や haiku のまま。Sonnet 5.5 は思考が既定で有効で無効化できない（`thinking:{type:"disabled"}` は 400）。返答の `content` は先頭に `thinking` ブロック（中身は空・signature のみ）が来るので、**`content[0].text` で読まず `type==="text"` を探す**。思考の分も `max_tokens` に数えられる。`output_config.effort` は `"medium"`（公式のチャット向けの目安）。effort や thinking の設定を変えるとキャッシュは作り直しになる。
+- **返答の形は構造化出力で強制する**（`output_config.format = {type:"json_schema", schema}`。スキーマ＝`responseSchema.ts`）。Sonnet 5.5 は `tool_choice` で1ツールを強制する方式を 400 で拒否するため、tool use 方式は使えない。スキーマは `Record<keyof Proposal, …>` で書いてあり、型と項目がずれるとコンパイルエラーになる。enum の一致・任意項目24個以内・使えないキーワード（minLength 等）は `responseSchema.test.ts` が見る。プロンプトからは「JSONの厳格な作法」「JSON以外を返すな」を削った。自己修正リトライ（`consultationRunner.ts`）は安全網として残す。
+- **consultation_type は AI に送らない**（payload から削除）。キーワード推定の誤分類がそのまま届くため。`ai_usage_logs.consultation_type` と Edge Function の `intent`（ゲスト分のログ）には従来どおり入る。
+- **Edge Function（ai-consult）の入力検証**：`system` は文字列（旧クライアント互換・型だけ見る）または text ブロック1〜4個（`cache_control` は `{type:"ephemeral"}` のみ・合計20万字まで）。ブロックは作り直して既知のキーだけ渡す。`output_config` は `format`（`type:"json_schema"`＋`schema`。schema の根は object・JSON化して2万字まで）と `effort`（low/medium/high）だけ通し、他のキー・値は 400（`INVALID_REQUEST`）。ALLOWED_MODELS に `claude-sonnet-5-5` を追加。
+- **使用量**：返答の `usage` はそのまま素通しなので `cache_creation_input_tokens`／`cache_read_input_tokens` も届く。クライアントは `AIConsultationUsage` として保持するが、`ai_usage_logs` には従来どおり `input_tokens`（キャッシュ境界より後ろの分だけ）と `output_tokens` を記録する（列は増やしていない。キャッシュの読み書き分は入力トークン数に含まれない）。
+- **デプロイ順は Edge Function が先**。新クライアント＋旧 Edge の組み合わせでも、旧 Edge は `output_config` を捨て、`claude-sonnet-5-5` を既定（sonnet-4-6）に置き換え、system の配列はそのまま Anthropic に渡すので動く（構造化出力が効かないだけ）。旧クライアント＋新 Edge は文字列の system がそのまま通る。

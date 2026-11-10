@@ -71,7 +71,7 @@ export interface AIResponseData {
 
 // ===== バリデーション =====
 
-const VALID_ACTION_TYPES = [
+export const VALID_ACTION_TYPES = [
   "date_change",
   "assignee",
   "risk",
@@ -87,9 +87,9 @@ const VALID_ACTION_TYPES = [
   "bulk_status",
 ] as const;
 
-const VALID_DATE_CERTAINTY = ["exact", "approximate", "unknown"] as const;
+export const VALID_DATE_CERTAINTY = ["exact", "approximate", "unknown"] as const;
 
-const VALID_BULK_TASK_STATUSES: readonly BulkTaskStatus[] = [
+export const VALID_BULK_TASK_STATUSES: readonly BulkTaskStatus[] = [
   "todo", "in_progress", "done", "on_hold", "cancelled",
 ];
 

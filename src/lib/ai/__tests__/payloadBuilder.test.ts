@@ -79,7 +79,6 @@ describe("buildPayload — AI境界ルール（最重要）", () => {
       projects: [makeProject({ contribution_memo: "KR1の達成に貢献する" })],
       tasks: [makeTask()],
       members: [makeMember()],
-      consultationType: "change",
       consultation: "テスト",
       scope: "all_pj",
     });
@@ -91,7 +90,6 @@ describe("buildPayload — AI境界ルール（最重要）", () => {
       projects: [makeProject()],
       tasks: [makeTask()],
       members: [makeMember()],
-      consultationType: "change",
       consultation: "テスト",
       scope: "all_pj",
     });
@@ -104,7 +102,6 @@ describe("buildPayload — AI境界ルール（最重要）", () => {
       projects: [makeProject({ purpose: "目的A", contribution_memo: "秘密" })],
       tasks: [],
       members: [makeMember()],
-      consultationType: "change",
       consultation: "x",
       scope: "all_pj",
     });
@@ -122,7 +119,6 @@ describe("buildPayload — 論理削除・アーカイブの除外", () => {
       ],
       tasks: [],
       members: [makeMember()],
-      consultationType: "change",
       consultation: "x",
       scope: "all_pj",
     });
@@ -137,7 +133,6 @@ describe("buildPayload — 論理削除・アーカイブの除外", () => {
       ],
       tasks: [],
       members: [makeMember()],
-      consultationType: "change",
       consultation: "x",
       scope: "all_pj",
     });
@@ -152,7 +147,6 @@ describe("buildPayload — 論理削除・アーカイブの除外", () => {
         makeTask({ id: "t2", name: "削", project_id: "pj-1", is_deleted: true }),
       ],
       members: [makeMember()],
-      consultationType: "change",
       consultation: "x",
       scope: "all_pj",
     });
@@ -169,7 +163,6 @@ describe("buildPayload — shortId と shortIdMap", () => {
       ],
       tasks: [],
       members: [makeMember()],
-      consultationType: "change",
       consultation: "x",
       scope: "all_pj",
     });
@@ -190,7 +183,6 @@ describe("buildPayload — shortId と shortIdMap", () => {
         makeTask({ id: "t-C", name: "C", project_id: "pj-2" }),
       ],
       members: [makeMember()],
-      consultationType: "change",
       consultation: "x",
       scope: "all_pj",
     });
@@ -207,7 +199,6 @@ describe("buildPayload — コメントのサニタイズ", () => {
       projects: [makeProject()],
       tasks: [makeTask({ comment: "\\\\Fs02\\bumon\\資料.xlsx 参照" })],
       members: [makeMember()],
-      consultationType: "change",
       consultation: "x",
       scope: "all_pj",
     });
@@ -219,7 +210,6 @@ describe("buildPayload — コメントのサニタイズ", () => {
       projects: [makeProject()],
       tasks: [makeTask({ comment: null as unknown as string })],
       members: [makeMember()],
-      consultationType: "change",
       consultation: "x",
       scope: "all_pj",
     });
@@ -233,7 +223,6 @@ describe("buildPayload — 担当者解決", () => {
       projects: [makeProject()],
       tasks: [makeTask({ assignee_member_id: "m-orphan", assignee_member_ids: ["m-orphan"] })],
       members: [makeMember({ id: "m1" })],
-      consultationType: "change",
       consultation: "x",
       scope: "all_pj",
     });
@@ -252,7 +241,6 @@ describe("buildPayload — 担当者解決", () => {
         makeMember({ id: "m2", short_name: "田中" }),
         makeMember({ id: "m3", short_name: "中村" }),
       ],
-      consultationType: "change",
       consultation: "x",
       scope: "all_pj",
     });
@@ -273,7 +261,6 @@ describe("buildPayload — task_projects（追加プロジェクト）", () => {
       ],
       members: [makeMember()],
       taskProjects: [{ task_id: "t-shared", project_id: "pj-B" }],
-      consultationType: "change",
       consultation: "x",
       scope: "all_pj",
     });
@@ -305,7 +292,6 @@ describe("buildPayload — PJ↔TF 双方向リンク（projectTaskForces）", (
       ],
       keyResults: krs,
       taskForces: tfs,
-      consultationType: "change",
       consultation: "x",
       scope: "all_pj",
     });
@@ -334,7 +320,6 @@ describe("buildPayload — PJ↔TF 双方向リンク（projectTaskForces）", (
       taskForces: tfs,
       includeOKR: true,
       currentObjective: { id: "o-1", title: "今期Objective", period: "2026" },
-      consultationType: "change",
       consultation: "x",
       scope: "all_pj",
     });
@@ -346,7 +331,6 @@ describe("buildPayload — PJ↔TF 双方向リンク（projectTaskForces）", (
       projects: [makeProject()],
       tasks: [],
       members: [makeMember()],
-      consultationType: "change",
       consultation: "x",
       scope: "all_pj",
     });
@@ -364,7 +348,6 @@ describe("buildPayload — Project.member_ids（オーナー以外の関与者�
         makeMember({ id: "m2", short_name: "田中" }),
         makeMember({ id: "m3", short_name: "中村" }),
       ],
-      consultationType: "change",
       consultation: "x",
       scope: "all_pj",
     });
@@ -385,7 +368,6 @@ describe("buildPayload — member_workload は複数担当者を正しくカウ�
         makeMember({ id: "m1", short_name: "山本" }),
         makeMember({ id: "m2", short_name: "田中" }),
       ],
-      consultationType: "change",
       consultation: "x",
       scope: "all_pj",
     });
@@ -409,7 +391,7 @@ describe("buildPayload — 会計四半期判定", () => {
     vi.setSystemTime(new Date("2026-01-15T09:00:00+09:00"));
     const { payload } = buildPayload({
       projects: [], tasks: [], members: [],
-      consultationType: "change", consultation: "x", scope: "all_pj",
+      consultation: "x", scope: "all_pj",
     });
     expect(payload.context.quarters.current_quarter).toBe("1Q");
     expect(payload.context.quarters.current_quarter_end).toBe("2026-03-31");
@@ -421,7 +403,7 @@ describe("buildPayload — 会計四半期判定", () => {
     vi.setSystemTime(new Date("2026-12-15T09:00:00+09:00"));
     const { payload } = buildPayload({
       projects: [], tasks: [], members: [],
-      consultationType: "change", consultation: "x", scope: "all_pj",
+      consultation: "x", scope: "all_pj",
     });
     expect(payload.context.quarters.current_quarter).toBe("4Q");
     expect(payload.context.quarters.next_quarter).toBe("1Q");
@@ -434,7 +416,7 @@ describe("buildPayload — 会計四半期判定", () => {
     vi.setSystemTime(new Date("2026-06-15T09:00:00+09:00"));
     const { payload } = buildPayload({
       projects: [], tasks: [], members: [],
-      consultationType: "change", consultation: "x", scope: "all_pj",
+      consultation: "x", scope: "all_pj",
     });
     expect(payload.context.fiscal_year.start).toBe("2026-01-01");
     expect(payload.context.fiscal_year.end).toBe("2026-12-31");
@@ -453,7 +435,6 @@ describe("buildPayload — メンバー工数集計", () => {
         makeTask({ id: "t3", status: "done", assignee_member_id: "m1" }),
       ],
       members: [makeMember({ id: "m1" })],
-      consultationType: "change",
       consultation: "x",
       scope: "all_pj",
     });
@@ -471,7 +452,6 @@ describe("buildPayload — メンバー工数集計", () => {
         makeTask({ id: "t3", status: "todo", estimated_hours: 2, assignee_member_id: "m1" }),
       ],
       members: [makeMember({ id: "m1" })],
-      consultationType: "change",
       consultation: "x",
       scope: "all_pj",
     });
@@ -496,7 +476,6 @@ describe("buildPayload — OKRモード（ラボ機能例外）", () => {
       projects: [],
       tasks: [],
       members: [makeMember({ id: "m1", short_name: "山本" })],
-      consultationType: "change",
       consultation: "x",
       scope: "all_pj",
       includeOKR: true,
@@ -521,7 +500,7 @@ describe("buildPayload — OKRモード（ラボ機能例外）", () => {
     ];
     const { payload } = buildPayload({
       projects: [], tasks: [], members: [makeMember({ id: "m1" })],
-      consultationType: "change", consultation: "x", scope: "all_pj",
+      consultation: "x", scope: "all_pj",
       includeOKR: true,
       currentObjective: { id: "o-1", title: "O", period: "2026年度" },
       keyResults: krs,
@@ -539,7 +518,6 @@ describe("buildPayload — ToDo 仮想PJ化は廃止された（UI から todo �
       projects: [],
       tasks: [makeTask({ id: "t-1", name: "実作業", project_id: null, todo_ids: ["td-1"] })],
       members: [makeMember()],
-      consultationType: "change",
       consultation: "x",
       scope: "all_pj",
     });
@@ -554,7 +532,6 @@ describe("buildPayload — タスク拡張フィールド（start_date / parent_
       projects: [makeProject({ id: "pj-1" })],
       tasks: [makeTask({ id: "t-1", project_id: "pj-1", start_date: "2026-06-01" })],
       members: [makeMember()],
-      consultationType: "change",
       consultation: "x",
       scope: "all_pj",
     });
@@ -566,7 +543,6 @@ describe("buildPayload — タスク拡張フィールド（start_date / parent_
       projects: [makeProject({ id: "pj-1" })],
       tasks: [makeTask({ id: "t-1", project_id: "pj-1", start_date: null })],
       members: [makeMember()],
-      consultationType: "change",
       consultation: "x",
       scope: "all_pj",
     });
@@ -581,7 +557,6 @@ describe("buildPayload — タスク拡張フィールド（start_date / parent_
         makeTask({ id: "child-1",  name: "子タスク", project_id: "pj-1", parent_task_id: "parent-1" }),
       ],
       members: [makeMember()],
-      consultationType: "change",
       consultation: "x",
       scope: "all_pj",
     });
@@ -597,7 +572,6 @@ describe("buildPayload — タスク拡張フィールド（start_date / parent_
       projects: [makeProject({ id: "pj-1" })],
       tasks: [makeTask({ id: "t-1", project_id: "pj-1" })],
       members: [makeMember()],
-      consultationType: "change",
       consultation: "x",
       scope: "all_pj",
     });
@@ -609,7 +583,6 @@ describe("buildPayload — タスク拡張フィールド（start_date / parent_
       projects: [makeProject({ id: "pj-1" })],
       tasks: [makeTask({ id: "t-1", project_id: "pj-1", tags: ["設計", "確認待ち"] })],
       members: [makeMember()],
-      consultationType: "change",
       consultation: "x",
       scope: "all_pj",
     });
@@ -623,7 +596,6 @@ describe("buildPayload — PJ拡張フィールド（pj_start_date）", () => {
       projects: [makeProject({ start_date: "2026-04-01" })],
       tasks: [],
       members: [makeMember()],
-      consultationType: "change",
       consultation: "x",
       scope: "all_pj",
     });
@@ -635,7 +607,6 @@ describe("buildPayload — PJ拡張フィールド（pj_start_date）", () => {
       projects: [makeProject({ start_date: undefined })],
       tasks: [],
       members: [makeMember()],
-      consultationType: "change",
       consultation: "x",
       scope: "all_pj",
     });
@@ -647,7 +618,7 @@ describe("buildPayload — retry_hint", () => {
   it("retryHint が指定されたら payload.retry_hint に入る", () => {
     const { payload } = buildPayload({
       projects: [], tasks: [], members: [],
-      consultationType: "change", consultation: "x", scope: "all_pj",
+      consultation: "x", scope: "all_pj",
       retryHint: "前回は壊れたJSONだった",
     });
     expect(payload.retry_hint).toBe("前回は壊れたJSONだった");
@@ -656,16 +627,23 @@ describe("buildPayload — retry_hint", () => {
   it("retryHint なしなら retry_hint フィールド自体が存在しない", () => {
     const { payload } = buildPayload({
       projects: [], tasks: [], members: [],
-      consultationType: "change", consultation: "x", scope: "all_pj",
+      consultation: "x", scope: "all_pj",
     });
     expect("retry_hint" in payload).toBe(false);
+  });
+
+  it("consultation_type を AI に送らない（キーワード推定の誤分類が役割指示として届くため。使用量ログ側だけで使う）", () => {
+    const { payload } = buildPayload({
+      projects: [], tasks: [], members: [],
+      consultation: "x", scope: "all_pj",
+    });
+    expect("consultation_type" in payload).toBe(false);
   });
 });
 
 describe("buildPayload — 送る範囲（対象PJ・完了/中止タスクの除外。aiTarget.ts）", () => {
   const base = {
     members: [makeMember()],
-    consultationType: "change" as const,
     consultation: "x",
     scope: "all_pj" as const,
   };
