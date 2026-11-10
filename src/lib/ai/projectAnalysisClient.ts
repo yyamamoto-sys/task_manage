@@ -7,7 +7,8 @@
 //
 // 【AI境界ルール（CLAUDE.md Section 6）】
 // この機能が AI に渡してよいのは PJ / Task / Milestone / メンバーの short_name のみ。
-// - ❌ KR / TF / Objective の情報は一切渡さない
+// - KR / TF / Objective は「このPJに紐づくもの」の名称・TFの目的だけ渡す（v3.214。OKR連動がアプリの中核のため。
+//   2026-05-13にOKR情報の投入は許可済み。以前は一切渡しておらず「OKRが反映されない」不具合の原因だった）
 // - ❌ project.contribution_memo（KR貢献メモ）は渡さない
 // - ✅ project.name / purpose / status / 日程、task の各フィールド、milestone の name/date は渡してよい
 //   （これらは "task-management"（payloadBuilder）と同等の範囲）
@@ -16,6 +17,7 @@
 import { invokeAI, type AIMessageInput } from "./invokeAI";
 import { sanitizeComment } from "./sanitize";
 import { finalizeAnalysisText } from "./analysisRun";
+import type { AILinkedOkr } from "./types";
 
 export interface ProjectAnalysisInput {
   project: {
@@ -41,6 +43,8 @@ export interface ProjectAnalysisInput {
   }[];
   milestones: { name: string; date: string; description?: string }[];
   members_short_names: string[];
+  /** このPJが紐づくTF→KR→Objective（buildLinkedOkrByPj の結果。無ければ空） */
+  linked_okr?: AILinkedOkr[];
   today: string;
 }
 
@@ -55,6 +59,7 @@ const SYSTEM_PROMPT = `あなたは経験豊富なプロジェクトマネジメ
 - 負荷：担当者ごとのタスク件数・優先度の偏り（特定の人に集中していないか）
 - マイルストーン：直近のマイルストーンに対して間に合いそうか
 - リスク：上記から見えてくるボトルネック・抜け漏れ
+- OKR連動：【紐づくOKR】があるときは、紐づくKR・TFへの貢献の観点（TFの目的に照らして進捗・優先度・次の一手が妥当か）を必ず入れる。今期でない紐づけは過去／来期のものとして区別する。【紐づくOKR】が無い場合のみ「OKRに紐づいていない」と書いてよい
 
 【出力形式】マークダウン。コードブロックは使わない。見出しは ## 。箇条書きは - 。
 以下の5セクションで簡潔に（全体で日本語800〜1200字程度）：
@@ -91,6 +96,17 @@ function buildUserMessage(input: ProjectAnalysisInput): string {
   lines.push(`- ステータス：${p.status}`);
   if (p.start_date || p.end_date) lines.push(`- 期間：${p.start_date || "未設定"} 〜 ${p.end_date || "未設定"}`);
   if (p.owner_short_names.length) lines.push(`- オーナー：${p.owner_short_names.join("、")}`);
+  lines.push("");
+  lines.push("【紐づくOKR（このPJが貢献するTF→KR→Objective）】");
+  if (!input.linked_okr || input.linked_okr.length === 0) {
+    lines.push("（紐づけなし）");
+  } else {
+    for (const o of input.linked_okr) {
+      const qNote = o.is_current_quarter ? "今期" : `今期ではない（${o.quarter}）`;
+      lines.push(`- ${o.objective_title}（${o.objective_period}）> ${o.kr_label}「${o.kr_title}」> ${o.tf_label}「${o.tf_name}」リーダー:${o.tf_leader} / ${qNote}`);
+      if (o.tf_purpose) lines.push(`  TFの目的：${o.tf_purpose}`);
+    }
+  }
   lines.push("");
   lines.push(`【メンバー】${input.members_short_names.join("、") || "（登録なし）"}`);
   lines.push("");

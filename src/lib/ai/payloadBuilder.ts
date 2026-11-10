@@ -9,10 +9,10 @@
 //
 // ❌ このモジュール以外の場所でAI用ペイロードを組み立てないこと（CLAUDE.md Section 2）
 
-import type { Project, Task, Member, KeyResult, TaskForce, TaskProject, ProjectTaskForce, ProjectSection } from "../localData/types";
+import type { Project, Task, Member, KeyResult, TaskForce, TaskProject, ProjectTaskForce, ProjectSection, Objective } from "../localData/types";
 import { active } from "../localData/localStore";
 import { isAiTargetProject, resolveAiScope } from "./aiTarget";
-import type { AIProject, AITask, MemberWorkload, AIOKR } from "./types";
+import type { AIProject, AITask, MemberWorkload, AIOKR, AILinkedOkr } from "./types";
 import { sanitizeComment } from "./sanitize";
 import { deliverableForAi } from "../task/deliverable";
 import { dateToQuarter, currentQuarter, getMondayAnchors, toDateStr } from "../date";
@@ -217,10 +217,68 @@ interface BuildOptions {
   includeOKR?: boolean;
   /** 現在期のObjective（AppDataContextのobjective） */
   currentObjective?: { id: string; title: string; period: string } | null;
+  /** 全部署分のObjective。紐づいたTFのKRが現在Objective以外（別部署・過去）にあっても linked_okr に載せるため */
+  objectives?: Objective[];
   keyResults?: KeyResult[];
   taskForces?: TaskForce[];
   /** PJ内のグループ（タスクに section_name を付けるため。未指定なら全タスクが null） */
   projectSections?: ProjectSection[];
+}
+
+export interface LinkedOkrInput {
+  projectTaskForces: ProjectTaskForce[];
+  keyResults?: KeyResult[];
+  taskForces?: TaskForce[];
+  objectives?: Objective[];
+  currentObjective?: { id: string; title: string; period: string } | null;
+  members: Member[];
+}
+
+/**
+ * PJ id → 紐づくTF→KR→Objective の中身（今期外も quarter 付きで含める）。AI相談とカルテのAI分析が共用する。
+ * KR番号は所属Objective内の並び順（okr_context と一致させる）。
+ */
+export function buildLinkedOkrByPj(input: LinkedOkrInput): Map<string, AILinkedOkr[]> {
+  const out = new Map<string, AILinkedOkr[]>();
+  if (!input.keyResults || !input.taskForces) return out;
+  const thisQuarter = currentQuarter();
+  const objectives: Objective[] = [...(input.objectives ?? [])];
+  if (input.currentObjective && !objectives.some(o => o.id === input.currentObjective!.id)) {
+    objectives.push({ ...input.currentObjective, is_current: true });
+  }
+  const tfById = new Map(input.taskForces.filter(t => !t.is_deleted).map(t => [t.id, t]));
+  const krs = input.keyResults.filter(k => !k.is_deleted);
+  const krById = new Map(krs.map(k => [k.id, k]));
+  const objById = new Map(objectives.map(o => [o.id, o]));
+  const krIdx = (kr: KeyResult) => krs.filter(k => k.objective_id === kr.objective_id).findIndex(k => k.id === kr.id);
+  const clip = (v: string | null | undefined) => {
+    const t = sanitizeComment((v ?? "").replace(/\s+/g, " ").trim());
+    return t.length > 200 ? t.slice(0, 200) + "…" : t;
+  };
+  for (const ptf of input.projectTaskForces) {
+    const tf = tfById.get(ptf.tf_id);
+    const kr = tf ? krById.get(tf.kr_id) : undefined;
+    if (!tf || !kr) continue;
+    const obj = objById.get(kr.objective_id);
+    const quarter = effectiveTfQuarter(tf);
+    const purpose = clip(tf.description) || clip(tf.background);
+    const entry: AILinkedOkr = {
+      tf_label: `TF${krIdx(kr) + 1}-${tf.tf_number || "?"}`,
+      tf_name: tf.name,
+      ...(purpose ? { tf_purpose: purpose } : {}),
+      tf_leader: input.members.find(m => m.id === tf.leader_member_id)?.short_name ?? "未設定",
+      quarter,
+      is_current_quarter: quarter === thisQuarter,
+      kr_label: `KR${krIdx(kr) + 1}`,
+      kr_title: kr.title,
+      objective_title: obj?.title ?? "（不明）",
+      objective_period: obj?.period ?? "",
+      is_current_objective: input.currentObjective ? kr.objective_id === input.currentObjective.id : false,
+    };
+    if (!out.has(ptf.project_id)) out.set(ptf.project_id, []);
+    out.get(ptf.project_id)!.push(entry);
+  }
+  return out;
 }
 
 /**
@@ -247,14 +305,29 @@ export function buildPayload(opts: BuildOptions): BuildPayloadResult {
   // 今期のTFのみ対象にする（tf.quarter基準。未設定legacyは今期扱い）。
   // 過去/未来Qのラベルを linked_tf_numbers / okr_context に混ぜない。
   const thisQuarter = currentQuarter();
+  // KR番号は「所属Objective内の並び順」（okr_context の KR 並びと一致させる。全社配列の通し番号にすると
+  // 他部署のKRが先にあるだけで "TF9-1" になり、okr_context と対応が取れなくなる）
+  const krIndexInObjective = (kr: KeyResult | undefined): number => {
+    if (!kr || !opts.keyResults) return -1;
+    return opts.keyResults.filter(k => !k.is_deleted && k.objective_id === kr.objective_id).findIndex(k => k.id === kr.id);
+  };
+  const tfLabelOf = (tf: TaskForce): string => {
+    const kr = opts.keyResults?.find(k => k.id === tf.kr_id);
+    const idx = krIndexInObjective(kr);
+    return `TF${idx >= 0 ? idx + 1 : "?"}-${tf.tf_number || "?"}`;
+  };
   const tfNumberById = new Map<string, string>();
   if (opts.keyResults && opts.taskForces) {
     for (const tf of opts.taskForces.filter(t => !t.is_deleted && effectiveTfQuarter(t) === thisQuarter)) {
-      const krIdx = opts.keyResults.findIndex(k => k.id === tf.kr_id);
-      const label = `TF${krIdx >= 0 ? krIdx + 1 : "?"}-${tf.tf_number || "?"}`;
-      tfNumberById.set(tf.id, label);
+      tfNumberById.set(tf.id, tfLabelOf(tf));
     }
   }
+  const linkedOkrByPj = opts.includeOKR
+    ? buildLinkedOkrByPj({
+      projectTaskForces, keyResults: opts.keyResults, taskForces: opts.taskForces, objectives: opts.objectives,
+      currentObjective: opts.currentObjective, members: opts.members,
+    })
+    : new Map<string, AILinkedOkr[]>();
   // OKR文脈のTF→PJ名は送信範囲に関わらず、アーカイブ済みを除く全PJ名（OKRの文脈は絞らない）
   const pjNameById = new Map(opts.projects.filter(isAiTargetProject).map(p => [p.id, p.name]));
   const linkedTfLabelsByPj = new Map<string, string[]>();
@@ -341,6 +414,7 @@ export function buildPayload(opts: BuildOptions): BuildPayloadResult {
       pj_owners: pjOwners,
       pj_members: pjMembers,
       linked_tf_numbers: linkedTfLabelsByPj.get(pj.id) ?? [],
+      ...(linkedOkrByPj.has(pj.id) ? { linked_okr: linkedOkrByPj.get(pj.id)! } : {}),
       // pj_progress は葉タスク基準でカウントする（子を持つ親タスクを除外して二重計上を防ぐ）。
       // 親判定は全非削除タスク（activeTasks）に対して行う。tasks（aiTasks）は葉に絞らない。
       // フラットデータでは葉=全タスクなので従来と完全一致する。

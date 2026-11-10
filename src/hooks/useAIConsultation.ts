@@ -71,6 +71,7 @@ export function useAIConsultation(targetPjId: string | null, currentMemberId: st
   const tasks             = useAppStore(selectScopedTasks);
   const members           = useAppStore(selectScopedMembers);
   const objective         = useAppStore(s => s.objective);
+  const objectives        = useAppStore(s => s.objectives);
   const keyResults        = useAppStore(s => s.keyResults);
   const taskForces        = useAppStore(s => s.taskForces);
   const projectSections   = useAppStore(s => s.projectSections);
@@ -147,6 +148,7 @@ export function useAIConsultation(targetPjId: string | null, currentMemberId: st
           targetDeadline,
           includeOKR,
           currentObjective: objective,
+          objectives,
           keyResults,
           taskForces,
           projectSections,
@@ -232,7 +234,7 @@ export function useAIConsultation(targetPjId: string | null, currentMemberId: st
       }
     },
     [projects, tasks, members, targetPjId, currentMemberId,
-      objective, keyResults, taskForces, projectSections, taskProjects, projectTaskForces],
+      objective, objectives, keyResults, taskForces, projectSections, taskProjects, projectTaskForces],
   );
 
   // ===== reset: セッションをリセット =====

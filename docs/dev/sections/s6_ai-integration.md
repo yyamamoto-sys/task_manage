@@ -279,6 +279,13 @@ return {
 - **使用量**：返答の `usage` はそのまま素通しなので `cache_creation_input_tokens`／`cache_read_input_tokens` も届く。クライアントは `AIConsultationUsage` として保持するが、`ai_usage_logs` には従来どおり `input_tokens`（キャッシュ境界より後ろの分だけ）と `output_tokens` を記録する（列は増やしていない。キャッシュの読み書き分は入力トークン数に含まれない）。
 - **デプロイ順は Edge Function が先**。新クライアント＋旧 Edge の組み合わせでも、旧 Edge は `output_config` を捨て、`claude-sonnet-5-5` を既定（sonnet-4-6）に置き換え、system の配列はそのまま Anthropic に渡すので動く（構造化出力が効かないだけ）。旧クライアント＋新 Edge は文字列の system がそのまま通る。
 
+### 6-20. PJに紐づくOKRの渡し方（v3.214・2026-11-10）
+
+- PJ→TF→KR→Objective は `buildLinkedOkrByPj`（`lib/ai/payloadBuilder.ts`）で組み、AI相談は `projects[].linked_okr`、カルテのPJ別AI分析は【紐づくOKR】として渡す。今期外・現在Objective外の紐づけも `quarter`／`is_current_quarter`／`is_current_objective` で区別して含める。TFの目的は200字で切り `sanitizeComment` を通す。
+- `linked_tf_numbers` のKR番号は所属Objective内の並び順（okr_context と一致）。
+- systemPrompt は「紐づくKR・TFへの貢献の観点」で答えさせ、前の回答の「紐づいていない」を引き継がせない。内部フィールド名は返答に出さない（6-19）。
+- KRには目標値・現在値の列が無い（`key_results` は title のみ）。進捗はTF・PJ側の状況から述べさせる。
+
 ### 6-19. AI相談の返答の書式（v3.210・2026-11-10）
 
 - 返答（reply・description）は、見出し【】を独立行、箇条書き「・」を1項目1行で書かせる。タスクの属性は「タスク名(task_001)（担当：岩井／期限：11/05／優先度：高）」のように、shortId 括弧の後に全角括弧でまとめる（6-17 の ID ルールと両立。`displayText` は識別記号だけの括弧を消すので属性括弧は残る）。内部のフィールド名は書かせない。構造化出力スキーマの reply・description にも改行ルールの description を付けた（`responseSchema.ts`）。

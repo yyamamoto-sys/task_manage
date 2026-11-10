@@ -34,7 +34,28 @@ export interface AIProject {
   pj_members: string[];
   /** このPJが貢献するTF（"TF1-2" 形式の番号配列。OKR文脈での寄与判断に使う） */
   linked_tf_numbers: string[];
+  /** このPJが紐づくTF→KR→Objective の中身（OKR連動のコア。includeOKR 時のみ。紐づけが無ければ省略）。過去・来期のTFも quarter 付きで入る */
+  linked_okr?: AILinkedOkr[];
   tasks: AITask[];
+}
+
+export interface AILinkedOkr {
+  /** linked_tf_numbers と同じ形式のラベル（"TF1-2"） */
+  tf_label: string;
+  tf_name: string;
+  /** TFの目的・背景（空なら省略。短く切り済み） */
+  tf_purpose?: string;
+  tf_leader: string;
+  /** TFの四半期（"1Q"〜"4Q"）。今期でなければ過去・来期の紐づけ */
+  quarter: string;
+  is_current_quarter: boolean;
+  /** "KR1" 形式（所属Objective内の並び順） */
+  kr_label: string;
+  kr_title: string;
+  objective_title: string;
+  objective_period: string;
+  /** 所属Objective が表示中の現在Objectiveか */
+  is_current_objective: boolean;
 }
 
 export interface AITask {

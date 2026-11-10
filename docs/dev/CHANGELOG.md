@@ -8751,3 +8751,11 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 * 反映：`addProjectTaskForce`／`removeProjectTaskForce` が store を即更新し、realtime（`project_task_forces`）も購読済み。ダッシュボード・カルテ・AIペイロードは store を読むため追加対応なし。
 * 一般ユーザーは編集可。`canEditBasicInfo` が偽になる場合は読み取り表示（今期分のみ）。
 * `uiGuide.ts` FEATURE_LIST に追記。テスト：`projectTaskForceLinks.test.ts`（差分適用・今期外を消さない・他PJに触れない・KRグループ化）。
+
+# v3.214（2026-11-10）：PJに紐づけたOKR（TF→KR→Objective）がAIに確実に届くようにする
+* 依頼：「グループOKRに紐づけたのにAIに情報が渡っていない。OKR連動がコアなのでどうにかして」。
+* 原因（確定）：カルテの「✨ このPJをAI分析」（`projectAnalysisClient.ts`）は設計上 KR/TF/Objective を一切渡していなかった（冒頭のAI境界コメントが2026-05-13より前の方針のまま。`ProjectKarte` も「AIには渡さない」と明記）。紐づけてもこの分析に反映されない。
+* 原因（AI相談側の弱点）：`payloadBuilder` の `linked_tf_numbers` は KR番号を全社の KR 配列の通し番号で付けていた（他部署のKRが先にあると "TF9-1" になり okr_context と対応が取れない）。okr_context は現在Objectiveのみで、紐づけ先のKRが別Objective・過去期だと中身が届かない。TFの目的・KR名・Objective名は linked_tf_numbers（番号だけ）では伝わらない。会話の前の「紐づいていません」の回答をAIが引き継ぐ余地もあった。
+* 修正：`buildLinkedOkrByPj`（payloadBuilder.ts・AI相談とカルテ分析で共用）が PJごとに `linked_okr`（tf_label・tf_name・tf_purpose・tf_leader・quarter・is_current_quarter・kr_label・kr_title・objective_title・objective_period・is_current_objective）を作る。今期外・現在Objective外の紐づけも quarter 付きで含める。KR番号は所属Objective内の並び順に統一。`useAIConsultation` が `objectives` も渡す。
+* systemPrompt：linked_okr を読み、紐づくKR・TFへの貢献の観点で答えさせる。前の回答の「紐づいていない」は引き継がず今回のペイロードを正とする。内部フィールド名を返答に出さない v3.210 のルールは維持。カルテ分析のプロンプトにも【紐づくOKR】とOKR連動の観点を追加。
+* テスト：`payloadBuilderLinkedOkr.test.ts`（修正前コードで赤を確認）・`projectAnalysisLinkedOkr.test.ts`。

@@ -23,6 +23,7 @@ import { Avatar } from "../auth/UserSelectScreen";
 import { MarkdownLite } from "../common/MarkdownLite";
 import { AIProgressLoader } from "../common/AIProgressLoader";
 import { analyzeProject } from "../../lib/ai/projectAnalysisClient";
+import { buildLinkedOkrByPj } from "../../lib/ai/payloadBuilder";
 import { fetchProjectAnalyses, insertProjectAnalysis, type ProjectAnalysisRecord } from "../../lib/supabase/projectAnalysisStore";
 import { getGuestProjectAnalyses, addGuestProjectAnalysis } from "../../lib/ai/guestProjectAnalysisStore";
 import { isGuestMode } from "../../lib/guestMode";
@@ -52,6 +53,8 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
   const rawMs      = useAppStore(s => s.milestones);
   const rawTfs     = useAppStore(s => s.taskForces);
   const rawKrs     = useAppStore(s => s.keyResults);
+  const rawObjectives = useAppStore(s => s.objectives);
+  const currentObjective = useAppStore(s => s.objective);
   const rawPtfs    = useAppStore(s => s.projectTaskForces);
   const rawTpjs    = useAppStore(s => s.taskProjects);
   const saveMilestone   = useAppStore(s => s.saveMilestone);
@@ -218,7 +221,7 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
   );
   const nextMilestone = useMemo(() => milestones.find(m => m.date >= today), [milestones, today]);
 
-  // 紐づくKR（PJ → ProjectTaskForce → TF → KR）— 表示のみ。AIには渡さない。
+  // 紐づくKR（PJ → ProjectTaskForce → TF → KR）の名称（表示用）。AI分析にはTF・Objectiveも含めて別途渡す（linked_okr）
   const linkedKrNames = useMemo(() => {
     const tfIds = new Set(rawPtfs.filter(p => p.project_id === project.id).map(p => p.tf_id));
     const krIds = new Set(rawTfs.filter(tf => !tf.is_deleted && tfIds.has(tf.id)).map(tf => tf.kr_id).filter(Boolean));
@@ -300,6 +303,10 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
         })),
         milestones: milestones.map(m => ({ name: m.name, date: m.date, description: m.description })),
         members_short_names: pjAllMembers.map(m => m.short_name),
+        linked_okr: buildLinkedOkrByPj({
+          projectTaskForces: rawPtfs, keyResults: rawKrs, taskForces: rawTfs,
+          objectives: rawObjectives, currentObjective, members: rawMembers,
+        }).get(pid) ?? [],
         today,
       });
       // 🔴 ゲストはproject_analysesに書けない（client.tsのProxyでブロックされる）ため、
@@ -345,7 +352,8 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
       runningRef.current.delete(pid);
       setRunningPjIds(prev => prev.filter(id => id !== pid));
     }
-  }, [project, owners, pjTasks, milestones, pjAllMembers, memberById, today, currentUser.id]);
+  }, [project, owners, pjTasks, milestones, pjAllMembers, memberById, today, currentUser.id,
+    rawPtfs, rawKrs, rawTfs, rawObjectives, currentObjective, rawMembers]);
 
   const latest = analyses[0] ?? null;
   const accent = project.color_tag;

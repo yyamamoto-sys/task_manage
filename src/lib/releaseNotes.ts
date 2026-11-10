@@ -39,6 +39,15 @@ export interface ReleaseNoteEntry {
 
 export const RELEASE_NOTES: ReleaseNoteEntry[] = [
   {
+    version: "v3.214",
+    date: "2026-11-10",
+    title: "PJに紐づけたOKRの内容が、AIに伝わるようになりました",
+    highlights: [
+      "「✨ このPJをAI分析」で、PJが紐づくTF・KR・Objectiveの名称とTFの目的がAIに渡り、紐づくKR・TFへの貢献の観点で分析されるようになりました（これまでは渡っていませんでした）。",
+      "AI相談でも、紐づくTF→KR→Objectiveの中身（今期以外の紐づけも区別して）を踏まえて答えます。TFの番号（TF1-2など）は、所属するObjective内のKRの並びに揃えました。",
+    ],
+  },
+  {
     version: "v3.213",
     date: "2026-11-10",
     title: "プロジェクトの設定画面から、PJが貢献するTF（KR）を選べるようになりました",
