@@ -10,7 +10,7 @@
 
 import { supabase } from "./client";
 import { fetchAllRows } from "./fetchAllRows";
-import { CRITICAL_TABLE_COUNT } from "../loadProgress";
+import { CRITICAL_TABLE_COUNT, newTableLoad, type TableLoad } from "../loadProgress";
 import { getAssigneeIds } from "../taskMeta";
 import { formatErrorForUser } from "../errorMessage";
 import type {
@@ -133,12 +133,12 @@ export async function saveWithLock<T extends { id: string }>(
 
 // ===== Group =====
 
-export async function fetchGroups(): Promise<Group[]> {
+export async function fetchGroups(onProgress?: (loaded: number, total: number | null) => void): Promise<Group[]> {
   const { data, error } = await fetchAllRows(o => supabase
     .from("groups")
     .select("*", o)
     .eq("is_deleted", false)
-    .order("name"), { label: "groups" });
+    .order("name"), { label: "groups", onProgress });
   if (error) throw error;
   return (data ?? []) as Group[];
 }
@@ -249,25 +249,30 @@ export interface FetchCriticalDataResult {
   partialFailures: string[];
 }
 
-export async function fetchCriticalData(onProgress?: (done: number, total: number) => void): Promise<FetchCriticalDataResult> {
+export async function fetchCriticalData(onProgress?: (tables: readonly TableLoad[]) => void): Promise<FetchCriticalDataResult> {
   // B1（依存ゲート）: task_dependencies は「タスク完了時に先行が終わっているか」を
   // 最初の描画時点から判定できる必要があるため、OKR系（Phase 2）ではなく Phase 1 で取得する。
-  const TOTAL = CRITICAL_TABLE_COUNT;
-  let done = 0;
+  // 進行度は表ごとの取得済み行数／総行数（loadProgress.ts の rowFraction）。表の内部でもページごとに進む。
+  const states: TableLoad[] = Array.from({ length: CRITICAL_TABLE_COUNT }, newTableLoad);
+  const emit = () => onProgress?.(states);
+  const rows = (i: number) => (loaded: number, total: number | null) => {
+    states[i] = { loaded, total, done: false };
+    emit();
+  };
   // 主キーは乱数UUIDのため、id だけで並べると従来の（ほぼ作成順の）並びが崩れる。作成順を第1キーにする。
-  const tick = <T>(r: T): T => { onProgress?.(++done, TOTAL); return r; };
+  const tick = (i: number) => <T>(r: T): T => { states[i] = { ...states[i], done: true }; emit(); return r; };
 
   const [members, projects, tasks, tpjs, milestones, projectSections, memberTags, memberTagMembers, taskDeps] =
     await Promise.all([
-      fetchAllRows(o => supabase.from("members").select("*", o).eq("is_deleted", false).order("created_at", { ascending: true }), { label: "members" }).then(tick),
-      fetchAllRows(o => supabase.from("projects").select("*", o).eq("is_deleted", false).order("created_at", { ascending: true }), { label: "projects" }).then(tick),
-      fetchAllRows(o => supabase.from("tasks").select("*", o).eq("is_deleted", false).order("created_at", { ascending: true }), { label: "tasks" }).then(tick),
-      fetchAllRows(o => supabase.from("task_projects").select("*", o), { label: "task_projects", keyColumns: ["task_id", "project_id"] }).then(tick),
-      fetchAllRows(o => supabase.from("milestones").select("*", o).eq("is_deleted", false).order("created_at", { ascending: true }), { label: "milestones" }).then(tick),
-      fetchAllRows(o => supabase.from("project_sections").select("*", o).eq("is_deleted", false).order("sort_order", { ascending: true }).order("created_at", { ascending: true }), { label: "project_sections" }).then(tick),
-      fetchAllRows(o => supabase.from("member_tags").select("*", o).eq("is_deleted", false).order("created_at", { ascending: true }), { label: "member_tags" }).then(tick),
-      fetchAllRows(o => supabase.from("member_tag_members").select("*", o), { label: "member_tag_members", keyColumns: ["tag_id", "member_id"] }).then(tick),
-      fetchAllRows(o => supabase.from("task_dependencies").select("*", o).eq("is_deleted", false).order("created_at", { ascending: true }), { label: "task_dependencies" }).then(tick),
+      fetchAllRows(o => supabase.from("members").select("*", o).eq("is_deleted", false).order("created_at", { ascending: true }), { label: "members", onProgress: rows(0) }).then(tick(0)),
+      fetchAllRows(o => supabase.from("projects").select("*", o).eq("is_deleted", false).order("created_at", { ascending: true }), { label: "projects", onProgress: rows(1) }).then(tick(1)),
+      fetchAllRows(o => supabase.from("tasks").select("*", o).eq("is_deleted", false).order("created_at", { ascending: true }), { label: "tasks", onProgress: rows(2) }).then(tick(2)),
+      fetchAllRows(o => supabase.from("task_projects").select("*", o), { label: "task_projects", onProgress: rows(3), keyColumns: ["task_id", "project_id"] }).then(tick(3)),
+      fetchAllRows(o => supabase.from("milestones").select("*", o).eq("is_deleted", false).order("created_at", { ascending: true }), { label: "milestones", onProgress: rows(4) }).then(tick(4)),
+      fetchAllRows(o => supabase.from("project_sections").select("*", o).eq("is_deleted", false).order("sort_order", { ascending: true }).order("created_at", { ascending: true }), { label: "project_sections", onProgress: rows(5) }).then(tick(5)),
+      fetchAllRows(o => supabase.from("member_tags").select("*", o).eq("is_deleted", false).order("created_at", { ascending: true }), { label: "member_tags", onProgress: rows(6) }).then(tick(6)),
+      fetchAllRows(o => supabase.from("member_tag_members").select("*", o), { label: "member_tag_members", onProgress: rows(7), keyColumns: ["tag_id", "member_id"] }).then(tick(7)),
+      fetchAllRows(o => supabase.from("task_dependencies").select("*", o).eq("is_deleted", false).order("created_at", { ascending: true }), { label: "task_dependencies", onProgress: rows(8) }).then(tick(8)),
     ]);
 
   // 構造表：1件でも失敗したら起動を止める。どの表で失敗したか分かる文言にする（CLAUDE.md Section 15）。

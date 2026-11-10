@@ -106,3 +106,34 @@ describe("fetchAllRows：max_rows で打ち切られても全件を返す", () =
     expect(data).toHaveLength(1300);
   });
 });
+
+describe("fetchAllRows：進捗コールバック（v3.212）", () => {
+  it("ページごとに (取得済み行数, 総行数) を通知し、単調に増えて最後は総行数に届く", async () => {
+    const calls: Array<[number, number | null]> = [];
+    const fake = createFakePostgrest({ t: makeRows(2500) }, 1000);
+    const { data } = await fetchAllRows<Row>(
+      o => fake.supabase.from("t").select("*", o) as unknown as PageableQuery<Row>,
+      { label: "t", onProgress: (l, t) => calls.push([l, t]) },
+    );
+    expect(data).toHaveLength(2500);
+    expect(calls).toEqual([[1000, 2500], [2000, 2500], [2500, 2500]]);
+  });
+
+  it("総件数が取れない応答では total は null のまま", async () => {
+    const all = makeRows(1300);
+    const q: PageableQuery<Row> = {
+      order: () => q,
+      range: (from: number, to: number) => Promise.resolve({ data: all.slice(from, Math.min(to + 1, from + 1000)), error: null, count: null }),
+    };
+    const calls: Array<[number, number | null]> = [];
+    await fetchAllRows<Row>(() => q, { onProgress: (l, t) => calls.push([l, t]) });
+    expect(calls.map(c => c[1])).toEqual([null, null]);
+    expect(calls.map(c => c[0])).toEqual([1000, 1300]);
+  });
+
+  it("onProgress を渡さなくても従来どおり取れる（結果は同じ）", async () => {
+    const rows = makeRows(1500);
+    const { promise } = run(rows, 1000);
+    expect((await promise).data).toHaveLength(1500);
+  });
+});

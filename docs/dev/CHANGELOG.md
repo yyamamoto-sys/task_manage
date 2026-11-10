@@ -8733,3 +8733,12 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 * `fetchGroups` を Phase 1 の9表と並列に取る（リトライ対象にはせず1回。失敗は握りつぶして空配列＝従来仕様）。進行度の分母は9表＋groups の10。
 * 文言を段階別にした（ja/en）：認証確認＝`layout.app.loading.authChecking`「ログイン情報を確認しています...」（バーは不定表示＝`FullScreenLoading` の新 prop `indeterminate`、既存CSS `progress-bar-indeterminate`）／Phase 1＝`dataLoading`「メンバー・タスクを読み込んでいます...」／自動同定・ウィザード判定・招待確認＝`preparing`「画面を準備しています...」（進行度付き）。縦位置を動かさない構造（トラック常設・補足行の高さ保持）は変更なし。
 * テスト：`loadProgress.test.ts`・`loadProgressFlow.test.ts`（Phase 1 完了で0に戻らない／Phase 2 は backgroundProgress が0から／Phase 1 中は単調増加で上限90／fetchGroups 失敗でも起動）を新設。前2件は修正前のコードで落ちることを確認済み。MIN_CLIENT_VERSION は据え置き。
+
+# v3.212（2026-11-10）：起動画面の進行度を「取得済み行数／総行数」にする
+
+* 問題：v3.211 までの進行度は「完了した表数／10」で、行数の多い表（tasks 等）を待つ間はバーがほとんど動かず、表が終わるたびにまとめて跳ねていた。
+* `fetchAllRows` に任意の `onProgress(取得済み行数, 総行数)` を追加（ページを取り込むたびに通知。総行数は1ページ目の `count: "exact"` で分かるまで・count が取れない応答では最後まで null）。ページングは直列のまま、順序保証・重複排除・件数ずれの警告・終了条件は変更なし（`rowLimitScan.test.ts` も無変更で通る）。
+* 進行度の計算は `lib/loadProgress.ts` の純粋関数：`rowFraction`（全表の取得済み行数の合計／総行数の合計。総行数不明の表は仮の行数 `FALLBACK_TABLE_ROWS`=100 を重みにし、完了した表は重みの全量を取得済みとして数える。0行の表も重み1）、`createMonotonic`（後退しない最大値の保持。総行数が後から分かって分母が増えても表示は下がらない。リトライ時だけ `reset()`）、`fractionToPhase1Percent`（0〜1 を 0〜90% に写す）、`TableLoad` 型。
+* `fetchCriticalData` の進捗コールバックを `(表の完了数, 表数)` から `(全9表の TableLoad 配列)` に変更（表の内部でもページごとに通知）。`fetchGroups` も任意の `onProgress` を受ける。`appStore.load()` は9表＋groups の10表を `rowFraction` に渡す。リトライ時は進行度を0に戻し、従来どおりヒント「接続タイムアウト — n秒後に再接続」で説明する。
+* 起動の3段（認証確認＝不定バー／Phase 1＝0〜90%／自動同定＝95%→画面切替直前に100%）と文言は v3.211 のまま。
+* テスト：`loadProgress.test.ts`（rowFraction・createMonotonic）、`fetchAllRows.test.ts`（onProgress の呼び出し列・total=null・未指定でも結果同一）、`loadProgressFlow.test.ts`（総行数が後から判明しても後退しない・ページごとに値が増える）。MIN_CLIENT_VERSION は据え置き。

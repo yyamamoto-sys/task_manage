@@ -31,6 +31,11 @@ export interface FetchAllRowsOptions {
   pageSize?: number;
   /** console.warn に出す識別名（テーブル名など）。 */
   label?: string;
+  /**
+   * ページを1枚取り込むたびに (取得済み行数, 総行数) を通知する。総行数は1ページ目の count で分かるまで null、
+   * count が取れない応答では最後まで null。起動画面の進行度用で、取得そのものには影響しない。
+   */
+  onProgress?: (loaded: number, total: number | null) => void;
 }
 
 export interface FetchAllRowsResult<Row> {
@@ -73,6 +78,7 @@ export async function fetchAllRows<Row>(
       rows.push(row);
     }
     offset += batch.length;
+    options.onProgress?.(rows.length, total);
     if (total !== null && offset >= total) break;
   }
 

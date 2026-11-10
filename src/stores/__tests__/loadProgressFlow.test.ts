@@ -33,7 +33,10 @@ const storeMock = vi.hoisted(() => ({
 vi.mock("../../lib/supabase/store", () => storeMock);
 
 import { useAppStore } from "../appStore";
-import { PREPARING_PROGRESS, PHASE1_DATA_MAX } from "../../lib/loadProgress";
+import { PREPARING_PROGRESS, PHASE1_DATA_MAX, CRITICAL_TABLE_COUNT, type TableLoad } from "../../lib/loadProgress";
+
+const states = (f: (i: number) => TableLoad): TableLoad[] => Array.from({ length: CRITICAL_TABLE_COUNT }, (_, i) => f(i));
+const allDone = () => states(() => ({ loaded: 10, total: 10, done: true }));
 
 const INITIAL_STATE = useAppStore.getState();
 
@@ -56,8 +59,8 @@ describe("appStore.load()：起動画面の進行度（v3.211）", () => {
   });
 
   it("Phase 1 完了で loadProgress は 0 に戻らず、Phase 2 の上端バーは backgroundProgress が 0 から始まる", async () => {
-    storeMock.fetchCriticalData.mockImplementation(async (onProgress?: (d: number, t: number) => void) => {
-      onProgress?.(9, 9);
+    storeMock.fetchCriticalData.mockImplementation(async (onProgress?: (t: TableLoad[]) => void) => {
+      onProgress?.(allDone());
       return critical;
     });
     let atPhase2: { loading: boolean; loadProgress: number; backgroundProgress: number } | null = null;
@@ -72,8 +75,8 @@ describe("appStore.load()：起動画面の進行度（v3.211）", () => {
   });
 
   it("Phase 1 の間は進行度が単調に増え、データ取得だけでは上限（PHASE1_DATA_MAX）を超えない", async () => {
-    storeMock.fetchCriticalData.mockImplementation(async (onProgress?: (d: number, t: number) => void) => {
-      for (let i = 1; i <= 9; i++) onProgress?.(i, 9);
+    storeMock.fetchCriticalData.mockImplementation(async (onProgress?: (t: TableLoad[]) => void) => {
+      for (let i = 1; i <= CRITICAL_TABLE_COUNT; i++) onProgress?.(states(j => ({ loaded: j < i ? 10 : 0, total: 10, done: j < i })));
       return critical;
     });
     storeMock.fetchOkrData.mockResolvedValue(okr);
@@ -93,5 +96,26 @@ describe("appStore.load()：起動画面の進行度（v3.211）", () => {
     await useAppStore.getState().load();
     expect(useAppStore.getState().error).toBeNull();
     expect(useAppStore.getState().groups).toEqual([]);
+  });
+
+  it("行数ベース：表の内部でページが進むたびに進行度が上がり、総行数が後から分かって分母が増えても後退しない", async () => {
+    storeMock.fetchCriticalData.mockImplementation(async (onProgress?: (t: TableLoad[]) => void) => {
+      // tasks(index 2) が 5000 行。最初は総行数不明 → 1ページ目で判明 → 以降ページごとに進む
+      const base = (tasks: TableLoad): TableLoad[] => states(i => (i === 2 ? tasks : { loaded: 10, total: 10, done: true }));
+      onProgress?.(base({ loaded: 0, total: null, done: false }));
+      onProgress?.(base({ loaded: 1000, total: 5000, done: false }));
+      onProgress?.(base({ loaded: 2000, total: 5000, done: false }));
+      onProgress?.(base({ loaded: 5000, total: 5000, done: false }));
+      onProgress?.(base({ loaded: 5000, total: 5000, done: true }));
+      return critical;
+    });
+    storeMock.fetchOkrData.mockResolvedValue(okr);
+    const seen: number[] = [];
+    let loadingSeen = true;
+    const unsub = useAppStore.subscribe(s => { if (s.loading && loadingSeen) seen.push(s.loadProgress); if (!s.loading) loadingSeen = false; });
+    await useAppStore.getState().load();
+    unsub();
+    for (let i = 1; i < seen.length; i++) expect(seen[i]).toBeGreaterThanOrEqual(seen[i - 1]);
+    expect(new Set(seen).size).toBeGreaterThan(3);
   });
 });

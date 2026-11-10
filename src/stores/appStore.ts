@@ -69,7 +69,7 @@ import type { DemoDataset } from "../lib/demo/types";
 import { isGuestMode } from "../lib/guestMode";
 import { normalizeProjectRow, normalizeTaskRow } from "../lib/supabase/rowNormalize";
 import { recordLoad } from "../lib/diagnostics/loadCounter";
-import { phase1Percent, PREPARING_PROGRESS, CRITICAL_TABLE_COUNT } from "../lib/loadProgress";
+import { fractionToPhase1Percent, rowFraction, createMonotonic, newTableLoad, CRITICAL_TABLE_COUNT, PREPARING_PROGRESS, type TableLoad } from "../lib/loadProgress";
 import { fetchChangesSince } from "../lib/supabase/store";
 import { noteRemoteEcho } from "../lib/diagnostics/realtimeEchoWatch";
 
@@ -648,29 +648,38 @@ export const useAppStore = create<AppState>()((set, get) => ({
         // Phase 1: メンバー・PJ・タスク・マイルストーン（7テーブル）→ UI解放
         // タイムアウト時は最大 MAX_RETRIES 回まで指数バックオフで自動リトライ
         // groups は周辺データ（失敗してもメイン UI はブロックしない）。Phase 1 の9表と並列に取り、
-        // 進行度の分母にも1表分として含める。リトライ対象にはせず1回だけ取る。
-        let critDone = 0;
-        let groupsDone = 0;
+        // 進行度にも1表分として含める。リトライ対象にはせず1回だけ取る。
+        // 進行度は「全表の取得済み行数の合計／総行数の合計」（loadProgress.ts）。表の内部でもページごとに進み、
+        // 総行数が後から分かって分母が増えても表示は後退させない（リトライ時だけ戻す）。
+        const pendingCrit = (): readonly TableLoad[] => Array.from({ length: CRITICAL_TABLE_COUNT }, newTableLoad);
+        let critStates: readonly TableLoad[] = pendingCrit();
+        let groupsState: TableLoad = newTableLoad();
+        const monotonic = createMonotonic();
         const reportProgress = () => {
-          set({ loadProgress: phase1Percent(critDone + groupsDone, CRITICAL_TABLE_COUNT + 1) });
+          set({ loadProgress: monotonic.push(fractionToPhase1Percent(rowFraction([...critStates, groupsState]))) });
         };
-        const groupsPromise: Promise<Group[]> = fetchGroups().catch(() => {
+        const groupsPromise: Promise<Group[]> = fetchGroups((loaded, total) => {
+          groupsState = { loaded, total, done: false };
+          reportProgress();
+        }).catch(() => {
           // groups テーブル未適用環境でもアプリを起動できるよう握りつぶす
           return [] as Group[];
-        }).then(g => { groupsDone = 1; reportProgress(); return g; });
+        }).then(g => { groupsState = { ...groupsState, done: true }; reportProgress(); return g; });
         const critical = await withRetry(
           () => {
-            critDone = 0;
-            set({ loadingHint: "", loadProgress: phase1Percent(groupsDone, CRITICAL_TABLE_COUNT + 1) }); // リトライ開始時にリセット
-            return fetchCriticalData((done) => {
-              critDone = done;
+            critStates = pendingCrit();
+            monotonic.reset();
+            set({ loadingHint: "", loadProgress: fractionToPhase1Percent(rowFraction([...critStates, groupsState])) }); // リトライ開始時にリセット
+            return fetchCriticalData((tables) => {
+              critStates = tables;
               reportProgress();
             });
           },
           (attempt, delaySec) => {
-            critDone = 0;
+            critStates = pendingCrit();
+            monotonic.reset();
             set({
-              loadProgress: phase1Percent(groupsDone, CRITICAL_TABLE_COUNT + 1),
+              loadProgress: 0,
               loadingHint: `接続タイムアウト — ${delaySec}秒後に再接続 (${attempt}/${MAX_RETRIES})`,
             });
           },
