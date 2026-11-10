@@ -18,6 +18,7 @@ import type { UndoSnapshot } from "../../hooks/useUndoStack";
 import { SimulationBanner } from "./SimulationBanner";
 import { ConfirmationDialogModal } from "./ConfirmationDialogModal";
 import { BTN_CONFIRM_CREATE, BTN_APPLY } from "../../lib/ai/uiGuide";
+import { TaskRefText } from "./AIReplyBubble";
 
 interface Props {
   proposal: UIProposal;
@@ -214,7 +215,7 @@ export function ProposalCard({
           whiteSpace: "pre-wrap",
           fontFamily: "monospace",
         }}>
-          {renderDescriptionWithLinks(proposal.description, shortIdMap, onOpenTask)}
+          <TaskRefText text={proposal.description} shortIdMap={shortIdMap} onOpenTask={onOpenTask} />
         </div>
       </div>
     );
@@ -333,7 +334,7 @@ export function ProposalCard({
             whiteSpace: "pre-wrap",
           }}
         >
-          {renderDescriptionWithLinks(proposal.description, shortIdMap, onOpenTask)}
+          <TaskRefText text={proposal.description} shortIdMap={shortIdMap} onOpenTask={onOpenTask} />
         </div>
 
         {/* add_task の子タスク（階層化）プレビュー：親＝このタスク、その下に子タスク一覧 */}
@@ -527,51 +528,4 @@ export function ProposalCard({
       )}
     </>
   );
-}
-
-/**
- * description テキスト内の (task_001) 形式のタスク参照を
- * クリッカブルなボタンとして描画する。shortIdMap で UUID に解決できた場合のみリンク化。
- */
-function renderDescriptionWithLinks(
-  text: string,
-  shortIdMap: Map<string, string>,
-  onOpenTask: ((taskId: string) => void) | undefined,
-): React.ReactNode {
-  if (!onOpenTask) return text;
-
-  // (task_001), (task001), (task9) などにマッチ
-  const parts = text.split(/(\(task_?\d+\))/gi);
-  return parts.map((part, i) => {
-    const m = part.match(/^\((task_?\d+)\)$/i);
-    if (m) {
-      const shortId = m[1];
-      const uuid = shortIdMap.get(shortId);
-      if (uuid) {
-        return (
-          <button
-            key={i}
-            onClick={() => onOpenTask(uuid)}
-            title="クリックしてタスクを開く"
-            style={{
-              background: "var(--color-brand-light, rgba(124,58,237,0.08))",
-              border: "1px solid var(--color-brand-border, rgba(124,58,237,0.25))",
-              borderRadius: "4px",
-              padding: "0 4px",
-              color: "var(--color-text-purple)",
-              fontSize: "inherit",
-              fontFamily: "monospace",
-              cursor: "pointer",
-              lineHeight: "inherit",
-              textDecoration: "none",
-              verticalAlign: "baseline",
-            }}
-          >
-            {part}
-          </button>
-        );
-      }
-    }
-    return <span key={i}>{part}</span>;
-  });
 }

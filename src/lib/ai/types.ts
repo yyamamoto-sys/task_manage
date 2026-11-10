@@ -7,7 +7,7 @@ export type ConsultationType =
   | "change"         // 変更の影響整理（デフォルト）
   | "simulate"       // What-If シミュレーション
   | "diagnose"       // 現状診断
-  | "deadline_check" // 締め切り逆算（target_deadline必須）
+  | "deadline_check" // 締め切り逆算（target_deadline は任意。null なら AI が文面から読む）
   | "scope_change";  // PJ停止・スコープ縮小
 
 /** AIの回答ボリューム設定 */

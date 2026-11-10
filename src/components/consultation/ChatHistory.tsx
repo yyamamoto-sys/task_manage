@@ -3,9 +3,10 @@
 // 【設計意見】
 // 会話履歴を表示するコンポーネント。
 // - userターン：右寄せのテキストバブル
-// - assistantターン：ProposalCardのリスト表示（JSONをパースして表示）
+// - assistantターン：JSONをパースし、reply（直接の回答）の吹き出し＋ProposalCardのリストを表示
 
-import { parseAIResponse } from "../../lib/ai/responseParser";
+import { parseAIResponse, type AIResponseData } from "../../lib/ai/responseParser";
+import { AIReplyBubble } from "./AIReplyBubble";
 import { mapProposalsToUI } from "../../lib/ai/proposalMapper";
 import type { ConsultationSession } from "../../lib/ai/sessionManager";
 import type { UndoSnapshot } from "../../hooks/useUndoStack";
@@ -76,17 +77,15 @@ export function ChatHistory({
           );
         }
 
-        // assistantターン：JSONをパースしてProposalCardを表示
-        let proposals = null;
+        // assistantターン：JSONをパースして reply の吹き出し＋ProposalCardを表示
+        let parsed: AIResponseData | null = null;
         try {
-          const parsed = parseAIResponse(turn.content);
-          const uiProposals = mapProposalsToUI(parsed.proposals);
-          proposals = uiProposals.length > 0 ? uiProposals : null;
+          parsed = parseAIResponse(turn.content);
         } catch {
           // パース失敗時はテキストとして表示
         }
 
-        if (!proposals) {
+        if (!parsed) {
           const isLatest = turn.timestamp === latestAssistantTimestamp;
           return (
             <div
@@ -107,17 +106,24 @@ export function ChatHistory({
           );
         }
 
+        const proposals = mapProposalsToUI(parsed.proposals);
+        // 提案も reply も無い返答で生のJSONを見せないための代替文
+        const replyText = parsed.reply ?? (proposals.length === 0 ? "（AIからの提案はありませんでした）" : undefined);
+
         return (
           <div key={`assistant-proposals-${turn.timestamp}`} style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-            <div
-              style={{
-                fontSize: "10px",
-                color: "var(--color-text-tertiary)",
-                fontWeight: "500",
-              }}
-            >
-              AI の提案
-            </div>
+            {replyText && <AIReplyBubble text={replyText} shortIdMap={shortIdMap} onOpenTask={onOpenTask} />}
+            {proposals.length > 0 && (
+              <div
+                style={{
+                  fontSize: "10px",
+                  color: "var(--color-text-tertiary)",
+                  fontWeight: "500",
+                }}
+              >
+                AI の提案
+              </div>
+            )}
             {proposals.map((proposal) => (
               <ProposalCard
                 key={proposal.proposal_id}

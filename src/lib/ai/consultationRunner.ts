@@ -24,6 +24,7 @@ export interface AIUsage {
 }
 
 export interface RunAIConsultationResult {
+  reply?: string;
   proposals: Proposal[];
   follow_up_suggestions: string[];
   /** セッション履歴に保存する最終的な生レスポンス（リトライ成功時はリトライ後のテキスト） */
@@ -68,6 +69,7 @@ export async function runAIConsultation(
   try {
     const parsed = parseAIResponse(first.text, first.stopReason);
     return {
+      reply: parsed.reply,
       proposals: parsed.proposals,
       follow_up_suggestions: parsed.follow_up_suggestions,
       rawResponse: first.text,
@@ -90,6 +92,7 @@ export async function runAIConsultation(
     // リトライ結果のパース失敗はそのまま呼び出し元に伝播する（これ以上は救済しない）
     const parsedRetry = parseAIResponse(retry.text, retry.stopReason);
     return {
+      reply: parsedRetry.reply,
       proposals: parsedRetry.proposals,
       follow_up_suggestions: parsedRetry.follow_up_suggestions,
       rawResponse: retry.text,

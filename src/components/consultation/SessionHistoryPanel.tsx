@@ -38,6 +38,7 @@ interface ParsedProposal {
 }
 
 interface ParsedAssistant {
+  reply?: string;
   proposals: ParsedProposal[];
   followUps: string[];
 }
@@ -63,7 +64,8 @@ function parseAssistantContent(content: string): ParsedAssistant {
     const followUps: string[] = Array.isArray(parsed.follow_up_suggestions)
       ? (parsed.follow_up_suggestions as unknown[]).filter((s): s is string => typeof s === "string")
       : [];
-    return { proposals, followUps };
+    const reply = typeof parsed.reply === "string" && parsed.reply.trim() ? parsed.reply.trim() : undefined;
+    return { reply, proposals, followUps };
   } catch {
     return { proposals: [], followUps: [] };
   }
@@ -135,7 +137,7 @@ export function SessionHistoryPanel({ userId, onClose }: Props) {
             }
 
             // assistantターン：AIの回答（提案タイトル＋説明本文）と次の相談候補を表示
-            const { proposals, followUps } = parseAssistantContent(turn.content);
+            const { reply, proposals, followUps } = parseAssistantContent(turn.content);
             return (
               <div key={i} style={{
                 padding: "8px 12px",
@@ -144,11 +146,18 @@ export function SessionHistoryPanel({ userId, onClose }: Props) {
                 fontSize: "11px", color: "var(--color-text-secondary)",
                 lineHeight: 1.6,
               }}>
-                {proposals.length > 0 ? (
+                {reply || proposals.length > 0 ? (
                   <>
-                    <div style={{ fontSize: "10px", fontWeight: "600", color: "var(--color-text-tertiary)", marginBottom: "6px" }}>
-                      AIの回答（{proposals.length}件）
-                    </div>
+                    {reply && (
+                      <div style={{ color: "var(--color-text-primary)", whiteSpace: "pre-wrap", wordBreak: "break-word", marginBottom: proposals.length > 0 ? "8px" : 0 }}>
+                        {reply}
+                      </div>
+                    )}
+                    {proposals.length > 0 && (
+                      <div style={{ fontSize: "10px", fontWeight: "600", color: "var(--color-text-tertiary)", marginBottom: "6px" }}>
+                        AIの提案（{proposals.length}件）
+                      </div>
+                    )}
                     {proposals.map((p, ti) => (
                       <div key={ti} style={{ paddingLeft: "8px", borderLeft: "2px solid var(--color-border-secondary)", marginBottom: "8px" }}>
                         {p.title && (

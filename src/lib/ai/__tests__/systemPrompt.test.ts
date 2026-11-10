@@ -8,7 +8,8 @@
 // 文字列が落ちると静かに挙動が壊れる）。
 
 import { describe, it, expect } from "vitest";
-import { SYSTEM_PROMPTS } from "../systemPrompt";
+import { SYSTEM_PROMPTS, buildSystemPrompt } from "../systemPrompt";
+import type { ConsultationType } from "../types";
 
 describe("systemPrompt: 新規PJ作成ヒアリング・プロトコル", () => {
   const prompts = Object.entries(SYSTEM_PROMPTS);
@@ -48,7 +49,53 @@ describe("systemPrompt: 新規PJ作成ヒアリング・プロトコル", () => 
   it("全モードにJSON厳格化ルール（引用符エスケープ・改行禁止）が含まれる（v3.07）", () => {
     for (const [type, prompt] of prompts) {
       expect(prompt, `${type} モードに引用符エスケープ指示が無い`).toContain('\\" とエスケープ');
-      expect(prompt, `${type} モードに生の改行禁止指示が無い`).toContain("生の改行を入れない");
+      expect(prompt, `${type} モードに生の改行禁止指示が無い`).toContain("生の改行は不可");
     }
+  });
+});
+
+describe("systemPrompt: 1本化と返答の書き方（v3.206）", () => {
+  const types = Object.keys(SYSTEM_PROMPTS) as ConsultationType[];
+
+  it("相談の種類によらず本文が同一（キャッシュのため・誤判定の役割指示を入れないため）", () => {
+    const base = buildSystemPrompt("change", "normal");
+    for (const t of types) expect(buildSystemPrompt(t, "normal"), t).toBe(base);
+  });
+
+  it("旧5モードの対応が小見出しとして残っている", () => {
+    const p = buildSystemPrompt("change");
+    for (const h of [
+      "### 変更の影響を聞かれたとき",
+      "### もしも〜の仮定のとき（is_simulation=true）",
+      "### 現状診断を求められたとき",
+      "### 締め切りに間に合うかを聞かれたとき",
+      "### 停止・縮小を検討するとき",
+    ]) expect(p).toContain(h);
+  });
+
+  it("締め切り日が無いときにエラーを返させない（画面は target_deadline を常に null で送る）", () => {
+    const p = buildSystemPrompt("deadline_check");
+    expect(p).not.toContain("締め切り日が指定されていません");
+    expect(p).toContain("target_deadline が null なら、ユーザーの文面から締め切り日を読み取る");
+  });
+
+  it("コメント追記の提案は診断を求められたときに限る", () => {
+    expect(buildSystemPrompt("diagnose")).toContain("診断を求められたときに限り");
+  });
+
+  it("アーカイブ済みの画面（なぜなぜ・計画タブ）や送っていない kr_sessions を案内しない", () => {
+    const p = buildSystemPrompt("change");
+    expect(p).not.toContain("「なぜなぜ」タブ");
+    expect(p).not.toContain("「計画」タブ");
+    expect(p).not.toContain("kr_sessions");
+  });
+
+  it("reply 欄・書式・タスク参照の書き方を指示している", () => {
+    const p = buildSystemPrompt("change");
+    expect(p).toContain('"reply":');
+    expect(p).toContain("Markdownの表・見出し記号(#)・太字(**)は使わない");
+    expect(p).toContain("タスク名(task_001)");
+    expect(p).toContain("proposals は最大5件");
+    expect(p).not.toContain("1行に要約する");
   });
 });

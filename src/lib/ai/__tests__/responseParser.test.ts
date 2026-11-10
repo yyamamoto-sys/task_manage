@@ -147,6 +147,29 @@ describe("parseAIResponse", () => {
   });
 });
 
+describe("parseAIResponse — reply（直接の回答・v3.206）", () => {
+  it("reply を読み取る（前後の空白は除く）", () => {
+    const raw = JSON.stringify({ reply: "  今週期限は2件です。 ", proposals: [], follow_up_suggestions: [] });
+    expect(parseAIResponse(raw).reply).toBe("今週期限は2件です。");
+  });
+
+  it("reply の無い過去の履歴JSONは reply=undefined で従来どおり読める", () => {
+    const res = parseAIResponse(wrap([{ proposal_id: "p", title: "t", description: "d", action_type: "info" }]));
+    expect(res.reply).toBeUndefined();
+    expect(res.proposals).toHaveLength(1);
+  });
+
+  it("reply だけで proposals を省略した返答は空配列として受け取る", () => {
+    const res = parseAIResponse(JSON.stringify({ reply: "該当なしです。" }));
+    expect(res.proposals).toEqual([]);
+    expect(res.reply).toBe("該当なしです。");
+  });
+
+  it("reply も proposals も無ければ従来どおりエラー", () => {
+    expect(() => parseAIResponse(JSON.stringify({ follow_up_suggestions: [] }))).toThrow("proposals 配列がありません");
+  });
+});
+
 describe("parseAIResponse — stop_reason=max_tokens（出力の途中切れ）", () => {
   it("途中で切れた不正JSON＋stopReason=max_tokensでは分かりやすい案内をthrowする", () => {
     // 応答が途中で終わっている（構造化提案が閉じずに切れた想定）

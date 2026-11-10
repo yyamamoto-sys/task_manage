@@ -127,10 +127,10 @@ setShortIdMap(new Map());
 | `change` | 変更の影響整理（デフォルト） |
 | `simulate` | What-If シミュレーション |
 | `diagnose` | 現状診断（変更なしでリスクを洗い出す） |
-| `deadline_check` | 締め切り逆算（target_deadlineが必須） |
+| `deadline_check` | 締め切り逆算（target_deadline は任意。v3.206 以降、null なら文面から読み取る＝6-17） |
 | `scope_change` | PJ停止・スコープ縮小 |
 
-勝手に種類を追加しないこと。追加する場合はsystem_prompt_design_v3.mdも同時に更新する。
+勝手に種類を追加しないこと。追加する場合はsystem_prompt_design_v3.mdも同時に更新する。v3.206 以降、種類はシステムプロンプトの本文を変えない（使用量ログの分類用。6-17）。
 
 ### 6-7. マルチターン（会話履歴）の管理
 
@@ -257,3 +257,13 @@ return {
 - `PlanMessage` 型は `krQuarterPlanClient.ts` にも別定義があり、`KrQuarterPlanPanel` はそちらを使う。混同しないこと。
 - `add_project` は、いきなり提案せず、システムプロンプトの「新規PJ作成のヒアリング・プロトコル」に従い、不足している要点を `info` アクションで最大2往復だけ確認してから提案する（「おまかせ」「たたき台でよい」や、2往復で打ち切るフォールバックあり。`systemPrompt.test.ts` に回帰テスト）。
 - `add_task` に `new_subtasks` を付けると、親＋子タスクを一括作成できる（`parent_task_id`・PJ 継承・`display_order` 連番・Undo 対応）。
+
+### 6-17. AI相談のシステムプロンプトは1本（v3.206・2026-11-10）
+
+- `systemPrompt.ts` の本文は consultation_type によらず同一。`SYSTEM_PROMPTS` は5キーとも同じ文字列を指す。種類別の役割は「相談の内容に応じた対応」節の小見出し（変更の影響／もしも〜の仮定／現状診断／締め切りに間に合うか／停止・縮小）に並べ、AIが文面から選ぶ。
+- **種類で本文を分けない理由**：①`inferConsultationType` はキーワード判定で、「期限」「確認したい」「削除」などで外れる。外れた種類の役割指示（締め切り日が無ければエラー、診断結果はコメント追記で提案、など）がそのまま的外れな返答になっていた。②本文を固定にすればプロンプトキャッシュが効く。**種類ごとに本文を変える部分を足さないこと。**
+- consultation_type は `ai_usage_logs.consultation_type`（使用量の分類）と payload の参考情報として引き続き推定して渡す。payload 側には「参考の分類で外れることがある。文面を優先」とプロンプトで明記してある。
+- 締め切り：画面は `targetDeadline: null` を常に送る。null のときは文面から読み取り、読み取れなければ due_date の近いタスクについて答える（エラーを返させない）。
+- 返答JSONは `reply`（1〜3文・結論から）＋`proposals`＋`follow_up_suggestions`。単純な質問は reply のみ（proposals は空配列）。`reply` はパーサ上は任意（過去の履歴JSONに無い）。表示は `AIReplyBubble`（`ChatHistory`・`ConsultationPanel` の最新の提案・`SessionHistoryPanel`）。
+- 表示はプレーンテキスト（pre-wrap）なので、Markdown の表・#・** を使わせない。見出し【】・箇条「・」・全角スペース字下げ。タスク参照は「タスク名(task_001)」（半角括弧。`TaskRefText` がクリック可能にする）。
+- 回帰テスト：`src/lib/ai/__tests__/systemPrompt.test.ts`。

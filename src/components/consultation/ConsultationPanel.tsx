@@ -16,6 +16,8 @@ import { FollowUpButtons } from "./FollowUpButtons";
 import { LoadingView } from "./LoadingView";
 import { ErrorView } from "./ErrorView";
 import { ProposalCard } from "./ProposalCard";
+import { AIReplyBubble } from "./AIReplyBubble";
+import { parseAIResponse } from "../../lib/ai/responseParser";
 import { ChangeHistoryModal } from "./ChangeHistoryModal";
 import type { UIProposal } from "../../lib/ai/proposalMapper";
 import { inferConsultationType } from "../../lib/ai/inferConsultationType";
@@ -184,6 +186,17 @@ export function ConsultationPanel({
     ? session.turns.slice(0, Math.max(0, session.turns.length - omitTailCount))
     : session.turns;
   const hasOlderHistory = historyTurns.length > 0;
+  // 「最新の提案」の上に出す直接の回答（reply）。会話履歴から外した末尾の assistant ターンから読む
+  const latestReply = useMemo(() => {
+    if (omitTailCount === 0) return undefined;
+    const last = session.turns[session.turns.length - 1];
+    if (!last || last.role !== "assistant") return undefined;
+    try {
+      return parseAIResponse(last.content).reply;
+    } catch {
+      return undefined;
+    }
+  }, [omitTailCount, session.turns]);
   // 「送信した相談」エコーは、質問が会話履歴に二重表示されない条件でのみ出す
   // （提案なし成功時は質問を会話履歴側で表示するのでエコーは出さない。失敗時は入力欄へ戻すので出さない）。
   const showSubmittedEcho = !!lastSubmittedText && (
@@ -705,6 +718,7 @@ ${marker}` : text);
           {/* 最新の提案 */}
           {callState === "success" && proposals.length > 0 && (
             <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+              {latestReply && <AIReplyBubble text={latestReply} shortIdMap={shortIdMap} onOpenTask={onOpenTask} />}
               <div style={{ fontSize: "10px", fontWeight: "500", color: "var(--color-text-tertiary)", letterSpacing: "0.04em", display: "flex", alignItems: "center", gap: "6px" }}>
                 <span>最新の提案（{proposals.length}件）</span>
                 {selectedProposalIds.size > 0 && (

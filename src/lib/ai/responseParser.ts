@@ -63,6 +63,8 @@ export interface Proposal {
 }
 
 export interface AIResponseData {
+  /** 直接の回答（1〜3文）。v3.206 で追加。過去の履歴JSONには無いので任意 */
+  reply?: string;
   proposals: Proposal[];
   follow_up_suggestions: string[];
 }
@@ -254,16 +256,19 @@ export function parseAIResponse(rawText: string, stopReason?: string): AIRespons
 
   const obj = parsed as Record<string, unknown>;
 
-  if (!Array.isArray(obj.proposals)) {
+  const reply = typeof obj.reply === "string" && obj.reply.trim() ? obj.reply.trim() : undefined;
+
+  // reply だけで答えた返答（proposals 省略）は、リトライで課金を重ねずに空配列として受け取る
+  if (!Array.isArray(obj.proposals) && !reply) {
     throw new AIError(
       "INVALID_RESPONSE",
       "AIのレスポンスに proposals 配列がありません",
     );
   }
 
-  const proposals: Proposal[] = obj.proposals.map((p, i) =>
-    validateProposal(p, i)
-  );
+  const proposals: Proposal[] = Array.isArray(obj.proposals)
+    ? obj.proposals.map((p, i) => validateProposal(p, i))
+    : [];
 
   const followUpSuggestions: string[] = Array.isArray(obj.follow_up_suggestions)
     ? (obj.follow_up_suggestions as unknown[]).filter(
@@ -271,5 +276,5 @@ export function parseAIResponse(rawText: string, stopReason?: string): AIRespons
       )
     : [];
 
-  return { proposals, follow_up_suggestions: followUpSuggestions };
+  return { reply, proposals, follow_up_suggestions: followUpSuggestions };
 }

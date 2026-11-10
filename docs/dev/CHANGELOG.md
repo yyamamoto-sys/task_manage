@@ -8679,3 +8679,13 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 * マスの数字を押すとタスクのチップが並ぶ。チップを別のマスへドラッグ：行が変わる＝移動元の担当者を移動先へ入れ替え（`lib/task/assigneeMove.ts`・カンバンと共有）／列が変わる＝期日と（あれば）開始日を週の差×7日ずらす。保存は `saveTask`（updated_by・変更履歴・依存の自動ずらしと矛盾警告は既存経路）。保存後に「元に戻す」トースト（担当者・開始日・期日を直前の値へ。`skipCascade: true`＝自動ずらしされた後続は、そちらのトーストで戻す）。
 * 集計とドロップ後の値は `lib/workload/weekGrid.ts`（純粋関数。日付は UTC 暦日で数えタイムゾーンの影響を受けない）。`WorkloadView` に `currentUserId` を渡す（MainLayout）。
 * テスト：`lib/workload/__tests__/weekGrid.test.ts` 新設（週の境目・年またぎ・開始日なし・複数担当・未割り当て）。MIN_CLIENT_VERSION は据え置き。
+
+# v3.206（2026-11-10）：AI相談の返答品質（システムプロンプト1本化・reply 欄）
+* `systemPrompt.ts`：consultation_type 別の5本を1本に統合（`SYSTEM_PROMPTS` は全キー同一の文字列。`buildSystemPrompt` のシグネチャは維持）。旧モードの役割・行動指針は「相談の内容に応じた対応」節の小見出し5つ（変更の影響／もしも〜の仮定（is_simulation=true）／現状診断／締め切りに間に合うか／停止・縮小）に移し、AIが文面から選ぶ。ペイロードの consultation_type は「参考の分類で外れることがある」と明記。理由：キーワード判定の誤り（「期限」→deadline_check、「確認したい」→diagnose、「削除」→scope_change）がそのまま的外れな役割指示になっていた／本文を固定にしてプロンプトキャッシュを効かせるため。`inferConsultationType` は使用量ログ用に残す。
+* 締め切り：target_deadline が null（画面は常に null を送る）ならエラーを返す指示を削除し、文面から締め切り日を読み取る（this_week_end・next_week_end・this_month_end）／読み取れなければ due_date の近いタスクについて答える、に変更。
+* 診断のコメント追記提案（risk/no_tasks/deadline_risk）は「診断を求められたときに限り」に限定。一覧・確認系は reply / info。
+* アーカイブ済み機能（「なぜなぜ」タブ・「計画」タブ）の推薦と、payload に無い kr_sessions / freeform の説明を削除。チェックイン・ウィンの一般的な進め方の助言は残し「アプリの画面は無い」と明記。OKR現状分析の例の「完了Yタスク」は、完了タスクを送っていないため「未着手Y」に変更。
+* レスポンスJSONに `reply`（1〜3文・結論から・必須）を追加。共通の「回答の書き方」節（結論先・payloadの数字で根拠・proposals 最大5件・推測しない・該当なし明言・敬体・reply と description で繰り返さない）、書式（Markdown の表・#・** 禁止。見出し【】・箇条「・」・全角スペース字下げ）、タスク参照「タスク名(task_001)」を追加。JSON 作法は「文字列中の改行は \n（生の改行は不可）」に統一し「1行に要約する」を削除。曜日確認の重複（add_task・add_project）を「日付の決め方（全アクション共通）」に集約。文字数 最大 25,614（diagnose）→ 25,485（全種類同一。normal・添付なし）。
+* `responseParser.ts`：`AIResponseData.reply?`（任意＝過去の履歴JSONには無い）。reply があれば proposals 省略も空配列として受理（リトライ課金を避ける）。`consultationRunner.ts` も reply を返す。
+* 表示：`components/consultation/AIReplyBubble.tsx` 新設（`TaskRefText`＝ProposalCard の `renderDescriptionWithLinks` を移したもの／`AIReplyBubble`）。`ChatHistory` は reply の吹き出し→「AI の提案」見出し（カードがあるときだけ）→カード。提案も reply も無い返答は代替文を出し、生の JSON を表示していた経路を塞いだ。`ConsultationPanel` は「最新の提案」の上に末尾 assistant ターンの reply を出す。`SessionHistoryPanel`（保存した履歴）も reply を表示。
+* Edge Function は変更なし。MIN_CLIENT_VERSION は据え置き（reply は任意項目で互換）。テスト：`systemPrompt.test.ts`（同一本文・小見出し・締め切りエラー指示なし・アーカイブ画面なし・reply/書式/タスク参照）・`responseParser.test.ts`（reply）。
