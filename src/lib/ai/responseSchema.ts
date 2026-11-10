@@ -50,7 +50,7 @@ const newTaskSchema: JsonSchema = {
 export const PROPOSAL_PROPERTIES: Record<keyof Proposal, JsonSchema> = {
   proposal_id: str,
   title: str,
-  description: str,
+  description: { type: "string", description: "複数行で書く。見出し【】は独立した行、箇条書き「・」は1項目1行で、項目の間は改行（\\n）する" },
   action_type: { type: "string", enum: [...SCHEMA_ACTION_TYPES] },
   target_task_ids: strArray,
   target_pj_ids: strArray,
@@ -76,7 +76,7 @@ export const PROPOSAL_REQUIRED: (keyof Proposal)[] = [
 ];
 
 export const RESPONSE_PROPERTIES: Record<keyof AIResponseData, JsonSchema> = {
-  reply: str,
+  reply: { type: "string", description: "複数行で書く。見出し【】は独立した行、箇条書き「・」は1項目1行で、項目の間は改行（\\n）する" },
   proposals: {
     type: "array",
     items: {

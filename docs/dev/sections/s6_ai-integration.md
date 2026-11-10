@@ -278,3 +278,8 @@ return {
 - **Edge Function（ai-consult）の入力検証**：`system` は文字列（旧クライアント互換・型だけ見る）または text ブロック1〜4個（`cache_control` は `{type:"ephemeral"}` のみ・合計20万字まで）。ブロックは作り直して既知のキーだけ渡す。`output_config` は `format`（`type:"json_schema"`＋`schema`。schema の根は object・JSON化して2万字まで）と `effort`（low/medium/high）だけ通し、他のキー・値は 400（`INVALID_REQUEST`）。ALLOWED_MODELS に `claude-sonnet-5-5` を追加。
 - **使用量**：返答の `usage` はそのまま素通しなので `cache_creation_input_tokens`／`cache_read_input_tokens` も届く。クライアントは `AIConsultationUsage` として保持するが、`ai_usage_logs` には従来どおり `input_tokens`（キャッシュ境界より後ろの分だけ）と `output_tokens` を記録する（列は増やしていない。キャッシュの読み書き分は入力トークン数に含まれない）。
 - **デプロイ順は Edge Function が先**。新クライアント＋旧 Edge の組み合わせでも、旧 Edge は `output_config` を捨て、`claude-sonnet-5-5` を既定（sonnet-4-6）に置き換え、system の配列はそのまま Anthropic に渡すので動く（構造化出力が効かないだけ）。旧クライアント＋新 Edge は文字列の system がそのまま通る。
+
+### 6-19. AI相談の返答の書式（v3.210・2026-11-10）
+
+- 返答（reply・description）は、見出し【】を独立行、箇条書き「・」を1項目1行で書かせる。タスクの属性は「タスク名(task_001)（担当：岩井／期限：11/05／優先度：高）」のように、shortId 括弧の後に全角括弧でまとめる（6-17 の ID ルールと両立。`displayText` は識別記号だけの括弧を消すので属性括弧は残る）。内部のフィールド名は書かせない。構造化出力スキーマの reply・description にも改行ルールの description を付けた（`responseSchema.ts`）。
+- AI が改行を出さなかった場合の保険として、表示の直前に `lib/ai/replyLayout.ts` の `normalizeReplyBreaks` が「【」の前と区切りの「・」の前（直前が句点・】・空白）へ改行を補う。描画は `FormattedReplyText`（行単位）。保存データは変えない。

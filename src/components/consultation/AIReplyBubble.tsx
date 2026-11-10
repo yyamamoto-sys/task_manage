@@ -8,6 +8,7 @@
 // 同じ見た目・同じ変換を使うためここに集める。
 
 import { splitAliasRefs } from "../../lib/ai/displayText";
+import { parseReplyLines } from "../../lib/ai/replyLayout";
 import { useAliasNameResolver } from "../../hooks/useAliasNameResolver";
 
 /**
@@ -60,6 +61,50 @@ export function TaskRefText({
   );
 }
 
+/**
+ * 見出し【】・箇条書き「・」を行単位で描画する（v3.210）。改行が無いまま詰めて返ってきた文も
+ * replyLayout の正規化で行に分ける。見出しの【…】は太字・上余白、箇条書きはぶら下げインデント。
+ */
+export function FormattedReplyText({
+  text,
+  shortIdMap,
+  onOpenTask,
+}: {
+  text: string;
+  shortIdMap: Map<string, string>;
+  onOpenTask?: (taskId: string) => void;
+}) {
+  const lines = parseReplyLines(text);
+  const ref = (t: string) => <TaskRefText text={t} shortIdMap={shortIdMap} onOpenTask={onOpenTask} />;
+  return (
+    <>
+      {lines.map((ln, i) => {
+        if (ln.kind === "blank") return <div key={i} style={{ height: "0.5em" }} />;
+        if (ln.kind === "bullet") {
+          return (
+            <div key={i} style={{ display: "flex", paddingLeft: `${ln.depth * 1.2}em`, marginTop: "2px" }}>
+              <span style={{ flexShrink: 0, width: "1.2em" }}>・</span>
+              <span style={{ minWidth: 0 }}>{ref(ln.text)}</span>
+            </div>
+          );
+        }
+        if (ln.kind === "heading") {
+          const end = ln.text.indexOf("】");
+          const head = end >= 0 ? ln.text.slice(0, end + 1) : ln.text;
+          const rest = end >= 0 ? ln.text.slice(end + 1) : "";
+          return (
+            <div key={i} style={{ marginTop: i === 0 ? 0 : "8px" }}>
+              <span style={{ fontWeight: 600 }}>{head}</span>
+              {rest && ref(rest)}
+            </div>
+          );
+        }
+        return <div key={i} style={{ whiteSpace: "pre-wrap" }}>{ref(ln.text)}</div>;
+      })}
+    </>
+  );
+}
+
 /** AIの直接回答（reply）の吹き出し。会話履歴のアシスタント文と同じ見た目 */
 export function AIReplyBubble({
   text,
@@ -83,7 +128,7 @@ export function AIReplyBubble({
         wordBreak: "break-word",
       }}
     >
-      <TaskRefText text={text} shortIdMap={shortIdMap} onOpenTask={onOpenTask} />
+      <FormattedReplyText text={text} shortIdMap={shortIdMap} onOpenTask={onOpenTask} />
     </div>
   );
 }

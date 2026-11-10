@@ -18,7 +18,7 @@ import type { UndoSnapshot } from "../../hooks/useUndoStack";
 import { SimulationBanner } from "./SimulationBanner";
 import { ConfirmationDialogModal } from "./ConfirmationDialogModal";
 import { BTN_CONFIRM_CREATE, BTN_APPLY } from "../../lib/ai/uiGuide";
-import { TaskRefText } from "./AIReplyBubble";
+import { TaskRefText, FormattedReplyText } from "./AIReplyBubble";
 
 interface Props {
   proposal: UIProposal;
@@ -215,7 +215,7 @@ export function ProposalCard({
           whiteSpace: "pre-wrap",
           fontFamily: "monospace",
         }}>
-          <TaskRefText text={proposal.description} shortIdMap={shortIdMap} onOpenTask={onOpenTask} />
+          <FormattedReplyText text={proposal.description} shortIdMap={shortIdMap} onOpenTask={onOpenTask} />
         </div>
       </div>
     );
@@ -334,7 +334,7 @@ export function ProposalCard({
             whiteSpace: "pre-wrap",
           }}
         >
-          <TaskRefText text={proposal.description} shortIdMap={shortIdMap} onOpenTask={onOpenTask} />
+          <FormattedReplyText text={proposal.description} shortIdMap={shortIdMap} onOpenTask={onOpenTask} />
         </div>
 
         {/* add_task の子タスク（階層化）プレビュー：親＝このタスク、その下に子タスク一覧 */}
