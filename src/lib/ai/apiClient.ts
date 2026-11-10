@@ -19,7 +19,8 @@
 import { supabase } from "../supabase/client";
 import type { ConsultationType, ResponseVolume } from "./types";
 import type { AIConsultationPayload } from "./payloadBuilder";
-import { buildSystemPrompt } from "./systemPrompt";
+import { buildSystemPromptParts } from "./systemPrompt";
+import { CONSULTATION_RESPONSE_SCHEMA } from "./responseSchema";
 import type { ChatTurn } from "./sessionManager";
 import type { ContentBlock, FileAttachment } from "./invokeAI";
 import { buildConsultationContent } from "./consultationAttachment";
@@ -62,9 +63,18 @@ export class AIError extends Error {
 
 // ===== Anthropic APIレスポンス型 =====
 
+// Sonnet 5.5 は思考が既定で有効なので、text の前に thinking ブロックが来る（中身は空・signature のみ）
 interface AnthropicContent {
-  type: "text";
-  text: string;
+  type: "text" | "thinking" | string;
+  text?: string;
+}
+
+/** input_tokens はキャッシュ境界より後ろの分だけ。合計の入力 = input + cache_creation + cache_read */
+export interface AIConsultationUsage {
+  input_tokens: number;
+  output_tokens: number;
+  cache_creation_input_tokens?: number;
+  cache_read_input_tokens?: number;
 }
 
 interface AnthropicResponse {
@@ -74,7 +84,7 @@ interface AnthropicResponse {
   content: AnthropicContent[];
   model: string;
   stop_reason: string;
-  usage: { input_tokens: number; output_tokens: number };
+  usage: AIConsultationUsage;
 }
 
 // ===== Edge Function呼び出し =====
@@ -90,7 +100,7 @@ interface AnthropicResponse {
  */
 export interface AICallResult {
   text: string;
-  usage: { input_tokens: number; output_tokens: number };
+  usage: AIConsultationUsage;
   /** Anthropicの終了理由（"end_turn"|"max_tokens"等）。出力切れの検知に使う */
   stopReason: string;
 }
@@ -107,6 +117,22 @@ export interface AIRetryContext {
 // v2.93（okrImportExtractor）と同様に十分大きな値を確保する（Edge Function側の
 // MAX_TOKENS_CAPと合わせて上げること。cap未変更だと静かにここより小さい値に丸められる）。
 const MAX_TOKENS = 16384;
+
+// 相談はチャット用途なので、公式の目安（Sonnet 5.5 のチャット・遅延重視は medium か low）に合わせる。
+// 思考の分も max_tokens に数えられる。値を変えるとプロンプトキャッシュが作り直しになる。
+const CONSULT_EFFORT = "medium";
+
+/** Anthropic へ渡す system。本文に cache_control を付け、可変の追記は後ろの別ブロックにする */
+export function buildConsultationSystemBlocks(
+  responseVolume: ResponseVolume,
+  hasAttachments: boolean,
+): { type: "text"; text: string; cache_control?: { type: "ephemeral" } }[] {
+  const { cached, variable } = buildSystemPromptParts(responseVolume, hasAttachments);
+  return [
+    { type: "text", text: cached, cache_control: { type: "ephemeral" } },
+    ...(variable ? [{ type: "text" as const, text: variable }] : []),
+  ];
+}
 
 export async function callAIConsultation(
   payload: AIConsultationPayload,
@@ -132,7 +158,7 @@ export async function callAIConsultation(
       throw new AIError("GUEST_BLOCKED", tOutside("common.guest.aiBlocked"));
     }
   }
-  const systemPrompt = buildSystemPrompt(consultationType, responseVolume ?? "normal", attachments.length > 0);
+  const system = buildConsultationSystemBlocks(responseVolume ?? "normal", attachments.length > 0);
 
   // 会話履歴をAnthropic形式に変換
   const messages: { role: "user" | "assistant"; content: string | ContentBlock[] }[] = [];
@@ -173,10 +199,14 @@ export async function callAIConsultation(
     // 認証済みユーザーは既存どおり useAIConsultation 側で insertAiUsageLog が記録するため未使用。
     const result = await supabase.functions.invoke("ai-consult", {
       body: {
-        system: systemPrompt,
+        system,
         messages,
         max_tokens: MAX_TOKENS,
         intent: consultationType,
+        output_config: {
+          format: { type: "json_schema", schema: CONSULTATION_RESPONSE_SCHEMA },
+          effort: CONSULT_EFFORT,
+        },
         ...(model ? { model } : {}),
       },
     });
@@ -253,7 +283,8 @@ export async function callAIConsultation(
     throw new AIError("NETWORK_ERROR", `通信エラー${statusSuffix}${msg ? `: ${msg}` : ""}${snippet}`);
   }
 
-  if (!data || !data.content || !data.content[0]?.text) {
+  const text = data?.content?.find((c) => c.type === "text" && c.text)?.text;
+  if (!data || !text) {
     throw new AIError("INVALID_RESPONSE", "AIからの応答が不正な形式です。", data?.usage);
   }
 
@@ -263,7 +294,7 @@ export async function callAIConsultation(
   if (isGuestMode()) recordGuestAiUse();
 
   return {
-    text: data.content[0].text,
+    text,
     usage: data.usage ?? { input_tokens: 0, output_tokens: 0 },
     stopReason: data.stop_reason ?? "",
   };

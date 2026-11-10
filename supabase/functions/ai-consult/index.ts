@@ -6,7 +6,7 @@
 // - Supabase Auth JWTによる認証チェック（未認証は401）
 // - ユーザーごとのレート制限（1分あたりRATELIMIT_PER_MIN回まで、デフォルト20）
 // - CORS: ALLOWED_ORIGINS 環境変数で許可ドメインを管理（カンマ区切り）
-// - リクエストボディのpayloadをAnthropic APIに転送
+// - リクエストボディのpayloadをAnthropic APIに転送（system の text ブロック配列・output_config は検証して作り直してから渡す）
 //
 // 【ゲスト（サンプル閲覧）のAI利用回数制限・Phase 3・2026-08-07／v3.30で判定をSQL側に統一】
 // ゲストはJWTの is_anonymous クレームで判定する（クライアント送信のフラグは偽装できるため
@@ -27,12 +27,86 @@ const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
 const DEFAULT_MODEL = "claude-sonnet-4-6";
 // クライアントから選べるモデル（QuickResponse=haiku / Thinking=sonnet）。
 // 未知の値は無視して既定にフォールバック（任意モデル指定の悪用を防ぐ）
-const ALLOWED_MODELS = ["claude-sonnet-4-6", "claude-haiku-4-5"];
+// claude-sonnet-5-5 はAI相談のメイン（AI相談 第2段・2026-11〜）。思考が既定で有効なので、返答の content は
+// thinking ブロックが text より前に来る（呼び出し側は type==="text" を探して読むこと）。
+const ALLOWED_MODELS = ["claude-sonnet-4-6", "claude-haiku-4-5", "claude-sonnet-5-5"];
 // クライアント指定 max_tokens の上限（コスト暴走防止。レート制限と併用）
 // 2026-07-24: メイン相談（apiClient.ts）が複数タスクの構造化提案等で出力が
 // 4096を超えて途中で切れる不具合があったため、16384に引き上げ（v2.93の
 // okrImportExtractor.ts同様8192に上げていたが、それでも上限に達していたため再拡大）
 const MAX_TOKENS_CAP = 16384;
+
+// ===== system と output_config の検証（AI相談 第2段・2026-11：プロンプトキャッシュと構造化出力） =====
+// system は従来の文字列に加え、text ブロックの配列（cache_control 付き）も受ける。
+// 配列はブロックを作り直して既知のキーだけ通す（任意のキーを Anthropic へ素通ししない）。
+// 文字列は旧クライアント互換のため従来どおり型だけ見る。
+const SYSTEM_MAX_BLOCKS = 4; // Anthropic の cache_control ブレークポイント上限と同じ
+const SYSTEM_MAX_TOTAL_CHARS = 200_000;
+// 構造化出力のスキーマ（JSON文字列化した長さ）の上限。AI相談の返答スキーマは数KB
+const OUTPUT_SCHEMA_MAX_CHARS = 20_000;
+const ALLOWED_EFFORTS = ["low", "medium", "high"];
+
+type SystemBlock = { type: "text"; text: string; cache_control?: { type: "ephemeral" } };
+type OutputConfig = {
+  format?: { type: "json_schema"; schema: Record<string, unknown> };
+  effort?: string;
+};
+
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+function validateSystem(raw: unknown): { ok: true; value: string | SystemBlock[] | undefined } | { ok: false; error: string } {
+  if (raw === undefined || typeof raw === "string") return { ok: true, value: raw };
+  if (!Array.isArray(raw)) return { ok: false, error: "system must be a string or an array of text blocks" };
+  if (raw.length === 0 || raw.length > SYSTEM_MAX_BLOCKS) {
+    return { ok: false, error: `system must have 1-${SYSTEM_MAX_BLOCKS} blocks` };
+  }
+  const blocks: SystemBlock[] = [];
+  let total = 0;
+  for (const b of raw) {
+    if (!isPlainObject(b) || b.type !== "text" || typeof b.text !== "string" || !b.text) {
+      return { ok: false, error: "each system block must be {type:\"text\", text:string}" };
+    }
+    const block: SystemBlock = { type: "text", text: b.text };
+    if (b.cache_control !== undefined) {
+      const cc = b.cache_control;
+      if (!isPlainObject(cc) || cc.type !== "ephemeral" || Object.keys(cc).length !== 1) {
+        return { ok: false, error: "cache_control must be {type:\"ephemeral\"}" };
+      }
+      block.cache_control = { type: "ephemeral" };
+    }
+    total += b.text.length;
+    blocks.push(block);
+  }
+  if (total > SYSTEM_MAX_TOTAL_CHARS) return { ok: false, error: "system is too long" };
+  return { ok: true, value: blocks };
+}
+
+function validateOutputConfig(raw: unknown): { ok: true; value: OutputConfig | undefined } | { ok: false; error: string } {
+  if (raw === undefined) return { ok: true, value: undefined };
+  if (!isPlainObject(raw)) return { ok: false, error: "output_config must be an object" };
+  const unknownKey = Object.keys(raw).find((k) => k !== "format" && k !== "effort");
+  if (unknownKey) return { ok: false, error: `output_config.${unknownKey} is not allowed` };
+  const out: OutputConfig = {};
+  if (raw.effort !== undefined) {
+    if (typeof raw.effort !== "string" || !ALLOWED_EFFORTS.includes(raw.effort)) {
+      return { ok: false, error: "output_config.effort is not allowed" };
+    }
+    out.effort = raw.effort;
+  }
+  if (raw.format !== undefined) {
+    const f = raw.format;
+    if (!isPlainObject(f) || f.type !== "json_schema" || !isPlainObject(f.schema) || Object.keys(f).length !== 2) {
+      return { ok: false, error: "output_config.format must be {type:\"json_schema\", schema:object}" };
+    }
+    if (f.schema.type !== "object" || JSON.stringify(f.schema).length > OUTPUT_SCHEMA_MAX_CHARS) {
+      return { ok: false, error: "output_config.format.schema is not allowed" };
+    }
+    out.format = { type: "json_schema", schema: f.schema };
+  }
+  return { ok: true, value: Object.keys(out).length ? out : undefined };
+}
 
 // ===== ゲスト（サンプル閲覧）のAI利用回数制限（1箇所の定数。CLAUDE.md Section 23） =====
 // 「1ブラウザ=1匿名Authユーザー」とみなし、匿名ユーザーのuuid（=JWTのsub）をブラウザの
@@ -206,7 +280,8 @@ Deno.serve(async (req: Request) => {
 
   // リクエストボディのパース
   let body: {
-    system: string;
+    system?: unknown;
+    output_config?: unknown;
     messages: { role: string; content: string }[];
     max_tokens?: number;
     model?: string;
@@ -219,6 +294,16 @@ Deno.serve(async (req: Request) => {
     body = await req.json();
   } catch {
     return new Response(JSON.stringify({ error: "Invalid JSON body" }), {
+      status: 400,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  const systemCheck = validateSystem(body.system);
+  const outputCheck = validateOutputConfig(body.output_config);
+  if (!systemCheck.ok || !outputCheck.ok) {
+    const error = !systemCheck.ok ? systemCheck.error : (outputCheck as { error: string }).error;
+    return new Response(JSON.stringify({ error: "INVALID_REQUEST", message: error }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
@@ -250,8 +335,9 @@ Deno.serve(async (req: Request) => {
       body: JSON.stringify({
         model,
         max_tokens: Math.min(body.max_tokens ?? 4096, MAX_TOKENS_CAP),
-        system: body.system,
+        system: systemCheck.value,
         messages: body.messages,
+        ...(outputCheck.value ? { output_config: outputCheck.value } : {}),
       }),
     });
   } catch (fetchErr) {

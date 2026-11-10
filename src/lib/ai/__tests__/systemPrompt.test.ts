@@ -8,7 +8,7 @@
 // 文字列が落ちると静かに挙動が壊れる）。
 
 import { describe, it, expect } from "vitest";
-import { SYSTEM_PROMPTS, buildSystemPrompt } from "../systemPrompt";
+import { SYSTEM_PROMPTS, buildSystemPrompt, buildSystemPromptParts } from "../systemPrompt";
 import type { ConsultationType } from "../types";
 
 describe("systemPrompt: 新規PJ作成ヒアリング・プロトコル", () => {
@@ -46,11 +46,31 @@ describe("systemPrompt: 新規PJ作成ヒアリング・プロトコル", () => 
     }
   });
 
-  it("全モードにJSON厳格化ルール（引用符エスケープ・改行禁止）が含まれる（v3.07）", () => {
+  it("JSONの書き方の注意と consultation_type の注記は持たない（構造化出力で形を強制・種類は AI に送らない）", () => {
     for (const [type, prompt] of prompts) {
-      expect(prompt, `${type} モードに引用符エスケープ指示が無い`).toContain('\\" とエスケープ');
-      expect(prompt, `${type} モードに生の改行禁止指示が無い`).toContain("生の改行は不可");
+      expect(prompt, type).not.toContain("JSONの厳格な作法");
+      expect(prompt, type).not.toContain("JSON以外の文字列を返さない");
+      expect(prompt, type).not.toContain("consultation_type");
     }
+  });
+});
+
+describe("systemPrompt: キャッシュする本文と可変の追記の分離", () => {
+  it("本文はボリューム・添付で変わらず、可変部分だけが変わる", () => {
+    const a = buildSystemPromptParts("normal", false);
+    const b = buildSystemPromptParts("detailed", true);
+    expect(b.cached).toBe(a.cached);
+    expect(a.variable).toBe("");
+    expect(b.variable).toContain("回答ボリューム指定");
+    expect(b.variable).toContain("添付資料の扱い");
+    expect(b.cached).not.toContain("回答ボリューム指定");
+  });
+
+  it("本文＋追記は1本版（buildSystemPrompt）と同じ内容になる", () => {
+    const parts = buildSystemPromptParts("short", true);
+    const whole = buildSystemPrompt("change", "short", true);
+    expect(whole.startsWith(parts.cached)).toBe(true);
+    expect(whole.slice(parts.cached.length).trim()).toBe(parts.variable);
   });
 });
 

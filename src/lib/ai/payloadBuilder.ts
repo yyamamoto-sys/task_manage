@@ -12,7 +12,7 @@
 import type { Project, Task, Member, KeyResult, TaskForce, TaskProject, ProjectTaskForce, ProjectSection } from "../localData/types";
 import { active } from "../localData/localStore";
 import { isAiTargetProject, resolveAiScope } from "./aiTarget";
-import type { AIProject, AITask, MemberWorkload, AIOKR, ConsultationType } from "./types";
+import type { AIProject, AITask, MemberWorkload, AIOKR } from "./types";
 import { sanitizeComment } from "./sanitize";
 import { deliverableForAi } from "../task/deliverable";
 import { dateToQuarter, currentQuarter, getMondayAnchors, toDateStr } from "../date";
@@ -56,7 +56,6 @@ export interface AIConsultationPayload {
     /** 相談を実行している本人。AIはこれを「私／自分／あなた」の参照先として使う */
     current_user: { member_id: string; short_name: string } | null;
   };
-  consultation_type: ConsultationType;
   consultation: string;
   scope: "related_pj" | "all_pj" | "member_tasks";
   projects: AIProject[];
@@ -208,7 +207,6 @@ interface BuildOptions {
   prevShortIdMap?: Map<string, string>;
   /** 送るPJの範囲。null/未指定＝「すべてのPJ」（アーカイブ・完了PJを除く）／id＝そのPJだけ（aiTarget.ts） */
   targetPjId?: string | null;
-  consultationType: ConsultationType;
   consultation: string;
   scope: AIConsultationPayload["scope"];
   targetDeadline?: string | null;
@@ -400,7 +398,6 @@ export function buildPayload(opts: BuildOptions): BuildPayloadResult {
         ? { member_id: opts.currentMember.id, short_name: opts.currentMember.short_name }
         : null,
     },
-    consultation_type: opts.consultationType,
     consultation: opts.consultation,
     scope: opts.scope,
     projects: aiProjects,

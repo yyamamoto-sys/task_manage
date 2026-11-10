@@ -54,7 +54,8 @@ export interface SubmitOptions {
   attachments?: FileAttachment[];
 }
 
-const THINKING_MODEL = "claude-sonnet-4-6";
+// Sonnet 5.5 は思考が既定で有効（content の先頭が thinking ブロックになる。apiClient は text を探して読む）
+const THINKING_MODEL = "claude-sonnet-5-5";
 
 // ===== Hook本体 =====
 
@@ -139,7 +140,6 @@ export function useAIConsultation(targetPjId: string | null, currentMemberId: st
           members,
           taskProjects,
           projectTaskForces,
-          consultationType,
           consultation,
           scope: targetPjId ? "related_pj" : "all_pj",
           targetDeadline,

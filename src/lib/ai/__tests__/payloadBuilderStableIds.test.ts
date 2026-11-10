@@ -26,7 +26,7 @@ function task(id: string, project_id: string, over: Partial<Task> = {}): Task {
   } as Task;
 }
 
-const base = { members: [member], consultationType: "change" as const, consultation: "x", scope: "all_pj" as const };
+const base = { members: [member], consultation: "x", scope: "all_pj" as const };
 
 describe("buildPayload — prevShortIdMap（同じ会話の中でショートIDを保つ）", () => {
   it("前の送信のあとにタスクが完了して一覧から減っても、残ったタスクの番号は変わらない", () => {

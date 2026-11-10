@@ -5,7 +5,8 @@
 // v3.206 で consultation_type ごとの5本を1本に統合した。種類で本文を変えないのは、
 // ①キーワード判定の誤り（「確認したい」→診断、「期限」→締め切り逆算 等）がそのまま的外れな役割指示になっていたため、
 // ②本文を固定にしておくとプロンプトキャッシュが効くため。種類別の対応は「相談の内容に応じた対応」節に並べ、
-// AIが文面から該当するものを選ぶ。consultation_type は使用量ログ用に引き続き推定して渡す。
+// AIが文面から該当するものを選ぶ。consultation_type は使用量ログ用に推定するだけで、AI相談 第2段（2026-11）から AI には送らない。
+// 第2段（2026-11）：返答の形は構造化出力（responseSchema.ts）で強制するので、JSONの書き方の注意は持たない。
 
 import type { ConsultationType, ResponseVolume } from "./types";
 import { CONSULT_ATTACHMENT_NOTICE } from "./consultationAttachment";
@@ -17,11 +18,10 @@ const IND = "\u3000";
 // ===== レスポンス構造のJSON定義 =====
 
 const RESPONSE_FORMAT = `
-## レスポンス形式（必ずJSONで返すこと）
+## 返答の項目
 
-以下の形式のJSONのみを返してください。マークダウンや説明文は不要です。
+返答の形（JSONスキーマ）はアプリ側で指定している。各項目の意味と書き方は次のとおり。
 
-\`\`\`json
 {
   "reply": "ユーザーへの直接の回答（1〜3文。結論から）",
   "proposals": [
@@ -55,7 +55,6 @@ const RESPONSE_FORMAT = `
     "別の角度からの提案"
   ]
 }
-\`\`\`
 
 ## reply と proposals の使い分け
 - reply は必須。ユーザーの問いに1〜3文で直接答える（結論から）。
@@ -171,14 +170,7 @@ const RESPONSE_FORMAT = `
   - exact: 具体的な日付が確定している場合
   - approximate: 日数の見積もりはあるが不確かな場合
   - unknown: 日程が全く不明な場合
-- JSON以外の文字列を返さないこと（前後に説明文を入れない、コードブロック\`\`\`も付けない）
 - 回答は日本語で
-
-## 【最重要：JSONの厳格な作法（守らないとパースに失敗する）】
-- 文字列値の中で二重引用符 " を使う必要がある場合は必ず \\" とエスケープすること。
-  ただし日本語の引用は原則 " ではなく「」『』を使い、ASCII二重引用符を値に含めないこと。
-- 文字列中の改行は \\n で表す（生の改行は不可）。
-- 末尾カンマを付けないこと。全てのプロパティ名・文字列値は二重引用符で囲むこと。
 `;
 
 // ===== 相談の内容に応じた対応（旧 consultation_type 別の役割） =====
@@ -187,7 +179,6 @@ const CONSULT_KINDS = `
 ## 相談の内容に応じた対応
 
 相談の種類はユーザーの文面から判断し、下の小見出しから当てはまるものを選んで従う。どれにも当たらない質問・確認は reply（必要なら info）で素直に答える。
-ペイロードの consultation_type はキーワードによる参考の分類で、外れることがある。文面を優先すること。
 
 ### 変更の影響を聞かれたとき
 担当者変更・日程変更・仕様変更などが、プロジェクト・タスクに与える影響を整理する。
@@ -349,8 +340,29 @@ const VOLUME_INSTRUCTIONS: Record<ResponseVolume, string> = {
 各提案の description には背景・理由・具体的なアクション手順・注意点を含め、読んですぐ動けるレベルで詳しく書くこと。見出し（【】）や箇条書き（・）を積極的に使って読みやすくまとめる。`,
 };
 
+export interface SystemPromptParts {
+  /** 毎回同一の本文。プロンプトキャッシュの対象（cache_control を付ける） */
+  cached: string;
+  /** 回答ボリューム・添付の注意など、送信ごとに変わる追記。無ければ空文字 */
+  variable: string;
+}
+
 /**
- * システムプロンプトを生成する。apiClient.ts からのみ呼び出すこと。
+ * キャッシュする本文と、可変の追記を分けて返す（AI相談 第2段・2026-11）。apiClient.ts からのみ呼び出すこと。
+ * 可変部分を本文の前や途中に混ぜると、変わるたびにキャッシュが外れる。
+ */
+export function buildSystemPromptParts(
+  volume: ResponseVolume = "normal",
+  hasAttachments = false,
+): SystemPromptParts {
+  return {
+    cached: UNIFIED_SYSTEM_PROMPT,
+    variable: (VOLUME_INSTRUCTIONS[volume] + (hasAttachments ? CONSULT_ATTACHMENT_NOTICE : "")).trim(),
+  };
+}
+
+/**
+ * システムプロンプトを1本の文字列で返す（テスト・本文の確認用）。
  * consultationType は本文を変えない（全種類で同一）。呼び出し側の互換のために受け取る。
  */
 export function buildSystemPrompt(

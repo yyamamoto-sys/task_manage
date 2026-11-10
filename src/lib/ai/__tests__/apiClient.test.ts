@@ -52,6 +52,51 @@ describe("callAIConsultation", () => {
     expect(body.max_tokens).toBe(16384);
   });
 
+  it("system を本文（cache_control 付き）＋可変の追記の2ブロックで送り、構造化出力のスキーマを付ける", async () => {
+    mockInvoke.mockResolvedValue({
+      data: { content: [{ type: "text", text: "{}" }], stop_reason: "end_turn", usage: { input_tokens: 1, output_tokens: 1 } },
+      error: null,
+    });
+
+    await callAIConsultation(PAYLOAD, "change", [], "claude-sonnet-5-5", "detailed");
+
+    const body = mockInvoke.mock.calls[0][1].body as {
+      system: { type: string; text: string; cache_control?: { type: string } }[];
+      output_config: { format: { type: string; schema: { type: string } }; effort: string };
+    };
+    expect(body.system).toHaveLength(2);
+    expect(body.system[0].cache_control).toEqual({ type: "ephemeral" });
+    expect(body.system[1].cache_control).toBeUndefined();
+    expect(body.system[1].text).toContain("回答ボリューム指定");
+    expect(body.output_config.format.type).toBe("json_schema");
+    expect(body.output_config.format.schema.type).toBe("object");
+    expect(body.output_config.effort).toBe("medium");
+  });
+
+  it("可変の追記が無いときは本文1ブロックだけ（空の text ブロックを送らない）", async () => {
+    mockInvoke.mockResolvedValue({
+      data: { content: [{ type: "text", text: "{}" }], stop_reason: "end_turn", usage: { input_tokens: 1, output_tokens: 1 } },
+      error: null,
+    });
+    await callAIConsultation(PAYLOAD, "change", [], undefined, "normal");
+    const body = mockInvoke.mock.calls[0][1].body as { system: unknown[] };
+    expect(body.system).toHaveLength(1);
+  });
+
+  it("thinking ブロックが先頭に来ても text ブロックを読み、cache_* の使用量も捨てない（Sonnet 5.5）", async () => {
+    mockInvoke.mockResolvedValue({
+      data: {
+        content: [{ type: "thinking", thinking: "", signature: "sig" }, { type: "text", text: "{\"reply\":\"ok\"}" }],
+        stop_reason: "end_turn",
+        usage: { input_tokens: 10, output_tokens: 5, cache_creation_input_tokens: 0, cache_read_input_tokens: 9000 },
+      },
+      error: null,
+    });
+    const result = await callAIConsultation(PAYLOAD, "change", []);
+    expect(result.text).toBe("{\"reply\":\"ok\"}");
+    expect(result.usage.cache_read_input_tokens).toBe(9000);
+  });
+
   it("Anthropicのstop_reasonをそのまま呼び出し元に返す", async () => {
     mockInvoke.mockResolvedValue({
       data: {
