@@ -56,7 +56,8 @@ import { computeTaskDiff, computeProjectDiff } from "../lib/history/changeDiff";
 import { canAddDependency } from "../lib/dependencies/cycleCheck";
 import { depTypeOf, lagOf, normalizeLag, type DepType } from "../lib/dependencies/depType";
 import { getIncompletePredecessors, formatBlockerNames } from "../lib/dependencies/gate";
-import { resolveBaselineFields } from "../lib/baseline/baselineCapture";
+import { resolveBaselineOnSave, type RebaselineRecord } from "../lib/baseline/baselineCapture";
+import { todayStr } from "../lib/date";
 import { computeCascadeShifts, computeCascadeShiftsMulti } from "../lib/dependencies/reschedule";
 import { computeParentAutoStatus, buildTaskById, hasParentCycle } from "../lib/taskHierarchy";
 import { normalizeTaskSection, followParentSection, computeSectionReorder } from "../lib/section/sections";
@@ -316,6 +317,10 @@ async function recordEntityChangeLog(params: {
  *   トースト＋reload で整合性回復する。トランザクションにはしない＝多人数の割り切り）。
  * - 動いた件数をまとめて1つのトースト＋Undo（Undoも { skipCascade: true } で再cascade抑止）。
  */
+// 期限前の延長でベースラインを引き直した記録（タスクIDごとのスタック・セッション内のみ）。
+// 元に戻す（どの経路の Undo でも saveTask を通る）で日付が延長前へ戻ったら、ここからベースラインを戻す
+const rebaselineRecords = new Map<string, RebaselineRecord[]>();
+
 async function runCascade(
   originTaskId: string,
   get: () => AppState,
@@ -1171,7 +1176,19 @@ export const useAppStore = create<AppState>()((set, get) => ({
     // ===== ベースライン捕捉（B4）=====
     // start_date・due_date が初めて両方揃った時点のスナップショットを凍結する。
     // 一度セットされたら二度と自動上書きしない（resolveBaselineFieldsが判定）。
-    const baselineFields = resolveBaselineFields(existing, taskToSave0);
+    // 例外：期限前の延長は計画変更として引き直し、Undo で延長前に戻ったら一緒に戻す（v3.207）。
+    // 全経路（モーダル・サイドパネル・ドラッグ・一括・カンバン・AI反映・自動ずらし・各Undo）がここを通る
+    const rebaselineStack = rebaselineRecords.get(task.id);
+    const baselineResolved = resolveBaselineOnSave(
+      existing, taskToSave0, todayStr(), rebaselineStack?.[rebaselineStack.length - 1],
+    );
+    if (baselineResolved.record.kind === "push") {
+      rebaselineRecords.set(task.id, [...(rebaselineStack ?? []), baselineResolved.record.value]);
+    } else if (baselineResolved.record.kind === "pop" && rebaselineStack) {
+      const rest = rebaselineStack.slice(0, -1);
+      if (rest.length > 0) rebaselineRecords.set(task.id, rest); else rebaselineRecords.delete(task.id);
+    }
+    const baselineFields = baselineResolved.fields;
     // ステータスが done に変わった瞬間に completed_at をセット、外れたらクリア
     const taskToSave: Task = {
       ...taskToSave0,

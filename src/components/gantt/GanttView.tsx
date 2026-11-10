@@ -33,6 +33,7 @@ import {
   type GanttSortOrder, sortGanttTasks, isTaskStagnant, calcTaskBar, formatBarDateLabel, formatBarTooltipSuffix, resolveGanttBarColor,
   calcGhostBar, computeDelayDays, formatDelayLabel,
   computeWeekBlocks, applyResizePreview, clampStartDate, computeMoveShift, type ResizePreview,
+  expandWithDescendants, moveTargetsOf,
   computeWeekGridLines, computeMilestoneBands, overloadRangesToBands,
   computeDayTicks, dayTickColor,
   computeRangeSelection,
@@ -1257,31 +1258,44 @@ export function GanttView({
   // TaskBarRow の isMoving プロップに使う（単体移動時は自身のみ、一括移動時は選択中の全対象）
   const movingTaskIds = useMemo(() => {
     if (!draggingMoveTask) return null;
-    if (draggingMoveTask.bulkTargets) return new Set(draggingMoveTask.bulkTargets.map(t => t.taskId));
+    if (draggingMoveTask.bulkTargets) return new Set([draggingMoveTask.taskId, ...draggingMoveTask.bulkTargets.map(t => t.taskId)]);
     return new Set([draggingMoveTask.taskId]);
   }, [draggingMoveTask]);
 
+  // 移動ドラッグ中、プレビュー日付を当てた全タスクから親の実効期間を算出し直す（親バーのプレビュー用）
+  const moveEffectiveDates = useMemo(() => {
+    if (!draggingMoveTask?.bulkTargets) return null;
+    if (Object.keys(resizePreviewDates).length === 0) return null;
+    return buildEffectiveDatesMap(allTasks.map(t => applyResizePreview(t, resizePreviewDates[t.id])));
+  }, [draggingMoveTask, resizePreviewDates, allTasks]);
+
   const handleMoveDragStart = useCallback((e: React.MouseEvent, taskId: string) => {
     const task = taskById.get(taskId);
-    if (!task?.due_date || isPreview) return;
+    if (!task || isPreview) return;
+    // 親タスク（子を持つ）のバーは末端の期間で描いているので、ツールチップの起点もその期間にする。
+    // 親自身に期日が無くても、子孫に期日があればバーが出ているのでドラッグできる（v3.207）
+    const eff = parentEffectiveDates.get(task.id);
+    const origDue = eff?.due_date ?? task.due_date;
+    if (!origDue) return;
+    const origStart = eff ? (eff.start_date ?? null) : (task.start_date ?? null);
     e.preventDefault();
     moveHasShiftedRef.current = false;
     const isBulk = selectedTaskIds.has(taskId) && selectedTaskIds.size > 1;
-    const bulkTargets = isBulk
-      ? [...selectedTaskIds]
-          .map(id => taskById.get(id))
-          // done・cancelled は「終わった」タスクとして個別ドラッグ（TaskBarRowのisDone）と
-          // 同じくシフト対象外にする（v2.74でcancelled追加後、ここが旧3値のまま
-          // "done"のみ除外していた漏れを修正。on_holdは引き続き対象＝個別ドラッグ可能なため）
-          .filter((t): t is Task => !!t && t.status !== "done" && t.status !== "cancelled" && !!t.due_date)
-          .map(t => ({ taskId: t.id, origStart: t.start_date ?? null, origDue: t.due_date! }))
-      : undefined;
+    const roots = isBulk ? [...selectedTaskIds] : [taskId];
+    const ids = expandWithDescendants(roots, allTasks);
+    const hasDescendants = ids.length > roots.length;
+    // done・cancelled・期日未設定は動かさない（moveTargetsOf。子孫も同じ）。
+    // 子孫を含むとき・複数選択のときは bulkShiftTasks（直接シフト→依存の自動ずらし1回→1トースト＋Undo）
+    const targets = isBulk || hasDescendants ? moveTargetsOf(ids, taskById) : [];
+    if (hasDescendants && targets.length === 0) return;
+    const useBulk = hasDescendants || targets.length > 1;
+    if (!useBulk && !task.due_date) return;
     setDraggingMoveTask({
       taskId: task.id, startX: e.clientX,
-      origStart: task.start_date ?? null, origDue: task.due_date,
-      bulkTargets: bulkTargets && bulkTargets.length > 1 ? bulkTargets : undefined,
+      origStart, origDue,
+      bulkTargets: useBulk ? targets : undefined,
     });
-  }, [isPreview, taskById, selectedTaskIds]);
+  }, [isPreview, taskById, selectedTaskIds, parentEffectiveDates, allTasks]);
 
   useEffect(() => {
     if (!draggingMoveTask) return;
@@ -2153,10 +2167,12 @@ export function GanttView({
       case "task": {
         const { task, depth, pj, childCount } = row;
         const preview = resizePreviewDates[task.id];
-        // 親タスク（子を持つタスク。深さは問わない）のバーは末端の最早開始〜最遅期日に合わせる
+        // 親タスク（子を持つタスク。深さは問わない）のバーは末端の最早開始〜最遅期日に合わせる。
+        // 移動ドラッグ中は子孫のプレビュー日付から算出した期間で描く（親バーも子と一緒に動いて見える）
         let effectiveTask = applyResizePreview(task, preview);
-        if (childCount > 0 && !preview) {
-          const eff = parentEffectiveDates.get(task.id);
+        const movingWithPreview = !!moveEffectiveDates;
+        if (childCount > 0 && (!preview || movingWithPreview)) {
+          const eff = (movingWithPreview ? moveEffectiveDates : parentEffectiveDates)?.get(task.id);
           if (eff && (eff.start_date || eff.due_date)) {
             effectiveTask = {
               ...effectiveTask,

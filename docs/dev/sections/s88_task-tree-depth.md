@@ -81,3 +81,14 @@ Phase A で持ち越した2段の制約をすべて外し、任意の深さの�
 
 ### テスト
 `src/lib/task/__tests__/taskTreeEdit.test.ts`（Tab／Shift+Tab・複数・Undo の prev・親欄の選択肢・中間段の親の保持・循環の文言・配線の走査。配線の走査は `onIndent` の受け渡しを外すと赤くなることを確認済み＝s59）／`bulkSelectionOps.test.ts`（N 段の複数並べ替え・循環・祖先だけ動く）／`taskHierarchy.test.ts`（候補の範囲・パス）／`applyProposal.test.ts`（深い親・同名・不在）。
+
+---
+
+### v3.207：ガントの親バーの移動ドラッグで子孫も一緒にずらす（2026-11-10）
+
+- 変更前：親バーは末端の期間で描くのに、移動ドラッグは親自身の start/due だけを動かしていた（離すと末端の期間に戻り、見た目は動かない）。親自身に期日が無いとドラッグできなかった。
+- 仕様（山本さん確定）：親バーの「移動」で、親自身と子孫すべての start/due を同じ暦日数ずらす。**完了・中止の子孫は動かさない**（実績として残す）。日付未設定もそのまま。中止の子の下の未完了の孫は動かす（除外はタスク単位）。
+- 実装：`ganttUtils.expandWithDescendants`（起点＋子孫・重複1回）→ `moveTargetsOf`（除外）→ 既存の `bulkShiftTasks`。子孫の外の後続は `computeCascadeShiftsMulti` が1回だけ押す（子孫同士の依存は同じ日数動くので押さない）。1トースト・Ctrl+Z 1回で全部戻る。
+- プレビュー：`GanttView.moveEffectiveDates`（プレビュー日付を当てて実効期間を作り直す）で親・祖先のバーも一緒に動く。
+- 変えていないもの：親バーの端のリサイズ（親自身の日付だけ変わり、離すと末端の期間で描かれる）。モバイル版ガントはバーのドラッグ自体が無い。
+- 同じ版でベースラインの引き直し（期限前の延長は計画変更扱い）も入れた。詳細は CHANGELOG v3.207 と `lib/baseline/baselineCapture.ts`。

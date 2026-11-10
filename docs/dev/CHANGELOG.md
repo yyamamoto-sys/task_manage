@@ -8689,3 +8689,13 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 * `responseParser.ts`：`AIResponseData.reply?`（任意＝過去の履歴JSONには無い）。reply があれば proposals 省略も空配列として受理（リトライ課金を避ける）。`consultationRunner.ts` も reply を返す。
 * 表示：`components/consultation/AIReplyBubble.tsx` 新設（`TaskRefText`＝ProposalCard の `renderDescriptionWithLinks` を移したもの／`AIReplyBubble`）。`ChatHistory` は reply の吹き出し→「AI の提案」見出し（カードがあるときだけ）→カード。提案も reply も無い返答は代替文を出し、生の JSON を表示していた経路を塞いだ。`ConsultationPanel` は「最新の提案」の上に末尾 assistant ターンの reply を出す。`SessionHistoryPanel`（保存した履歴）も reply を表示。
 * Edge Function は変更なし。MIN_CLIENT_VERSION は据え置き（reply は任意項目で互換）。テスト：`systemPrompt.test.ts`（同一本文・小見出し・締め切りエラー指示なし・アーカイブ画面なし・reply/書式/タスク参照）・`responseParser.test.ts`（reply）。
+
+# v3.207（2026-11-10）：ガントの親バー移動で子孫も一緒にずらす／期限前の延長はベースラインを引き直す
+* 変更前の挙動：親タスク（子を持つ）のバーは末端の期間で描くが、移動ドラッグは親自身の start/due だけを動かしていた。ドラッグ中は親自身の日付（末端の期間と違う）でバーが描き直されて跳び、離すと末端の期間に戻る＝見た目は動かない。親自身に期日が無いとドラッグ自体が始まらなかった。端のリサイズも親自身の日付だけを変える（同じく離すと末端の期間に戻る）＝今回は変えていない。
+* 親バーの移動：`ganttUtils.expandWithDescendants`（起点＋子孫・重複1回）／`moveTargetsOf`（完了・中止・削除済み・期日未設定を除く）を新設。`GanttView.handleMoveDragStart` は子孫がいるとき・複数選択のとき `bulkTargets` を作り、確定は既存の `bulkShiftTasks`（直接シフト→`computeCascadeShiftsMulti` で子孫の外の後続を1回だけ押す→1トースト＋Undo）。選択中の親と子を一緒に動かしても二重にずれない。親自身に期日が無くても子孫に期日があればドラッグできる（ツールチップの起点は末端の期間）。中止の子の下の未完了の孫は動かす（除外はタスク単位）。
+* ドラッグ中のプレビュー：`moveEffectiveDates`（プレビュー日付を当てた全タスクから `buildEffectiveDatesMap` を作り直す）で親・祖先のバーも一緒に動く。リサイズ中は従来どおり。
+* モバイル版ガント（`GanttMobileView`）はバーのドラッグ自体が無いため対象外。
+* ベースライン：`baselineCapture.resolveBaselineOnSave` を新設し `appStore.saveTask` から呼ぶ（全経路がここを通る＝1か所）。凍結済み・期日が後ろへ延びる・更新前の期日 ≥ `todayStr()`（ローカル日付。期限切れ判定と同じ）なら、ベースラインを更新後の開始日／期日に揃える（開始日が無ければベースラインの開始日は残す）。期限切れ後の延長・前倒し・期日以外・未凍結は従来どおり。
+* Undo：引き直しの記録（延長前の日付・前後のベースライン）を `appStore` のモジュール内 Map にタスクごとのスタックで持ち、直後に日付が延長前へ戻され、ベースラインがまだ引き直した値なら引き直す前へ戻す。トースト・Ctrl+Z・変更履歴の Undo のどれでも効く。記録はセッション内のみ（再読み込み後の変更履歴 Undo では日付だけ戻り、ベースラインは引き直した値のまま）。
+* 既に過去の延長で「遅延」が出ているタスクは遡って直さない（いつ延ばしたか記録が無い）。
+* テスト：`stores/__tests__/parentMoveAndRebaseline.test.ts`（親＋深い子孫・完了/中止/日付なしは不動・子孫内の依存は押さない・外の後続は1回・Undo 1回で全部戻る／選択の二重適用なし／期日＝今日の境界で引き直し→Undo で戻る・DBにも反映／期限切れ後は据え置き／前倒し・改名は据え置き／未凍結は従来どおり／自動ずらしの後続も追従→Undo で戻る）・`lib/baseline/__tests__/resolveBaselineOnSave.test.ts`・`components/gantt/__tests__/parentMoveTargets.test.ts`。MIN_CLIENT_VERSION は据え置き（DB・形式の変更なし）。

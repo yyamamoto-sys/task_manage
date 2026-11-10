@@ -7,7 +7,7 @@ import { calendarWeekNumber } from "../../lib/date/monthWeeks";
 import type { OverloadRange } from "../../lib/gantt/overload";
 import { computeRangeSelection } from "../../lib/selectionRange";
 import { isCompletedForProgress } from "../../lib/taskMeta";
-import { MAX_TASK_DEPTH } from "../../lib/taskHierarchy";
+import { MAX_TASK_DEPTH, buildChildrenMap, descendantsOf } from "../../lib/taskHierarchy";
 import { DEFAULT_MILESTONE_FILL, DEFAULT_MILESTONE_BORDER, milestoneFillColor } from "../../lib/milestoneColor";
 
 // computeRangeSelection は src/lib/selectionRange.ts に集約（ListView と共有するため）。
@@ -432,6 +432,34 @@ export function computeBulkMoveShifts(tasks: Task[], deltaDays: number): BulkMov
     });
   }
   return result;
+}
+
+/**
+ * 親バーの移動ドラッグ（v3.207）：動かす起点（ドラッグ元・選択中のタスク）に、それぞれの子孫を足した
+ * 移動対象を返す。重複は1回だけ（選択中の親と子を一緒に動かしても二重にずらさない）。
+ * 完了・中止・期日未設定の除外はここではせず、computeBulkMoveShifts／moveTargetsOf に任せる
+ * （中止の子の下にある未完了の孫は動かす＝除外はタスク単位）。
+ */
+export function expandWithDescendants(rootIds: Iterable<string>, tasks: Task[]): string[] {
+  const childrenMap = buildChildrenMap(tasks);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const add = (id: string) => { if (!seen.has(id)) { seen.add(id); out.push(id); } };
+  for (const id of rootIds) {
+    add(id);
+    for (const d of descendantsOf(id, childrenMap)) add(d.id);
+  }
+  return out;
+}
+
+/** 移動ドラッグの対象（ドラッグ中のプレビューと確定の両方で使う）。完了・中止・削除済み・期日未設定は除く */
+export function moveTargetsOf(
+  ids: string[], taskById: Map<string, Task>,
+): { taskId: string; origStart: string | null; origDue: string }[] {
+  return ids
+    .map(id => taskById.get(id))
+    .filter((t): t is Task => !!t && !t.is_deleted && !isCompletedForProgress(t.status) && !!t.due_date)
+    .map(t => ({ taskId: t.id, origStart: t.start_date ?? null, origDue: t.due_date! }));
 }
 
 // ===== キーボードショートカット：ズーム / 全選択 / 範囲選択 =====
