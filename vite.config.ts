@@ -111,6 +111,14 @@ const buildTimeIso = new Date().toISOString();
 export default defineConfig({
   plugins: [react(), chunkSizeManifestPlugin(), versionManifestPlugin(buildTimeIso)],
   server: { port: 5173, host: true },
+  build: {
+    rollupOptions: {
+      input: {
+        index: join(__dirname, "index.html"),
+        "okr-mock": join(__dirname, "okr-mock.html"),
+      },
+    },
+  },
   // ビルド日時（UTC ISO文字列）をコードに焼き込む。表示側（src/lib/version.ts）で
   // Asia/Tokyoへ変換する。dev サーバーではこの値＝dev起動時刻になる（それで構わない）。
   define: {
