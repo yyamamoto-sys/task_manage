@@ -1,4 +1,4 @@
-import type { Checkpoint, Member, OkrItem, Pj, Quarter, Seg, Synergy, Task, Team } from "./types";
+import type { Band, Checkin, Draft, KrRecord, OkrItem, Pj, Seg, Task } from "./types";
 
 export const TODAY = "2026-11-10";
 const DAY_MS = 86400000;
@@ -36,214 +36,196 @@ export function formatFull(s: string): string {
   return `${y}年${m}月${d}日(${WEEKDAYS[weekdayOf(s)]})`;
 }
 
-/** 今日を含めて、次にその曜日が来る日（今日が該当曜日なら今日） */
-export function nextCheckinDate(today: string, weekday: number): string {
-  const diff = (weekday - weekdayOf(today) + 7) % 7;
-  return addDays(today, diff);
+/** その日を含む週の月曜日 */
+export function weekStartOf(s: string): string {
+  return addDays(s, -((weekdayOf(s) + 6) % 7));
 }
 
 export const isOpen = (t: Task) => t.status !== "完了";
 
-export function overdueTasks(tasks: Task[], today: string): Task[] {
-  return tasks.filter((t) => isOpen(t) && t.due < today);
+// ---------- 達成度バンド ----------
+
+/** 仮の5段階。実際の区分に差し替える（ここ1か所だけ直せばよい。左ほど高い） */
+export const BANDS: Band[] = ["S", "A", "B", "C", "D"];
+
+/** 高いほど大きい数（S=5 … D=1） */
+export function bandRank(b: Band): number {
+  return BANDS.length - BANDS.indexOf(b);
 }
 
-/** 今日からチェックイン日までに期日が来る未完了タスク（期日超過は含めない） */
-export function dueBeforeCheckin(tasks: Task[], today: string, checkin: string): Task[] {
-  return tasks.filter((t) => isOpen(t) && t.due >= today && t.due <= checkin);
+// ---------- 対照表 ----------
+
+/** 現状 − 目標。数値は単位のまま、バンドは段数（マイナス＝目標より下） */
+export function krGap(r: KrRecord): number {
+  return r.kind === "number" ? r.value - r.target : bandRank(r.value) - bandRank(r.target);
 }
 
-export const STALE_DAYS = 7;
-
-export function isStaleTask(t: Task, today: string, days = STALE_DAYS): boolean {
-  return isOpen(t) && diffDays(today, t.updated) >= days;
+/** 前回からの動き（現状 − 前回値）。数値は単位のまま、バンドは段数 */
+export function krMove(r: KrRecord): number {
+  return r.kind === "number" ? r.value - r.prev : bandRank(r.value) - bandRank(r.prev);
 }
 
-/** KR・TF などの範囲：タスクはあるが、どれも直近 days 日以内に動いていない。タスクが1件も無いものは「未登録」で別扱い */
-export function isStaleScope(tasks: Task[], today: string, days = STALE_DAYS): boolean {
-  if (tasks.length === 0) return false;
-  return tasks.every((t) => diffDays(today, t.updated) >= days);
+/** 直近のチェックイン日より前の更新のままなら「未更新」（資料に出てこなかったKR） */
+export function isNotUpdated(r: KrRecord, latestCheckinDate: string): boolean {
+  return r.updatedAt < latestCheckinDate;
 }
 
-export function isUnregistered(tasks: Task[]): boolean {
-  return tasks.length === 0;
+export function latestCheckinDate(checkins: Checkin[]): string {
+  return checkins.reduce((m, c) => (c.date > m ? c.date : m), "");
 }
 
-export function daysSinceLastMove(tasks: Task[], today: string): number | null {
-  if (tasks.length === 0) return null;
-  return Math.min(...tasks.map((t) => diffDays(today, t.updated)));
-}
-
-export interface Movement {
-  updated: number;
-  completed: number;
-  overdue: number;
-}
-
-/** 動きを数える期間（両端を含む） */
-export interface Window {
-  from: string;
-  to: string;
-}
-
-export function inWindow(date: string, win: Window): boolean {
-  return date >= win.from && date <= win.to;
-}
-
-/** 前回チェックインの翌日〜今回のチェックイン日（今日が曜日に当たれば今日が今回） */
-export function weekWindow(today: string, weekday: number): Window {
-  const to = nextCheckinDate(today, weekday);
-  return { from: addDays(to, -6), to };
-}
-
-/** 画面に出す期間の文字 */
-export function formatWindow(win: Window): string {
-  return `${formatMd(win.from)}〜${formatMd(win.to)}`;
-}
-
-/** 期間内の動き。期間を渡さなければ直近7日（今日を含む） */
-export function movement(tasks: Task[], today: string, win: Window = { from: addDays(today, -6), to: today }): Movement {
-  let updated = 0;
-  let completed = 0;
-  let overdue = 0;
-  for (const t of tasks) {
-    if (inWindow(t.updated, win)) {
-      updated++;
-      if (t.status === "完了") completed++;
+/**
+ * 確定：下書きに出てきたKRだけ更新し、出てこなかったKRは前回値のまま。
+ * 同じ日のチェックインへの再確定では「前回」をずらさない。
+ */
+export function applyDrafts(
+  records: Record<string, KrRecord>,
+  drafts: Draft[],
+  values: Record<string, number | Band>,
+  checkinDate: string,
+): Record<string, KrRecord> {
+  const out = { ...records };
+  for (const d of drafts) {
+    const r = records[d.krId];
+    if (!r) continue;
+    const v = values[d.krId] ?? d.value;
+    const shift = r.updatedAt !== checkinDate;
+    const base = { updatedAt: checkinDate, prevAt: shift ? r.updatedAt : r.prevAt, source: d.source };
+    if (r.kind === "number" && typeof v === "number") {
+      out[d.krId] = { ...r, ...base, value: v, prev: shift ? r.value : r.prev };
+    } else if (r.kind === "band" && typeof v === "string") {
+      out[d.krId] = { ...r, ...base, value: v, prev: shift ? r.value : r.prev };
     }
-    if (isOpen(t) && t.due < today) overdue++;
-  }
-  return { updated, completed, overdue };
-}
-
-/** 直近 weeks 週の完了件数（古い週 → 新しい週の順） */
-export function weeklyCompleted(tasks: Task[], today: string, weeks = 4): number[] {
-  const out = new Array<number>(weeks).fill(0);
-  for (const t of tasks) {
-    if (t.status !== "完了") continue;
-    const ago = diffDays(today, t.updated);
-    if (ago < 0) continue;
-    const bucket = Math.floor(ago / 7);
-    if (bucket < weeks) out[weeks - 1 - bucket]++;
   }
   return out;
 }
 
-/** 四半期に有効な項目だけ（Objective・KRは常に有効） */
-export function itemsInQuarter(items: OkrItem[], q: Quarter): OkrItem[] {
-  return items.filter((i) => i.kind !== "tf" || (i.quarters ?? []).includes(q));
-}
+// ---------- 仕事とKRのつながり ----------
 
 export function uniqueTasks(list: Task[]): Task[] {
   const seen = new Set<string>();
   return list.filter((t) => (seen.has(t.id) ? false : (seen.add(t.id), true)));
 }
 
-/** 全体の集計：TFにつながるPJのタスクを、共有PJでも1回だけ数える */
-export function tasksForAll(tasks: Task[], pjs: Pj[]): Task[] {
-  const ids = new Set(pjs.filter((p) => p.tfIds.length > 0).map((p) => p.id));
-  return tasks.filter((t) => ids.has(t.pjId));
-}
-
-/** 共有PJ：2つ以上のTFに紐づくPJ。exceptTfId を渡すとその TF 以外の共有先を返す */
-export function sharedTfs(pj: Pj, items: OkrItem[], exceptTfId?: string): OkrItem[] {
-  if (pj.tfIds.length < 2) return [];
-  return pj.tfIds
-    .filter((id) => id !== exceptTfId)
-    .map((id) => items.find((i) => i.id === id))
-    .filter((i): i is OkrItem => !!i);
-}
-
-export function isSharedAcrossKrs(pj: Pj, items: OkrItem[]): boolean {
-  return new Set(pj.tfIds.map((id) => items.find((i) => i.id === id)?.parentId)).size > 1;
-}
-
 export function krIdsOfPj(pj: Pj, items: OkrItem[]): string[] {
   return [...new Set(pj.tfIds.map((id) => items.find((i) => i.id === id)?.parentId).filter((x): x is string => !!x))];
 }
 
-export function checkpointOf(cps: Checkpoint[], tfId: string, month: string): Checkpoint | undefined {
-  return cps.find((c) => c.tfId === tfId && c.month === month);
+export interface LinkCtx {
+  pjs: Pj[];
+  items: OkrItem[];
+  /** 本人がつなぎ先を変えたタスク（タスクID → KR ID）。あれば既定のつながりを置き換える */
+  overrides: Record<string, string>;
 }
 
-export function tasksForTf(tasks: Task[], pjs: Pj[], tfId: string): Task[] {
-  const ids = new Set(pjs.filter((p) => p.tfIds.includes(tfId)).map((p) => p.id));
-  return tasks.filter((t) => ids.has(t.pjId));
+/** タスクがつながるKR。既定は属するPJのKR（共有PJで同じKRに2回付いても1つ）。上書きがあればそれ */
+export function krIdsOfTask(task: Task, ctx: LinkCtx): string[] {
+  const o = ctx.overrides[task.id];
+  if (o) return [o];
+  const pj = ctx.pjs.find((p) => p.id === task.pjId);
+  return pj ? krIdsOfPj(pj, ctx.items) : [];
 }
 
-export function tfIdsOfKr(items: OkrItem[], krId: string): string[] {
-  return items.filter((i) => i.kind === "tf" && i.parentId === krId).map((i) => i.id);
+/** KRにつながる仕事。1つのタスクは同じKRに1回だけ数える */
+export function tasksOfKr(tasks: Task[], krId: string, ctx: LinkCtx): Task[] {
+  return uniqueTasks(tasks.filter((t) => krIdsOfTask(t, ctx).includes(krId)));
 }
 
-/** 1つのPJが同じKR内の2つのTFに紐づいていても、タスクは重複させない */
-export function tasksForKr(tasks: Task[], pjs: Pj[], items: OkrItem[], krId: string): Task[] {
-  const tfs = new Set(tfIdsOfKr(items, krId));
-  const ids = new Set(pjs.filter((p) => p.tfIds.some((x) => tfs.has(x))).map((p) => p.id));
-  return tasks.filter((t) => ids.has(t.pjId));
+/** どのKRにもつながる先がある仕事（共有PJの仕事も1回） */
+export function linkedTasks(tasks: Task[], ctx: LinkCtx): Task[] {
+  return uniqueTasks(tasks.filter((t) => krIdsOfTask(t, ctx).length > 0));
 }
 
-export function pjsForKr(pjs: Pj[], items: OkrItem[], krId: string): Pj[] {
-  const tfs = new Set(tfIdsOfKr(items, krId));
-  return pjs.filter((p) => p.tfIds.some((x) => tfs.has(x)));
+export function unlinkedTasks(tasks: Task[], ctx: LinkCtx): Task[] {
+  return tasks.filter((t) => krIdsOfTask(t, ctx).length === 0);
 }
 
-export function unconnectedPjs(pjs: Pj[]): Pj[] {
-  return pjs.filter((p) => p.tfIds.length === 0);
+/** そのタスクがつながるTF（PJの紐づけのうち、つながるKRの下にあるもの） */
+export function tfIdsOfTask(task: Task, ctx: LinkCtx): string[] {
+  const pj = ctx.pjs.find((p) => p.id === task.pjId);
+  if (!pj) return [];
+  const krs = krIdsOfTask(task, ctx);
+  return pj.tfIds.filter((id) => krs.includes(ctx.items.find((i) => i.id === id)?.parentId ?? ""));
 }
 
-export interface MatrixCell {
-  updated: number;
-  open: number;
+/** 前回更新の翌日〜今回更新日に、その人が終えた、そのKRにつながる仕事 */
+export function tasksDoneBetween(tasks: Task[], memberId: string, krId: string, from: string, to: string, ctx: LinkCtx): Task[] {
+  return tasksOfKr(
+    tasks.filter((t) => t.assigneeId === memberId && t.status === "完了" && t.updated > from && t.updated <= to),
+    krId,
+    ctx,
+  );
 }
 
-export interface MatrixRow {
-  member: Member;
-  cells: Record<string, MatrixCell>;
-  /** 重複を除いた合計（共有PJのタスクを複数KRで数えない） */
-  total: MatrixCell;
+export function weekStarts(start: string, today: string): string[] {
+  const out: string[] = [];
+  for (let w = weekStartOf(start); w <= today; w = addDays(w, 7)) out.push(w);
+  return out;
 }
 
-export interface MatrixFooter {
-  cells: Record<string, MatrixCell>;
-  total: MatrixCell;
+export interface Buildup {
+  weeks: string[];
+  /** KRごとの、週ごとの累計完了件数 */
+  cumulative: Record<string, number[]>;
+  /** 同じタスクは1回だけ数えた全体の累計 */
+  total: number[];
 }
 
-function cellOf(list: Task[], win: Window): MatrixCell {
-  return { updated: list.filter((t) => inWindow(t.updated, win)).length, open: list.filter(isOpen).length };
-}
-
-/**
- * メンバー × KR。セル＝その人が担当するタスクのうち期間内の更新件数と未完了件数。
- * KRごとには数えるが、合計は共有PJの重複を除く
- */
-export function buildMatrix(
-  members: Member[],
-  krIds: string[],
-  krTasks: Record<string, Task[]>,
-  win: Window,
-): { rows: MatrixRow[]; footer: MatrixFooter } {
-  const rows = members.map((member) => {
-    const cells: Record<string, MatrixCell> = {};
-    const all: Task[] = [];
-    for (const krId of krIds) {
-      const mine = (krTasks[krId] ?? []).filter((t) => t.assigneeId === member.id);
-      cells[krId] = cellOf(mine, win);
-      all.push(...mine);
-    }
-    return { member, cells, total: cellOf(uniqueTasks(all), win) };
-  });
-  const ids = new Set(members.map((m) => m.id));
-  const footerCells: Record<string, MatrixCell> = {};
-  const footerAll: Task[] = [];
-  for (const krId of krIds) {
-    const mine = (krTasks[krId] ?? []).filter((t) => ids.has(t.assigneeId));
-    footerCells[krId] = cellOf(mine, win);
-    footerAll.push(...mine);
+/** 期の始めから週ごとの、KRにつながる仕事の累計完了件数 */
+export function buildup(tasks: Task[], memberId: string, krIds: string[], start: string, today: string, ctx: LinkCtx): Buildup {
+  const weeks = weekStarts(start, today);
+  const done = tasks.filter((t) => t.assigneeId === memberId && t.status === "完了" && t.updated >= start && t.updated <= today);
+  const cumulative: Record<string, number[]> = {};
+  for (const k of krIds) {
+    cumulative[k] = weeks.map((w) => {
+      const end = addDays(w, 6);
+      return done.filter((t) => t.updated <= end && krIdsOfTask(t, ctx).includes(k)).length;
+    });
   }
-  return { rows, footer: { cells: footerCells, total: cellOf(uniqueTasks(footerAll), win) } };
+  const total = weeks.map((w) => {
+    const end = addDays(w, 6);
+    return done.filter((t) => t.updated <= end && krIdsOfTask(t, ctx).length > 0).length;
+  });
+  return { weeks, cumulative, total };
 }
 
-// ---------- 文字単位の差分 ----------
+/** 期のまとめ（コピー用の文面）。どのKRへ何を積んだか */
+export function buildSummaryText(args: {
+  period: string;
+  owner: string;
+  krs: { id: string; label: string; text: string }[];
+  tasks: Task[];
+  memberId: string;
+  start: string;
+  today: string;
+  ctx: LinkCtx;
+  how: Record<string, string>;
+}): string {
+  const { period, owner, krs, tasks, memberId, start, today, ctx, how } = args;
+  const lines = [`${period} 期のまとめ（${owner}）`, `集計期間：${start}〜${today}`, ""];
+  for (const kr of krs) {
+    const done = tasksOfKr(
+      tasks.filter((t) => t.assigneeId === memberId && t.status === "完了" && t.updated >= start && t.updated <= today),
+      kr.id,
+      ctx,
+    );
+    lines.push(`${kr.label} ${kr.text}：${done.length}件`);
+    for (const t of done) lines.push(`  ・${t.title}${how[t.id] ? `（${how[t.id]}）` : ""}`);
+  }
+  const all = linkedTasks(
+    tasks.filter((t) => t.assigneeId === memberId && t.status === "完了" && t.updated >= start && t.updated <= today),
+    ctx,
+  );
+  lines.push("", `合計：${all.length}件（複数のKRにつながる仕事は1件に数えています）`);
+  return lines.join("\n");
+}
+
+/** 四半期に有効な項目だけ（Objective・KRは常に有効） */
+export function itemsInQuarter(items: OkrItem[], q: "3Q" | "4Q"): OkrItem[] {
+  return items.filter((i) => i.kind !== "tf" || (i.quarters ?? []).includes(q));
+}
+
+// ---------- 文字単位の差分（Kintone取込の突き合わせ） ----------
 
 function mergeSegs(segs: Seg[]): Seg[] {
   const out: Seg[] = [];
@@ -301,251 +283,18 @@ export function compareOkr(appItems: OkrItem[], kintone: Record<string, string>)
   return appItems.map((it) => {
     const k = kintone[it.id] ?? "";
     const d = diffChars(it.text, k);
-    return {
-      id: it.id,
-      label: it.label,
-      kind: it.kind,
-      app: it.text,
-      kintone: k,
-      same: it.text === k,
-      left: d.left,
-      right: d.right,
-    };
+    return { id: it.id, label: it.label, kind: it.kind, app: it.text, kintone: k, same: it.text === k, left: d.left, right: d.right };
   });
 }
 
 export type Resolution = "app" | "kintone";
 
-/** 差分のある行がすべて「どちらに合わせるか」選ばれているか */
 export function canLock(rows: CompareRow[], resolutions: Record<string, Resolution>): boolean {
   return rows.every((r) => r.same || resolutions[r.id] !== undefined);
 }
 
-/** 選択を反映した確定文言 */
 export function resolvedTexts(rows: CompareRow[], resolutions: Record<string, Resolution>): Record<string, string> {
   const out: Record<string, string> = {};
   for (const r of rows) out[r.id] = !r.same && resolutions[r.id] === "kintone" ? r.kintone : r.app;
-  return out;
-}
-
-// ---------- チェックイン事前レポート ----------
-
-export interface MemberTasks {
-  member: Member;
-  tasks: Task[];
-}
-
-export interface PreReport {
-  team: Team;
-  checkin: string;
-  dueSoon: MemberTasks[];
-  overdue: MemberTasks[];
-  staleTasks: Task[];
-  staleKrIds: string[];
-  staleTfIds: string[];
-  unregisteredKrIds: string[];
-  unregisteredTfIds: string[];
-  window: Window;
-}
-
-function groupByMember(members: Member[], tasks: Task[]): MemberTasks[] {
-  return members
-    .map((member) => ({ member, tasks: tasks.filter((t) => t.assigneeId === member.id) }))
-    .filter((g) => g.tasks.length > 0);
-}
-
-export function buildPreReport(args: {
-  team: Team;
-  members: Member[];
-  items: OkrItem[];
-  pjs: Pj[];
-  tasks: Task[];
-  today: string;
-}): PreReport {
-  const { team, members, items, pjs, tasks, today } = args;
-  const teamMembers = members.filter((m) => m.teamId === team.id);
-  const ids = new Set(teamMembers.map((m) => m.id));
-  const teamTasks = tasks.filter((t) => ids.has(t.assigneeId));
-  const checkin = nextCheckinDate(today, team.checkinWeekday);
-  const connected = new Set(pjs.filter((p) => p.tfIds.length > 0).map((p) => p.id));
-  const scopeIds = (kind: "kr" | "tf", test: (ts: Task[]) => boolean) =>
-    items
-      .filter((i) => i.kind === kind)
-      .filter((i) => test(kind === "kr" ? tasksForKr(tasks, pjs, items, i.id) : tasksForTf(tasks, pjs, i.id)))
-      .map((i) => i.id);
-  const isStale = (ts: Task[]) => isStaleScope(ts, today);
-  return {
-    team,
-    checkin,
-    dueSoon: groupByMember(teamMembers, dueBeforeCheckin(teamTasks, today, checkin)),
-    overdue: groupByMember(teamMembers, overdueTasks(teamTasks, today)),
-    staleTasks: teamTasks.filter((t) => isStaleTask(t, today) && connected.has(t.pjId)),
-    staleKrIds: scopeIds("kr", isStale),
-    staleTfIds: scopeIds("tf", isStale),
-    unregisteredKrIds: scopeIds("kr", isUnregistered),
-    unregisteredTfIds: scopeIds("tf", isUnregistered),
-    window: weekWindow(today, team.checkinWeekday),
-  };
-}
-
-// ---------- 文面の生成 ----------
-
-export function buildReminderText(args: {
-  toName: string;
-  fromName: string;
-  checkin: string;
-  tasks: { title: string; due: string }[];
-  today: string;
-}): string {
-  const { toName, fromName, checkin, tasks, today } = args;
-  const lines = tasks.map((t) => {
-    const late = t.due < today ? `（${diffDays(today, t.due)}日超過）` : "";
-    return `・${t.title} 期日 ${formatMd(t.due)}${late}`;
-  });
-  return [
-    `${toName}さん`,
-    "",
-    `お疲れさまです。${formatMd(checkin)}のチェックインの前に、次のタスクの状況を教えてください。`,
-    ...lines,
-    "",
-    "進めにくい点があれば、チェックインで一緒に相談しましょう。",
-    `${fromName}`,
-  ].join("\n");
-}
-
-export function buildReportMarkdown(args: {
-  report: PreReport;
-  krLabel: (id: string) => string;
-  tfLabel: (id: string) => string;
-  pjName: (pjId: string) => string;
-  today: string;
-  /** TFリーダーの申告とチェックポイントを1行ずつ */
-  selfLines?: string[];
-  /** 取り上げた「つながり」を1行ずつ */
-  linkLines?: string[];
-}): string {
-  const { report, krLabel, tfLabel, pjName, today } = args;
-  const out: string[] = [];
-  out.push(`# ${report.team.name} 事前レポート（チェックイン ${formatMd(report.checkin)}）`);
-  out.push("");
-  out.push(`作成日：${formatMd(today)} 今週の動きの期間：${formatWindow(report.window)}`);
-  const section = (title: string, groups: MemberTasks[]) => {
-    out.push("", `## ${title}`);
-    if (groups.length === 0) out.push("なし");
-    for (const g of groups) {
-      out.push(`- ${g.member.name}`);
-      for (const t of g.tasks) out.push(`  - ${t.title}（${pjName(t.pjId)}）期日 ${formatMd(t.due)}／${t.status}`);
-    }
-  };
-  section("チェックイン日までに期日が来る未完了タスク", report.dueSoon);
-  section("期日を過ぎているタスク", report.overdue);
-  out.push("", "## 7日以上動きのないもの");
-  const stale = [
-    ...report.staleKrIds.map((id) => `- ${krLabel(id)}（目標全体）`),
-    ...report.staleTfIds.map((id) => `- ${tfLabel(id)}（取り組み全体）`),
-    ...report.staleTasks.map((t) => `- ${t.title}（${pjName(t.pjId)}）最終更新 ${formatMd(t.updated)}`),
-  ];
-  out.push(...(stale.length ? stale : ["なし"]));
-  const unreg = [
-    ...report.unregisteredKrIds.map((id) => `- ${krLabel(id)}`),
-    ...report.unregisteredTfIds.map((id) => `- ${tfLabel(id)}`),
-  ];
-  out.push("", "## タスク未登録", ...(unreg.length ? unreg : ["なし"]));
-  out.push("", `## TFリーダーの申告（${formatWindow(report.window)}）`, ...(args.selfLines?.length ? args.selfLines : ["なし"]));
-  out.push("", "## つながり（チェックインで取り上げるもの）", ...(args.linkLines?.length ? args.linkLines : ["なし"]));
-  return out.join("\n");
-}
-
-// ---------- つながり（KRをまたぐシナジーの候補） ----------
-
-export const SYNERGY_LABEL: Record<Synergy["type"], string> = {
-  "same-subject": "同じ相手・対象",
-  handoff: "受け渡し",
-  duplicate: "重複",
-  crunch: "集中",
-};
-
-function krsOfTask(t: Task, pjs: Pj[], items: OkrItem[]): string[] {
-  const pj = pjs.find((p) => p.id === t.pjId);
-  return pj ? krIdsOfPj(pj, items) : [];
-}
-
-/** 別のPJの2つのタスクが、異なるKRにまたがるか（同じPJの中は「つながり」と呼ばない） */
-function crossKr(a: Task, b: Task, pjs: Pj[], items: OkrItem[]): boolean {
-  if (a.pjId === b.pjId) return false;
-  const ka = krsOfTask(a, pjs, items);
-  const kb = krsOfTask(b, pjs, items);
-  return ka.some((x) => kb.some((y) => x !== y));
-}
-
-function unionKrs(list: Task[], pjs: Pj[], items: OkrItem[]): string[] {
-  return [...new Set(list.flatMap((t) => krsOfTask(t, pjs, items)))].sort();
-}
-
-/** その日を含む週の月曜日 */
-export function weekStartOf(s: string): string {
-  const wd = weekdayOf(s);
-  return addDays(s, -((wd + 6) % 7));
-}
-
-export const CRUNCH_MIN_TASKS = 4;
-
-/** (a)(b)(d) を機械的に求める。(c) は呼び出し側が固定の候補を足す */
-export function buildSynergies(args: { tasks: Task[]; pjs: Pj[]; items: OkrItem[]; today: string; members: Member[] }): Synergy[] {
-  const { tasks, pjs, items, today, members } = args;
-  const out: Synergy[] = [];
-  const krName = (ids: string[]) => ids.map((id) => items.find((i) => i.id === id)?.label ?? id).join("・");
-
-  const bySubject = new Map<string, Task[]>();
-  for (const t of tasks) if (t.subject) bySubject.set(t.subject, [...(bySubject.get(t.subject) ?? []), t]);
-  for (const [subject, list] of bySubject) {
-    const hit = list.some((a, i) => list.slice(i + 1).some((b) => crossKr(a, b, pjs, items)));
-    if (!hit) continue;
-    const krs = unionKrs(list, pjs, items);
-    out.push({
-      id: `same:${subject}`,
-      type: "same-subject",
-      krIds: krs,
-      taskIds: list.map((t) => t.id),
-      summary: `「${subject}」を、${krName(krs)}のタスクがそれぞれ扱っています。窓口や情報を揃えると、先方への動きが重ならずに済みます。`,
-    });
-  }
-
-  for (const t of tasks) {
-    for (const depId of t.dependsOn ?? []) {
-      const dep = tasks.find((x) => x.id === depId);
-      if (!dep || !crossKr(dep, t, pjs, items)) continue;
-      const krs = unionKrs([dep, t], pjs, items);
-      const note = dep.due > t.due ? "前提の期日のほうが後ろにあります。" : dep.status === "完了" ? "前提はすでに完了しています。" : "前提の完了を待っている状態です。";
-      out.push({
-        id: `handoff:${dep.id}>${t.id}`,
-        type: "handoff",
-        krIds: krs,
-        taskIds: [dep.id, t.id],
-        summary: `「${dep.title}」が、別のKRの「${t.title}」の前提になっています。${note}`,
-      });
-    }
-  }
-
-  for (const m of members) {
-    const byWeek = new Map<string, Task[]>();
-    for (const t of tasks) {
-      if (t.assigneeId !== m.id || !isOpen(t) || t.due < today) continue;
-      if (krsOfTask(t, pjs, items).length === 0) continue;
-      const w = weekStartOf(t.due);
-      byWeek.set(w, [...(byWeek.get(w) ?? []), t]);
-    }
-    for (const [w, list] of byWeek) {
-      const krs = unionKrs(list, pjs, items);
-      if (list.length < CRUNCH_MIN_TASKS || krs.length < 2) continue;
-      out.push({
-        id: `crunch:${m.id}:${w}`,
-        type: "crunch",
-        krIds: krs,
-        taskIds: list.map((t) => t.id),
-        summary: `${m.name}さんに、${formatMd(w)}の週に${krName(krs)}の期日が${list.length}件重なっています。`,
-      });
-    }
-  }
   return out;
 }

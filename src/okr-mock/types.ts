@@ -3,16 +3,9 @@ export type TaskStatus = "未着手" | "進行中" | "完了";
 export interface Member {
   id: string;
   name: string;
-  isManager: boolean;
-  teamId: string;
+  /** 画面上の立場（メンバー／GM）。誰として見るかの切替に使う */
+  role: "メンバー" | "GM";
   color: string;
-}
-
-export interface Team {
-  id: string;
-  name: string;
-  /** チェックインの曜日（0=日 … 6=土） */
-  checkinWeekday: number;
 }
 
 export type OkrKind = "objective" | "kr" | "tf";
@@ -29,41 +22,9 @@ export interface OkrItem {
   text: string;
   /** TFだけ：この取り組みがある四半期。Objective・KRは半期を通して有効なので持たない */
   quarters?: Quarter[];
-  /** TFだけ：リーダー（週1回の自己申告をする人） */
+  /** TFだけ：リーダー */
   leaderId?: string;
 }
-
-export type ReportLevel = "順調" | "注意" | "相談したい";
-
-/** TFリーダーの週1回の自己申告 */
-export interface SelfReport {
-  level: ReportLevel;
-  note: string;
-  /** 申告日 YYYY-MM-DD */
-  date: string;
-}
-
-/** 月初のチェックポイント（Kintoneの「月次の計画（プロセス評価基準）」に当たる） */
-export interface Checkpoint {
-  tfId: string;
-  /** YYYY-MM */
-  month: string;
-  text: string;
-}
-
-export type SynergyType = "same-subject" | "handoff" | "duplicate" | "crunch";
-
-export interface Synergy {
-  id: string;
-  type: SynergyType;
-  krIds: string[];
-  taskIds: string[];
-  summary: string;
-  /** (c) のようにAIの提案（モックでは固定）か */
-  fixed?: boolean;
-}
-
-export type SynergyStatus = "picked" | "skipped";
 
 export interface Pj {
   id: string;
@@ -81,18 +42,99 @@ export interface Task {
   status: TaskStatus;
   /** 最終更新日 YYYY-MM-DD（完了のときは完了日） */
   updated: string;
-  /** 相手・対象の名前（顧客名・成果物名など）。KRをまたぐ「同じ相手・対象」の検出に使う */
-  subject?: string;
-  /** このタスクの前提になっているタスクのID */
-  dependsOn?: string[];
-}
-
-export interface TeamMemo {
-  date: string;
-  byKr: Record<string, string>;
 }
 
 export interface Seg {
   text: string;
   changed: boolean;
+}
+
+/** 達成度バンド。仮の5段階（実際の区分に差し替える。定義は logic.ts の BANDS） */
+export type Band = "S" | "A" | "B" | "C" | "D";
+
+export interface Source {
+  doc: string;
+  page: string;
+}
+
+interface RecordBase {
+  krId: string;
+  /** 最終更新日（その値を取り込んだチェックインの日） YYYY-MM-DD */
+  updatedAt: string;
+  /** 前回の更新日 */
+  prevAt: string;
+  source: Source | null;
+}
+
+export interface NumberRecord extends RecordBase {
+  kind: "number";
+  unit: string;
+  target: number;
+  value: number;
+  prev: number;
+}
+
+export interface BandRecord extends RecordBase {
+  kind: "band";
+  target: Band;
+  value: Band;
+  prev: Band;
+}
+
+export type KrRecord = NumberRecord | BandRecord;
+
+export interface Checkin {
+  id: string;
+  date: string;
+  title: string;
+}
+
+/** 決定事項と宿題 */
+export interface Decision {
+  id: string;
+  checkinId: string;
+  kind: "決定" | "宿題";
+  text: string;
+  ownerId: string | null;
+  source: Source;
+}
+
+/** AIが資料から読み取った下書き（1KR分） */
+export interface Draft {
+  krId: string;
+  value: number | Band;
+  source: Source;
+}
+
+export interface Resource {
+  id: string;
+  name: string;
+  kind: string;
+  checkinId: string;
+  drafts: Draft[];
+  decisions: Omit<Decision, "id" | "checkinId">[];
+}
+
+export interface PersonalOkr {
+  id: string;
+  ownerId: string;
+  text: string;
+}
+
+export interface AiCandidate {
+  krId: string;
+  reason: string;
+}
+
+export type Effect = "よく効いた" | "少し" | "効かせられなかった";
+export type Match = "そのとおり" | "少し違う" | "違う";
+
+export interface KrAnswer {
+  effect?: Effect;
+  match?: Match;
+}
+
+export interface PastWeek {
+  weekStart: string;
+  answers: Record<string, { effect: Effect; match: Match; view: string }>;
 }

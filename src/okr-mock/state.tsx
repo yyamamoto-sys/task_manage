@@ -1,28 +1,32 @@
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from "react";
 import {
-  checkpointsDec,
-  checkpointsInit,
+  checkinsInit,
   CURRENT_QUARTER,
-  fixedSynergies,
+  decisionsInit,
   kintoneTexts,
-  members,
+  nextCheckin,
   okrItems as okrAll,
+  OWNER_ID,
+  personalLinksInit,
   pjsInit,
   QUARTER_INFO,
-  selfReportsInit,
-  tasks,
-  teams,
+  recordsInit,
+  resources,
 } from "./fixtures";
-import { buildSynergies, compareOkr, itemsInQuarter, TODAY, weekWindow, type Resolution } from "./logic";
-import type { Checkpoint, OkrItem, Pj, SelfReport, Synergy, SynergyStatus } from "./types";
+import { applyDrafts, compareOkr, itemsInQuarter, type LinkCtx, type Resolution } from "./logic";
+import type { Band, Checkin, Decision, KrAnswer, KrRecord, OkrItem } from "./types";
 
-export type ScreenId = "home" | "import" | "map" | "kr" | "link" | "checkin" | "review" | "plan";
+export type ScreenId = "map" | "table" | "import-doc" | "decisions" | "myokr" | "tasklink" | "reflect" | "daily" | "goals";
 
 const okrInit = itemsInQuarter(okrAll, CURRENT_QUARTER);
 
 interface MockState {
   screen: ScreenId;
   setScreen: (s: ScreenId) => void;
+  viewerId: string;
+  setViewerId: (id: string) => void;
+  /** 本人（本人にしか見えない情報の持ち主）として見ているか */
+  isOwner: boolean;
   items: OkrItem[];
   locked: boolean;
   lockedAt: string;
@@ -32,29 +36,28 @@ interface MockState {
   setResolution: (id: string, r: Resolution) => void;
   lock: (finalTexts: Record<string, string>) => void;
   unlockDemo: () => void;
-  pjs: Pj[];
-  linkPj: (pjId: string, tfId: string) => void;
-  unlinkPj: (pjId: string, tfId: string) => void;
-  selectedKr: string;
-  setSelectedKr: (id: string) => void;
-  openKr: (id: string) => void;
-  teamId: string;
-  setTeamId: (id: string) => void;
-  reminded: Set<string>;
-  markReminded: (ids: string[]) => void;
+  kintone: Record<string, string>;
+  records: Record<string, KrRecord>;
+  checkins: Checkin[];
+  decisions: Decision[];
+  confirmImport: (resourceId: string, values: Record<string, number | Band>) => void;
+  selectedKr: string | null;
+  setSelectedKr: (id: string | null) => void;
+  openKrRow: (id: string) => void;
+  /** つなぎ先の上書き（タスクID → KR ID） */
+  overrides: Record<string, string>;
+  setOverride: (taskId: string, krId: string | undefined) => void;
+  linkCtx: LinkCtx;
+  proposals: Record<string, "taken" | "skipped" | undefined>;
+  setProposal: (taskId: string, v: "taken" | "skipped" | undefined) => void;
+  how: Record<string, string>;
+  setHow: (taskId: string, text: string) => void;
+  personalLinks: { personalId: string; krId: string }[];
+  togglePersonalLink: (personalId: string, krId: string) => void;
+  answers: Record<string, KrAnswer>;
+  setAnswer: (krId: string, patch: KrAnswer) => void;
   toast: string | null;
   showToast: (msg: string) => void;
-  kintone: Record<string, string>;
-  reports: Record<string, SelfReport>;
-  setReport: (tfId: string, patch: Partial<Pick<SelfReport, "level" | "note">>) => void;
-  checkpoints: Checkpoint[];
-  decImported: boolean;
-  importCheckpoints: () => void;
-  synergies: Synergy[];
-  synergyStatus: Record<string, SynergyStatus | undefined>;
-  setSynergyStatus: (id: string, st: SynergyStatus | undefined) => void;
-  pendingSynergies: Synergy[];
-  pickedSynergies: Synergy[];
 }
 
 const Ctx = createContext<MockState | null>(null);
@@ -66,19 +69,22 @@ export function useMock(): MockState {
 }
 
 export function MockProvider({ children }: { children: ReactNode }) {
-  const [screen, setScreen] = useState<ScreenId>("home");
+  const [screen, setScreen] = useState<ScreenId>("map");
+  const [viewerId, setViewerId] = useState(OWNER_ID);
   const [items, setItems] = useState<OkrItem[]>(okrInit);
   const [locked, setLocked] = useState(true);
   const [imported, setImported] = useState(true);
   const [resolutions, setResolutions] = useState<Record<string, Resolution>>({});
-  const [pjs, setPjs] = useState<Pj[]>(pjsInit);
-  const [selectedKr, setSelectedKr] = useState("kr1");
-  const [teamId, setTeamId] = useState("ta");
-  const [reminded, setReminded] = useState<Set<string>>(new Set());
+  const [records, setRecords] = useState<Record<string, KrRecord>>(recordsInit);
+  const [checkins, setCheckins] = useState<Checkin[]>(checkinsInit);
+  const [decisions, setDecisions] = useState<Decision[]>(decisionsInit);
+  const [selectedKr, setSelectedKr] = useState<string | null>(null);
+  const [overrides, setOverrides] = useState<Record<string, string>>({});
+  const [proposals, setProposals] = useState<Record<string, "taken" | "skipped" | undefined>>({});
+  const [how, setHowState] = useState<Record<string, string>>({});
+  const [personalLinks, setPersonalLinks] = useState(personalLinksInit);
+  const [answers, setAnswers] = useState<Record<string, KrAnswer>>({});
   const [toast, setToast] = useState<string | null>(null);
-  const [reports, setReports] = useState<Record<string, SelfReport>>(selfReportsInit);
-  const [checkpoints, setCheckpoints] = useState<Checkpoint[]>(checkpointsInit);
-  const [synergyStatus, setSynStatus] = useState<Record<string, SynergyStatus | undefined>>({});
   const timer = useRef<number | undefined>(undefined);
 
   const showToast = useCallback((msg: string) => {
@@ -87,15 +93,15 @@ export function MockProvider({ children }: { children: ReactNode }) {
     timer.current = window.setTimeout(() => setToast(null), 3500);
   }, []);
 
-  const synergies = useMemo(
-    () => [...buildSynergies({ tasks, pjs, items, today: TODAY, members }), ...fixedSynergies],
-    [pjs, items],
-  );
+  const linkCtx = useMemo<LinkCtx>(() => ({ pjs: pjsInit, items, overrides }), [items, overrides]);
 
   const value = useMemo<MockState>(
     () => ({
       screen,
       setScreen,
+      viewerId,
+      setViewerId,
+      isOwner: viewerId === OWNER_ID,
       items,
       locked,
       lockedAt: QUARTER_INFO[CURRENT_QUARTER].lockedAt,
@@ -113,37 +119,54 @@ export function MockProvider({ children }: { children: ReactNode }) {
         setImported(false);
         setResolutions({});
       },
-      pjs,
-      linkPj: (pjId, tfId) =>
-        setPjs((p) => p.map((x) => (x.id === pjId && !x.tfIds.includes(tfId) ? { ...x, tfIds: [...x.tfIds, tfId] } : x))),
-      unlinkPj: (pjId, tfId) =>
-        setPjs((p) => p.map((x) => (x.id === pjId ? { ...x, tfIds: x.tfIds.filter((t) => t !== tfId) } : x))),
+      kintone: kintoneTexts,
+      records,
+      checkins,
+      decisions,
+      confirmImport: (resourceId, values) => {
+        const res = resources.find((r) => r.id === resourceId);
+        if (!res) return;
+        const ci = res.checkinId === nextCheckin.id ? nextCheckin : checkins.find((c) => c.id === res.checkinId);
+        if (!ci) return;
+        setRecords((p) => applyDrafts(p, res.drafts, values, ci.date));
+        setCheckins((p) => (p.some((c) => c.id === ci.id) ? p : [...p, ci]));
+        setDecisions((p) => [
+          ...p.filter((d) => d.checkinId !== ci.id),
+          ...res.decisions.map((d, i) => ({ ...d, id: `${ci.id}-${i}`, checkinId: ci.id })),
+        ]);
+      },
       selectedKr,
       setSelectedKr,
-      openKr: (id) => {
+      openKrRow: (id) => {
         setSelectedKr(id);
-        setScreen("kr");
+        setScreen("table");
       },
-      teamId,
-      setTeamId,
-      reminded,
-      markReminded: (ids) => setReminded((p) => new Set([...p, ...ids])),
+      overrides,
+      setOverride: (taskId, krId) =>
+        setOverrides((p) => {
+          const n = { ...p };
+          if (krId) n[taskId] = krId;
+          else delete n[taskId];
+          return n;
+        }),
+      linkCtx,
+      proposals,
+      setProposal: (taskId, v) => setProposals((p) => ({ ...p, [taskId]: v })),
+      how,
+      setHow: (taskId, text) => setHowState((p) => ({ ...p, [taskId]: text })),
+      personalLinks,
+      togglePersonalLink: (personalId, krId) =>
+        setPersonalLinks((p) =>
+          p.some((l) => l.personalId === personalId && l.krId === krId)
+            ? p.filter((l) => !(l.personalId === personalId && l.krId === krId))
+            : [...p, { personalId, krId }],
+        ),
+      answers,
+      setAnswer: (krId, patch) => setAnswers((p) => ({ ...p, [krId]: { ...p[krId], ...patch } })),
       toast,
       showToast,
-      kintone: kintoneTexts,
-      reports,
-      setReport: (tfId, patch) =>
-        setReports((p) => ({ ...p, [tfId]: { ...(p[tfId] ?? { level: "順調", note: "" }), ...patch, date: TODAY } })),
-      checkpoints,
-      decImported: checkpoints.some((c) => c.month === "2026-12"),
-      importCheckpoints: () => setCheckpoints((p) => (p.some((c) => c.month === "2026-12") ? p : [...p, ...checkpointsDec])),
-      synergies,
-      synergyStatus,
-      setSynergyStatus: (id, st) => setSynStatus((p) => ({ ...p, [id]: st })),
-      pendingSynergies: synergies.filter((x) => !synergyStatus[x.id]),
-      pickedSynergies: synergies.filter((x) => synergyStatus[x.id] === "picked"),
     }),
-    [screen, items, locked, imported, resolutions, pjs, selectedKr, teamId, reminded, toast, showToast, reports, checkpoints, synergies, synergyStatus],
+    [screen, viewerId, items, locked, imported, resolutions, records, checkins, decisions, selectedKr, overrides, linkCtx, proposals, how, personalLinks, answers, toast, showToast],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
@@ -159,11 +182,4 @@ export function useCompareRows() {
       ),
     [items, kintone],
   );
-}
-
-/** 画面で選んでいるチームの「今週」（前回チェックインの翌日〜今回のチェックイン日） */
-export function useWeek() {
-  const { teamId } = useMock();
-  const team = teams.find((t) => t.id === teamId) ?? teams[0];
-  return { team, win: weekWindow(TODAY, team.checkinWeekday) };
 }

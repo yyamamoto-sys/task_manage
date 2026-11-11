@@ -7,18 +7,17 @@ import { DiffText } from "../ui";
 
 const QUARTERS: Quarter[] = ["3Q", "4Q"];
 
-export function ImportScreen() {
-  const { locked, lockedAt, imported, setImported, resolutions, setResolution, lock, unlockDemo, showToast, items, checkpoints, decImported, importCheckpoints } = useMock();
+export function GoalsScreen() {
+  const { locked, lockedAt, imported, setImported, resolutions, setResolution, lock, unlockDemo, showToast, items } = useMock();
   const [q, setQ] = useState<Quarter>(CURRENT_QUARTER);
   const rows = useCompareRows();
   const diffRows = rows.filter((r) => !r.same);
   const ready = canLock(rows, resolutions);
   const half = items.filter((i) => i.kind !== "tf");
-  const months = [...new Set(checkpoints.map((c) => c.month))].sort();
 
   return (
     <div>
-      <h1 className="mk-h1">② 取り込み・突き合わせ</h1>
+      <h1 className="mk-h1">目標の取り込み</h1>
       <p className="mk-lead">
         目標とKRは半期の間ずっと固定です。TFは四半期ごとに、Kintoneで確定した内容と見比べて確定し、ロックします。
       </p>
@@ -185,29 +184,6 @@ export function ImportScreen() {
           )}
         </>
       )}
-
-      <h2 className="mk-h2">月初のチェックポイント</h2>
-      <div className="mk-card">
-        <p className="mk-muted" style={{ marginTop: 0 }}>
-          Kintoneの「月次の計画（プロセス評価基準）」に当たるものです。TFごと・月ごとに1〜2行。KR詳細とチェックインに、タスクの動きと並べて出します。
-        </p>
-        <div className="mk-row">
-          <span>取込済み：{months.map((m) => `${Number(m.slice(5))}月`).join("・")}</span>
-          <span className="mk-spacer" />
-          <button
-            type="button"
-            className="mk-btn mk-btn-primary"
-            disabled={decImported}
-            onClick={() => {
-              importCheckpoints();
-              showToast("今月のチェックポイントを取り込みました（モックでは12月分が入ります）");
-            }}
-          >
-            今月のチェックポイントを取り込む
-          </button>
-        </div>
-        <p className="mk-muted">{decImported ? "12月分を取り込みました。" : "12月分は未取込です。モックなので、押すと12月分が入ります。"}</p>
-      </div>
     </div>
   );
 }
