@@ -39,6 +39,14 @@ export interface ReleaseNoteEntry {
 
 export const RELEASE_NOTES: ReleaseNoteEntry[] = [
   {
+    version: "v3.215",
+    date: "2026-11-11",
+    title: "ダッシュボードのKR枠から、古い信号の丸印を外しました",
+    highlights: [
+      "ダッシュボードの各KRの横に出ていた、最近4週の色つきの丸印（緑・黄・赤）を表示しないようにしました。入力画面が終了済みで新しい記録が入らず、古い内容が出続けていたためです。",
+    ],
+  },
+  {
     version: "v3.214",
     date: "2026-11-10",
     title: "PJに紐づけたOKRの内容が、AIに伝わるようになりました",

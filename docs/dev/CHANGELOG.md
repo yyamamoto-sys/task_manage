@@ -8759,3 +8759,8 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 * 修正：`buildLinkedOkrByPj`（payloadBuilder.ts・AI相談とカルテ分析で共用）が PJごとに `linked_okr`（tf_label・tf_name・tf_purpose・tf_leader・quarter・is_current_quarter・kr_label・kr_title・objective_title・objective_period・is_current_objective）を作る。今期外・現在Objective外の紐づけも quarter 付きで含める。KR番号は所属Objective内の並び順に統一。`useAIConsultation` が `objectives` も渡す。
 * systemPrompt：linked_okr を読み、紐づくKR・TFへの貢献の観点で答えさせる。前の回答の「紐づいていない」は引き継がず今回のペイロードを正とする。内部フィールド名を返答に出さない v3.210 のルールは維持。カルテ分析のプロンプトにも【紐づくOKR】とOKR連動の観点を追加。
 * テスト：`payloadBuilderLinkedOkr.test.ts`（修正前コードで赤を確認）・`projectAnalysisLinkedOkr.test.ts`。
+
+# v3.215（2026-11-11）：ダッシュボードのKR枠から kr_sessions 由来の信号ドットを撤去
+* 事実：`DashboardView.tsx` のKR枠にある最新4週の 🟢🟡🔴 ドットは `kr_sessions` を読んでいたが、入力画面は 2026-08-10 にアーカイブ済みで新しいデータは入らず、古い値が出続けていた。
+* 修正：ドット表示と、そのためだけの `fetchKrSessions` 読み込み（effect・state・import）を削除。テーブル・データ・`krSessionStore.ts` は残す（他の利用箇所：`components/lab/*`（KrJointSessionFlow・KrReportPanel・KrWhyPanel・KrQuarterPlanPanel）、`components/okr/*`（アーカイブ済み画面・OkrKrAnalysisPanel））。
+* `uiGuide.ts` に当該ドットの説明は無く、変更なし。マイグレーションなし。

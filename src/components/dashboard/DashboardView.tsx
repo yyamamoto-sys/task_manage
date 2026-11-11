@@ -28,7 +28,6 @@ import { computeKpiInProgressCount, computeKpiWeekCompletion } from "../../lib/d
 import { tfsForKr } from "../../lib/okr/tfQuarter";
 import { KEYS, active } from "../../lib/localData/localStore";
 import { InlineEditAssignee } from "../common/InlineEditAssignee";
-import { fetchKrSessions, type KrSession } from "../../lib/supabase/krSessionStore";
 import { ProjectKarte } from "./ProjectKarte";
 import { DueForecastChart } from "./DueForecastChart";
 import { computeDueForecast } from "../../lib/computeDueForecast";
@@ -93,7 +92,6 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
 
   const [selectedPjIds, setSelectedPjIds] = useState<string[]>([]);
   const [activeKrId, setActiveKrId] = useState<string | null>(null);
-  const [krSessionsMap, setKrSessionsMap] = useState<Record<string, KrSession[]>>({});
   // KR進捗サマリーのTF内訳（既定は折りたたみ。密度を下げてスキャンしやすくする）
   const [expandedKrTfIds, setExpandedKrTfIds] = useState<Set<string>>(new Set());
 
@@ -116,23 +114,6 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
   const todos      = useMemo(() => (rawTodos ?? []).filter((td: ToDo) => !td.is_deleted), [rawTodos]);
   const milestones = useMemo(() => (rawMs ?? []).filter(m => !m.is_deleted), [rawMs]);
   const projectTaskForces = rawPtfs;
-
-  // KRごとのシグナル履歴をフェッチ（最大4週分）
-  useEffect(() => {
-    if (krs.length === 0) return;
-    Promise.all(
-      krs.map(kr => fetchKrSessions(kr.id).then(sessions => ({ krId: kr.id, sessions })))
-    ).then(results => {
-      const map: Record<string, KrSession[]> = {};
-      for (const { krId, sessions } of results) {
-        map[krId] = sessions.slice(0, 8); // 最新8セッション（チェックイン+ウィン計4週分）
-      }
-      setKrSessionsMap(map);
-    }).catch((e: unknown) => {
-      // ダッシュボードのKRシグナル表示は補助情報なので失敗時は console 警告のみで継続
-      console.warn("KRセッション取得失敗（ダッシュボード表示は継続）:", e);
-    });
-  }, [krs]);
 
   // 実効PJフィルター：サイドバーでPJ選択中ならそれを優先。未選択時はダッシュボード内チップ／KRクリックで選んだPJ。
   const effectivePjIds = useMemo(
@@ -837,25 +818,6 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
                       {kr.title}
                     </span>
                     <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
-                      {/* シグナル履歴ドット（最新4週、古い順） */}
-                      {(krSessionsMap[kr.id] ?? []).slice(0, 4).reverse().map((s, si) => {
-                        const dot = s.signal === "green" ? { bg: "var(--color-signal-green)", title: "🟢" }
-                          : s.signal === "yellow" ? { bg: "var(--color-signal-yellow)", title: "🟡" }
-                          : s.signal === "red" ? { bg: "var(--color-signal-red)", title: "🔴" }
-                          : { bg: "#d1d5db", title: "−" };
-                        const typeLabel = s.session_type === "checkin" ? "C" : "W";
-                        return (
-                          <span
-                            key={si}
-                            title={`${s.week_start} ${typeLabel}: ${dot.title}`}
-                            style={{
-                              display: "inline-block",
-                              width: "8px", height: "8px", borderRadius: "50%",
-                              background: dot.bg, opacity: 0.85, cursor: "default",
-                            }}
-                          />
-                        );
-                      })}
                       <span style={{ fontSize: "12px", fontWeight: "700", color: krColor }}>{pct}%</span>
                     </div>
                   </div>
