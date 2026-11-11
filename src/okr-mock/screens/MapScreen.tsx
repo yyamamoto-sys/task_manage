@@ -1,16 +1,17 @@
 import { tasks } from "../fixtures";
-import { movement, pjsForKr, tasksForKr, tasksForTf, TODAY, unconnectedPjs } from "../logic";
-import { useMock } from "../state";
+import { movement, pjsForKr, tasksForAll, tasksForKr, tasksForTf, TODAY, unconnectedPjs, type Window } from "../logic";
+import { useMock, useWeek } from "../state";
 import type { Task } from "../types";
-import { Avatars } from "../ui";
+import { Avatars, ScopeBadge, SharedMark, WeekNote } from "../ui";
 
-function Stats({ list, pjCount }: { list: Task[]; pjCount: number }) {
-  const mv = movement(list, TODAY);
+function Stats({ list, pjCount, win }: { list: Task[]; pjCount: number; win: Window }) {
+  const mv = movement(list, TODAY, win);
   return (
     <div className="mk-stats">
       <span>PJ {pjCount}件</span>
       <span>タスク {list.length}件</span>
-      <span className="mk-chip">直近7日：更新 {mv.updated}</span>
+      <ScopeBadge tasks={list} />
+      <span className="mk-chip">今週：更新 {mv.updated}</span>
       <span className="mk-chip mk-chip-green">完了 {mv.completed}</span>
       <span className={`mk-chip ${mv.overdue > 0 ? "mk-chip-red" : ""}`}>期日超過 {mv.overdue}</span>
     </div>
@@ -21,22 +22,30 @@ const memberIds = (list: Task[]) => [...new Set(list.map((t) => t.assigneeId))];
 
 export function MapScreen() {
   const { items, pjs, locked, linkPj, unlinkPj, openKr } = useMock();
+  const { win } = useWeek();
   const obj = items.find((i) => i.kind === "objective")!;
   const krs = items.filter((i) => i.kind === "kr");
   const loose = unconnectedPjs(pjs);
   const tfOptions = items.filter((i) => i.kind === "tf");
+  const allTasks = tasksForAll(tasks, pjs);
+  const krSum = krs.reduce((n, k) => n + tasksForKr(tasks, pjs, items, k.id).length, 0);
 
   return (
     <div>
       <h1 className="mk-h1">③ OKRマップ</h1>
       <p className="mk-lead">どのPJ・タスクが、どの目標に効いているかを見る画面です。目標の文言は変えられません。紐づけだけ付け替えられます。</p>
+      <WeekNote />
 
       <div className="mk-card mk-obj">
         <div className="mk-row">
           <span className="mk-chip mk-chip-blue">目標</span>
           <strong style={{ fontSize: 17 }}>{obj.text}</strong>
           <span className="mk-spacer" />
-          <span className="mk-lock">{locked ? "🔒 確定済み・文言は変更不可" : "未確定（②で確定します）"}</span>
+          <span className="mk-lock">🔒 半期の間は変更不可</span>
+        </div>
+        <div className="mk-stats">
+          <span>全体：PJ {pjs.filter((p) => p.tfIds.length > 0).length}件・タスク {allTasks.length}件（共有PJは1回だけ数えています）</span>
+          {krSum !== allTasks.length && <span className="mk-muted">KRごとの合計は{krSum}件。別のKRと共有するPJのタスクが、KRごとには数えられるため。</span>}
         </div>
       </div>
 
@@ -49,14 +58,14 @@ export function MapScreen() {
             <div className="mk-row">
               <span className="mk-chip mk-chip-blue">{kr.label}</span>
               <strong>{kr.text}</strong>
-              <span className="mk-lock">{locked ? "🔒" : ""}</span>
+              <span className="mk-lock">🔒</span>
               <span className="mk-spacer" />
               <Avatars ids={memberIds(krTasks)} />
               <button type="button" className="mk-btn mk-btn-sm" onClick={() => openKr(kr.id)}>
                 詳細を見る
               </button>
             </div>
-            <Stats list={krTasks} pjCount={krPjs.length} />
+            <Stats list={krTasks} pjCount={krPjs.length} win={win} />
             <div className="mk-tfs">
               {tfs.map((tf) => {
                 const tfTasks = tasksForTf(tasks, pjs, tf.id);
@@ -69,7 +78,7 @@ export function MapScreen() {
                       <strong className="mk-small">{tf.text}</strong>
                       <span className="mk-lock">{locked ? "🔒" : ""}</span>
                     </div>
-                    <Stats list={tfTasks} pjCount={linked.length} />
+                    <Stats list={tfTasks} pjCount={linked.length} win={win} />
                     <div style={{ margin: "4px 0 6px" }}>
                       <Avatars ids={memberIds(tfTasks)} />
                     </div>
@@ -78,7 +87,7 @@ export function MapScreen() {
                       {linked.map((p) => (
                         <span key={p.id} className="mk-pj-pill">
                           {p.name}
-                          {p.tfIds.length > 1 && <span title="複数の取り組みに紐づいています">＊</span>}
+                          <SharedMark pj={p} items={items} exceptTfId={tf.id} />
                           <button type="button" aria-label={`${p.name}の紐づけを外す`} onClick={() => unlinkPj(p.id, tf.id)}>
                             ×
                           </button>

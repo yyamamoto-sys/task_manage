@@ -1,19 +1,23 @@
 import { tasks } from "../fixtures";
 import { formatMd, movement, pjsForKr, tasksForKr, TODAY, weeklyCompleted } from "../logic";
-import { useMock } from "../state";
-import { memberOf, DueLabel, StatusChip, Avatar } from "../ui";
+import { useMock, useWeek } from "../state";
+import { memberOf, DueLabel, StatusChip, Avatar, ScopeBadge, SharedMark, WeekNote } from "../ui";
+import { TfStatus } from "./TfStatus";
 
 const WEEK_LABELS = ["3週前", "2週前", "先週", "今週"];
 
 export function KrDetailScreen() {
-  const { items, pjs, selectedKr, setSelectedKr } = useMock();
+  const { items, pjs, selectedKr, setSelectedKr, synergies, synergyStatus, setScreen } = useMock();
+  const { win } = useWeek();
   const krs = items.filter((i) => i.kind === "kr");
   const kr = krs.find((k) => k.id === selectedKr) ?? krs[0];
   const list = tasksForKr(tasks, pjs, items, kr.id).sort((a, b) => a.due.localeCompare(b.due));
   const krPjs = pjsForKr(pjs, items, kr.id);
   const bars = weeklyCompleted(list, TODAY, 4);
   const max = Math.max(1, ...bars);
-  const mv = movement(list, TODAY);
+  const mv = movement(list, TODAY, win);
+  const krSynergies = synergies.filter((s) => s.krIds.includes(kr.id));
+  const krPending = krSynergies.filter((s) => !synergyStatus[s.id]).length;
   const pjName = (id: string) => pjs.find((p) => p.id === id)?.name ?? "";
 
   return (
@@ -26,15 +30,16 @@ export function KrDetailScreen() {
           </button>
         ))}
       </div>
+      <WeekNote />
       <div className="mk-card">
         <strong style={{ fontSize: 17 }}>
           {kr.label} {kr.text}
         </strong>{" "}
-        <span className="mk-lock">🔒 変更不可</span>
+        <span className="mk-lock">🔒 半期の間は変更不可</span> <ScopeBadge tasks={list} />
         <div className="mk-stats" style={{ marginTop: 8 }}>
           <span>PJ {krPjs.length}件</span>
-          <span>タスク {list.length}件</span>
-          <span className="mk-chip">直近7日：更新 {mv.updated}</span>
+          <span>タスク {list.length}件（共有PJは1回だけ数えています）</span>
+          <span className="mk-chip">今週：更新 {mv.updated}</span>
           <span className="mk-chip mk-chip-green">完了 {mv.completed}</span>
           <span className={`mk-chip ${mv.overdue ? "mk-chip-red" : ""}`}>期日超過 {mv.overdue}</span>
         </div>
@@ -53,17 +58,28 @@ export function KrDetailScreen() {
             ))}
           </div>
         </div>
-        <div className="mk-ai-slot">
-          <strong>AIによるシナジーの候補（次版）</strong>
-          <p style={{ margin: "6px 0 0" }}>このKRに効いているPJの組み合わせから、相乗効果が見込める動きをAIが提案する枠です。今回は表示のみ。</p>
+        <div className="mk-card">
+          <strong>つながりの候補</strong>
+          <p style={{ margin: "6px 0" }}>
+            このKRに関わる候補が{krSynergies.length}件あります（取り上げ待ち {krPending}件）。
+          </p>
+          <button type="button" className="mk-btn mk-btn-sm" onClick={() => setScreen("link")}>
+            つながりの画面を開く
+          </button>
         </div>
+      </div>
+
+      <h2 className="mk-h2">TFの状況（タスクの動き・リーダーの申告・今月のチェックポイント）</h2>
+      <div className="mk-card">
+        <TfStatus krId={kr.id} />
       </div>
 
       <h2 className="mk-h2">紐づくPJ</h2>
       <div>
         {krPjs.map((p) => (
-          <span key={p.id} className="mk-chip mk-chip-blue" style={{ marginRight: 6 }}>
-            {p.name}
+          <span key={p.id} style={{ marginRight: 10, display: "inline-block", marginBottom: 4 }}>
+            <span className="mk-chip mk-chip-blue">{p.name}</span>
+            <SharedMark pj={p} items={items} />
           </span>
         ))}
       </div>

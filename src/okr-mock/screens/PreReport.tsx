@@ -1,24 +1,30 @@
 import { useMemo, useState } from "react";
 import { members, tasks } from "../fixtures";
-import { buildMatrix, buildPreReport, buildReportMarkdown, diffDays, formatMd, tasksForKr, TODAY, type MemberTasks } from "../logic";
+import { buildMatrix, buildPreReport, buildReportMarkdown, checkpointOf, diffDays, formatMd, formatWindow, SYNERGY_LABEL, tasksForKr, TODAY, type MemberTasks } from "../logic";
 import { useMock } from "../state";
 import type { Task, Team } from "../types";
 import { DueLabel, StatusChip } from "../ui";
+import { SynergyBody } from "./LinkScreen";
 import { ReminderModal } from "./ReminderModal";
+import { TfStatus } from "./TfStatus";
 
 export function PreReport({ team }: { team: Team }) {
-  const { items, pjs, reminded, markReminded, showToast } = useMock();
+  const { items, pjs, reminded, markReminded, showToast, pickedSynergies, reports, checkpoints } = useMock();
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [modal, setModal] = useState(false);
+  const [includeManager, setIncludeManager] = useState(true);
 
   const report = useMemo(() => buildPreReport({ team, members, items, pjs, tasks, today: TODAY }), [team, items, pjs]);
   const krs = items.filter((i) => i.kind === "kr");
   const teamMembers = members.filter((m) => m.teamId === team.id);
+  const matrixMembers = includeManager
+    ? [...teamMembers, ...members.filter((m) => m.isManager && m.teamId !== team.id)]
+    : teamMembers.filter((m) => !m.isManager);
   const matrix = useMemo(() => {
     const byKr = Object.fromEntries(krs.map((k) => [k.id, tasksForKr(tasks, pjs, items, k.id)]));
-    return buildMatrix(teamMembers, krs.map((k) => k.id), byKr, TODAY);
+    return buildMatrix(matrixMembers, krs.map((k) => k.id), byKr, report.window);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [team, items, pjs]);
+  }, [team, items, pjs, includeManager, report]);
   const pjName = (id: string) => pjs.find((p) => p.id === id)?.name ?? "";
   const label = (id: string) => items.find((i) => i.id === id)?.label ?? "";
   const text = (id: string) => items.find((i) => i.id === id)?.text ?? "";
@@ -45,7 +51,7 @@ export function PreReport({ team }: { team: Team }) {
       <td>
         <StatusChip status={t.status} />
       </td>
-      <td>{reminded.has(t.id) && <span className="mk-chip mk-chip-yellow">催促済み</span>}</td>
+      <td>{reminded.has(t.id) && <span className="mk-chip mk-chip-yellow">文面コピー済み</span>}</td>
     </tr>
   );
 
@@ -71,7 +77,15 @@ export function PreReport({ team }: { team: Team }) {
       </>
     );
 
-  const md = () => buildReportMarkdown({ report, krLabel: label, tfLabel: label, pjName, today: TODAY });
+  const selfLines = items
+    .filter((i) => i.kind === "tf")
+    .map((tf) => {
+      const r = reports[tf.id];
+      const cp = checkpointOf(checkpoints, tf.id, TODAY.slice(0, 7));
+      return `- ${tf.label} ${tf.text}：${r ? `${r.level}（${formatMd(r.date)}）${r.note}` : "申告なし"}／今月のチェックポイント：${cp?.text ?? "未取込"}`;
+    });
+  const linkLines = pickedSynergies.map((s) => `- [${SYNERGY_LABEL[s.type]}] ${s.krIds.map(label).join("・")}：${s.summary}`);
+  const md = () => buildReportMarkdown({ report, krLabel: label, tfLabel: label, pjName, today: TODAY, selfLines, linkLines });
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(md());
@@ -87,7 +101,7 @@ export function PreReport({ team }: { team: Team }) {
     <div>
       <div className="mk-row print-hide" style={{ marginBottom: 10 }}>
         <button type="button" className="mk-btn mk-btn-primary" disabled={picked.size === 0} onClick={() => setModal(true)}>
-          催促を送る（{picked.size}件選択中）
+          催促の文面を作る（{picked.size}件選択中）
         </button>
         <span className="mk-spacer" />
         <button type="button" className="mk-btn" onClick={copy}>
@@ -101,6 +115,10 @@ export function PreReport({ team }: { team: Team }) {
         <h2 className="mk-h2" style={{ marginTop: 0 }}>
           {team.name} 事前レポート（チェックイン {formatMd(report.checkin)}）
         </h2>
+
+        <p className="mk-small" style={{ margin: "0 0 4px" }}>
+          今週の動きの期間：<strong>{formatWindow(report.window)}</strong>（前回チェックインの翌日〜今回のチェックイン日）
+        </p>
 
         <h3 className="mk-h2">
           チェックイン日までに期日が来る未完了のタスク <span className="mk-chip">{report.dueSoon.reduce((n, g) => n + g.tasks.length, 0)}件</span>
@@ -138,14 +156,54 @@ export function PreReport({ team }: { team: Team }) {
                   <td className="mk-small">{pjName(t.pjId)}</td>
                   <td className="mk-small">{members.find((m) => m.id === t.assigneeId)?.name}</td>
                   <td className="mk-small">{diffDays(TODAY, t.updated)}日動きなし</td>
-                  <td>{reminded.has(t.id) && <span className="mk-chip mk-chip-yellow">催促済み</span>}</td>
+                  <td>{reminded.has(t.id) && <span className="mk-chip mk-chip-yellow">文面コピー済み</span>}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
 
-        <h3 className="mk-h2">メンバー × KR（直近7日の更新／未完了）</h3>
+        <h3 className="mk-h2">タスク未登録</h3>
+        {report.unregisteredKrIds.length + report.unregisteredTfIds.length === 0 ? (
+          <p className="mk-muted">ありません。</p>
+        ) : (
+          <div style={{ marginBottom: 6 }}>
+            {[...report.unregisteredKrIds, ...report.unregisteredTfIds].map((id) => (
+              <span key={id} className="mk-chip mk-chip-yellow" style={{ marginRight: 6 }}>
+                {label(id)} {text(id)}（タスク未登録）
+              </span>
+            ))}
+          </div>
+        )}
+
+        <h3 className="mk-h2">TFリーダーの申告と今月のチェックポイント</h3>
+        {krs.map((k) => (
+          <div key={k.id} style={{ marginBottom: 8 }}>
+            <strong className="mk-small">
+              {k.label} {k.text}
+            </strong>
+            <TfStatus krId={k.id} />
+          </div>
+        ))}
+
+        <h3 className="mk-h2">つながり（チェックインで取り上げるもの）</h3>
+        {pickedSynergies.length === 0 ? (
+          <p className="mk-muted">取り上げると決めた候補はありません。「つながり」の画面で選べます。</p>
+        ) : (
+          pickedSynergies.map((s) => (
+            <div key={s.id} className="mk-card" style={{ boxShadow: "none" }}>
+              <SynergyBody s={s} />
+            </div>
+          ))
+        )}
+
+        <div className="mk-row" style={{ margin: "20px 0 8px" }}>
+          <h3 className="mk-h2" style={{ margin: 0 }}>メンバー × KR（今週の更新／未完了）</h3>
+          <span className="mk-spacer" />
+          <label className="mk-small print-hide">
+            <input type="checkbox" checked={includeManager} onChange={(e) => setIncludeManager(e.target.checked)} /> マネージャー本人を含める
+          </label>
+        </div>
         <div className="mk-table-wrap">
           <table className="mk-table mk-matrix">
             <thead>
@@ -156,12 +214,16 @@ export function PreReport({ team }: { team: Team }) {
                     {k.label}
                   </th>
                 ))}
+                <th style={{ textAlign: "center" }}>合計（重複なし）</th>
               </tr>
             </thead>
             <tbody>
-              {matrix.map((r) => (
+              {matrix.rows.map((r) => (
                 <tr key={r.member.id}>
-                  <td>{r.member.name}</td>
+                  <td>
+                    {r.member.name}
+                    {r.member.isManager && <span className="mk-muted">（マネージャー）</span>}
+                  </td>
                   {krs.map((k) => {
                     const c = r.cells[k.id];
                     const warn = c.open > 0 && c.updated === 0;
@@ -171,12 +233,32 @@ export function PreReport({ team }: { team: Team }) {
                       </td>
                     );
                   })}
+                  <td className="mk-cell">
+                    <strong>{r.total.updated === 0 && r.total.open === 0 ? "—" : `更新${r.total.updated}／未完了${r.total.open}`}</strong>
+                  </td>
                 </tr>
               ))}
+              <tr>
+                <td>
+                  <strong>合計</strong>
+                </td>
+                {krs.map((k) => (
+                  <td key={k.id} className="mk-cell">
+                    更新{matrix.footer.cells[k.id].updated}／未完了{matrix.footer.cells[k.id].open}
+                  </td>
+                ))}
+                <td className="mk-cell">
+                  <strong>
+                    更新{matrix.footer.total.updated}／未完了{matrix.footer.total.open}
+                  </strong>
+                </td>
+              </tr>
             </tbody>
           </table>
         </div>
-        <p className="mk-muted">色が濃いほど今週の更新が多い。黄色の枠は、未完了があるのに今週まったく動いていないところ。</p>
+        <p className="mk-muted">
+          色が濃いほど今週の更新が多い。黄色の枠は、未完了があるのに今週まったく動いていないところ。複数のKRにまたがる共有PJのタスクは、KRごとには数えますが、右端と下の合計では1回だけ数えています。
+        </p>
       </div>
 
       {modal && (
@@ -184,12 +266,7 @@ export function PreReport({ team }: { team: Team }) {
           selected={selectedTasks}
           checkin={report.checkin}
           onClose={() => setModal(false)}
-          onSend={() => {
-            markReminded(selectedTasks.map((t) => t.id));
-            setPicked(new Set());
-            setModal(false);
-            showToast("送信済み（モック）");
-          }}
+          onCopied={(ids) => markReminded(ids)}
         />
       )}
     </div>

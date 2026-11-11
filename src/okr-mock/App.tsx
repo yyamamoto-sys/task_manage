@@ -5,6 +5,7 @@ import { CheckinScreen } from "./screens/CheckinScreen";
 import { HomeScreen } from "./screens/HomeScreen";
 import { ImportScreen } from "./screens/ImportScreen";
 import { KrDetailScreen } from "./screens/KrDetailScreen";
+import { LinkScreen } from "./screens/LinkScreen";
 import { MapScreen } from "./screens/MapScreen";
 import { Placeholder } from "./screens/Placeholder";
 
@@ -13,13 +14,14 @@ const NAV: { id: ScreenId; no: string; label: string }[] = [
   { id: "import", no: "②", label: "取り込み・突き合わせ" },
   { id: "map", no: "③", label: "OKRマップ" },
   { id: "kr", no: "④", label: "KR詳細" },
+  { id: "link", no: "◎", label: "つながり" },
   { id: "checkin", no: "⑤", label: "チェックイン" },
   { id: "review", no: "⑥", label: "期末の振り返り" },
   { id: "plan", no: "⑦", label: "計画（次期の下書き）" },
 ];
 
 function Shell() {
-  const { screen, setScreen, toast, locked } = useMock();
+  const { screen, setScreen, toast, locked, pendingSynergies } = useMock();
   const [dark, setDark] = useState(false);
   useEffect(() => {
     if (dark) document.documentElement.setAttribute("data-theme", "dark");
@@ -48,6 +50,7 @@ function Shell() {
               <span className="mk-nav-no">{n.no}</span>
               <span className="mk-nav-label">{n.label}</span>
               {n.id === "import" && !locked && <span className="mk-dot" title="確定待ち" />}
+              {n.id === "link" && pendingSynergies.length > 0 && <span className="mk-chip mk-chip-yellow" style={{ marginLeft: "auto" }}>{pendingSynergies.length}</span>}
             </button>
           ))}
         </nav>
@@ -56,6 +59,7 @@ function Shell() {
           {screen === "import" && <ImportScreen />}
           {screen === "map" && <MapScreen />}
           {screen === "kr" && <KrDetailScreen />}
+          {screen === "link" && <LinkScreen />}
           {screen === "checkin" && <CheckinScreen />}
           {screen === "review" && (
             <Placeholder title="⑥ 期末の振り返り" note="期の終わりに、KRごとの結果と学びを振り返る画面です。次版で作成します。" />

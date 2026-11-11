@@ -1,20 +1,25 @@
 import { useState } from "react";
 import { lastMemos, members, tasks } from "../fixtures";
-import { addDays, dueBeforeCheckin, formatFull, formatMd, movement, nextCheckinDate, overdueTasks, tasksForKr, TODAY } from "../logic";
+import { addDays, dueBeforeCheckin, formatFull, formatMd, formatWindow, movement, nextCheckinDate, overdueTasks, tasksForKr, TODAY, weekWindow } from "../logic";
 import { useMock } from "../state";
 import type { Team } from "../types";
 import { memberOf } from "../ui";
+import { SynergyBody } from "./LinkScreen";
+import { TfStatus } from "./TfStatus";
 
 export function MeetingMode({ team }: { team: Team }) {
-  const { items, pjs } = useMock();
+  const { items, pjs, pickedSynergies } = useMock();
   const krs = items.filter((i) => i.kind === "kr");
   const [step, setStep] = useState(0);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [done, setDone] = useState(false);
   const checkin = nextCheckinDate(TODAY, team.checkinWeekday);
+  const win = weekWindow(TODAY, team.checkinWeekday);
   const ids = new Set(members.filter((m) => m.teamId === team.id).map((m) => m.id));
   const memo = lastMemos[team.id];
-  const isSummary = step === krs.length;
+  const linkStep = krs.length;
+  const lastStep = krs.length + 1;
+  const isSummary = step === lastStep;
 
   if (done) {
     return (
@@ -36,15 +41,15 @@ export function MeetingMode({ team }: { team: Team }) {
   return (
     <div className="mk-meeting">
       <div className="mk-progress" aria-hidden="true">
-        {[...krs, null].map((_, i) => (
+        {[...krs, null, null].map((_, i) => (
           <i key={i} className={i <= step ? "on" : ""} />
         ))}
       </div>
-      {!isSummary ? (
+      {step < linkStep ? (
         (() => {
           const kr = krs[step];
           const list = tasksForKr(tasks, pjs, items, kr.id).filter((t) => ids.has(t.assigneeId));
-          const mv = movement(list, TODAY);
+          const mv = movement(list, TODAY, win);
           const late = overdueTasks(list, TODAY);
           const soon = dueBeforeCheckin(list, TODAY, checkin);
           return (
@@ -55,11 +60,14 @@ export function MeetingMode({ team }: { team: Team }) {
               <h2 className="mk-h1">
                 {kr.label} {kr.text}
               </h2>
+              <div className="mk-muted">今週の動きの期間：{formatWindow(win)}（前回チェックインの翌日〜今回）</div>
               <div className="mk-big-stats">
-                <div className="mk-big-stat"><b>{mv.updated}</b>件 更新（直近7日）</div>
+                <div className="mk-big-stat"><b>{mv.updated}</b>件 更新（今週）</div>
                 <div className="mk-big-stat"><b>{mv.completed}</b>件 完了</div>
                 <div className="mk-big-stat" style={late.length ? { background: "var(--color-bg-danger)" } : undefined}><b>{late.length}</b>件 遅れ</div>
               </div>
+              <h3 className="mk-h2">TFの状況（申告はここで変えられます）</h3>
+              <TfStatus krId={kr.id} editable />
               <h3 className="mk-h2">遅れているタスク</h3>
               {late.length === 0 && <p className="mk-muted">遅れはありません。</p>}
               <ul>
@@ -90,6 +98,17 @@ export function MeetingMode({ team }: { team: Team }) {
             </div>
           );
         })()
+      ) : step === linkStep ? (
+        <div className="mk-card">
+          <h2 className="mk-h1">つながり</h2>
+          <p className="mk-muted">「つながり」の画面で、チェックインで取り上げると決めた候補です。</p>
+          {pickedSynergies.length === 0 && <p>取り上げる候補はありません。</p>}
+          {pickedSynergies.map((s) => (
+            <div key={s.id} className="mk-card" style={{ boxShadow: "none" }}>
+              <SynergyBody s={s} />
+            </div>
+          ))}
+        </div>
       ) : (
         <div className="mk-card">
           <h2 className="mk-h1">今回のまとめ</h2>
@@ -109,7 +128,7 @@ export function MeetingMode({ team }: { team: Team }) {
           ← 前へ
         </button>
         <button type="button" className="mk-btn" disabled={isSummary} onClick={() => setStep(step + 1)}>
-          {step === krs.length - 1 ? "まとめへ →" : "次へ →"}
+          {step === lastStep - 1 ? "まとめへ →" : "次へ →"}
         </button>
       </div>
     </div>

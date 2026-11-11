@@ -1,10 +1,17 @@
 // 架空データのみ。実在の人物・会社・数値とは無関係。
 import { addDays, TODAY } from "./logic";
-import type { Member, OkrItem, Pj, Task, TaskStatus, Team, TeamMemo } from "./types";
+import type { Checkpoint, Member, OkrItem, Pj, Quarter, SelfReport, Synergy, Task, TaskStatus, Team, TeamMemo } from "./types";
 
-export const PERIOD_NAME = "2026年度 下期";
-export const PERIOD_RANGE = "2026年10月〜2027年3月";
-export const LOCKED_AT = "2026-10-01";
+// 暦年ベースの仮の定義：下期＝7〜12月、3Q＝7〜9月（終了）、4Q＝10〜12月（今期）
+export const PERIOD_NAME = "2026年 下期";
+export const PERIOD_RANGE = "2026年7月〜12月";
+/** 半期の目標・KRを確定した日 */
+export const LOCKED_AT = "2026-07-01";
+export const CURRENT_QUARTER: Quarter = "4Q";
+export const QUARTER_INFO: Record<Quarter, { range: string; lockedAt: string; ended: boolean }> = {
+  "3Q": { range: "7月〜9月", lockedAt: "2026-07-01", ended: true },
+  "4Q": { range: "10月〜12月", lockedAt: "2026-10-01", ended: false },
+};
 
 export const teams: Team[] = [
   { id: "ta", name: "チームA", checkinWeekday: 2 },
@@ -25,18 +32,19 @@ export const okrItems: OkrItem[] = [
   { id: "kr1", kind: "kr", parentId: "obj", label: "KR1", text: "共創パートナー企業を30社にする" },
   { id: "kr2", kind: "kr", parentId: "obj", label: "KR2", text: "地域拠点の稼働率を80%にする" },
   { id: "kr3", kind: "kr", parentId: "obj", label: "KR3", text: "社内の定型業務を月20時間減らす" },
-  { id: "tf11", kind: "tf", parentId: "kr1", label: "TF1-1", text: "新規開拓の進め方を仕組みにする" },
-  { id: "tf12", kind: "tf", parentId: "kr1", label: "TF1-2", text: "既存のお客様との関係を深める" },
-  { id: "tf21", kind: "tf", parentId: "kr2", label: "TF2-1", text: "拠点の予約までの流れを分かりやすくする" },
-  { id: "tf22", kind: "tf", parentId: "kr2", label: "TF2-2", text: "運営ボランティアを確保する" },
-  { id: "tf31", kind: "tf", parentId: "kr3", label: "TF3-1", text: "定型レポートを自動化する" },
-  { id: "tf32", kind: "tf", parentId: "kr3", label: "TF3-2", text: "社内の情報共有を一本化する" },
+  { id: "tf11", kind: "tf", parentId: "kr1", label: "TF1-1", text: "新規開拓の進め方を仕組みにする", quarters: ["3Q", "4Q"], leaderId: "m2" },
+  { id: "tf12", kind: "tf", parentId: "kr1", label: "TF1-2", text: "既存のお客様との関係を深める", quarters: ["3Q", "4Q"], leaderId: "m3" },
+  { id: "tf21", kind: "tf", parentId: "kr2", label: "TF2-1", text: "拠点の予約までの流れを分かりやすくする", quarters: ["3Q", "4Q"], leaderId: "m5" },
+  { id: "tf22", kind: "tf", parentId: "kr2", label: "TF2-2", text: "運営ボランティアを確保する", quarters: ["3Q", "4Q"], leaderId: "m4" },
+  { id: "tf31", kind: "tf", parentId: "kr3", label: "TF3-1", text: "定型レポートを自動化する", quarters: ["3Q", "4Q"], leaderId: "m3" },
+  { id: "tf32", kind: "tf", parentId: "kr3", label: "TF3-2", text: "社内の情報共有を一本化する", quarters: ["3Q", "4Q"], leaderId: "m6" },
+  { id: "tf33", kind: "tf", parentId: "kr3", label: "TF3-3", text: "AI活用の相談窓口をつくる", quarters: ["4Q"], leaderId: "m1" },
 ];
 
-/** Kintone の PDF から読んだ体のデータ。確定案と2か所だけ文言が違う */
+/** Kintone の PDF から読んだ体のデータ。確定案と2か所だけ文言が違う（どちらも今期のTF） */
 export const kintoneTexts: Record<string, string> = Object.fromEntries(okrItems.map((i) => [i.id, i.text]));
-kintoneTexts.kr2 = "地域拠点の稼働率を80％にする";
 kintoneTexts.tf22 = "運営ボランティアを継続的に確保する";
+kintoneTexts.tf33 = "AIの相談窓口をつくる";
 
 export const pjsInit: Pj[] = [
   { id: "p1", name: "パートナー向け提案資料の刷新", tfIds: ["tf11"] },
@@ -45,7 +53,7 @@ export const pjsInit: Pj[] = [
   { id: "p4", name: "拠点の予約サイト改修", tfIds: ["tf21"] },
   { id: "p5", name: "ボランティア募集キャンペーン", tfIds: ["tf22"] },
   { id: "p6", name: "月次レポートの自動化", tfIds: ["tf31"] },
-  { id: "p7", name: "社内ナレッジの整理", tfIds: ["tf32"] },
+  { id: "p7", name: "社内ナレッジの整理", tfIds: ["tf32", "tf22"] },
   { id: "p8", name: "社内交流イベントの運営", tfIds: [] },
 ];
 
@@ -116,6 +124,21 @@ const rows: Row[] = [
   ["p6", "共有フォルダの権限を整える", "m3", -1, "進行中", 8],
 ];
 
+/** 3Qは終了済み。3Qの構成（TF3-3が無い）を読み取り専用で見せるための項目 */
+export const okrItems3Q: OkrItem[] = okrItems.filter((i) => i.kind !== "tf" || (i.quarters ?? []).includes("3Q"));
+
+// 「つながり」の検出に使う相手・対象と前提（タイトルで指す。タイトルは一意）
+const subjects: Record<string, string> = {
+  "フォロー訪問の日程を押さえる": "北里フーズ",
+  "画面案を現場に見てもらう": "北里フーズ",
+  "活動のQ&Aをまとめる": "よくある質問集",
+  "よくある質問を集める": "よくある質問集",
+};
+const dependsOnTitle: Record<string, string[]> = {
+  "利用案内ページを更新する": ["ヒアリング結果の速報を出す"],
+  "過去の参加者に声をかける": ["名刺情報を入力する"],
+};
+
 export const tasks: Task[] = rows.map(([pjId, title, assigneeId, due, status, ago], i) => ({
   id: `t${i + 1}`,
   pjId,
@@ -124,7 +147,74 @@ export const tasks: Task[] = rows.map(([pjId, title, assigneeId, due, status, ag
   due: addDays(TODAY, due),
   status,
   updated: addDays(TODAY, -ago),
+  subject: subjects[title],
 }));
+for (const t of tasks) {
+  const deps = dependsOnTitle[t.title];
+  if (deps) t.dependsOn = deps.map((d) => tasks.find((x) => x.title === d)!.id);
+}
+
+const idOfTitle = (title: string) => tasks.find((t) => t.title === title)!.id;
+
+/** (c) 重複：モックでは固定の例（実際にはAIが提案する想定） */
+export const fixedSynergies: Synergy[] = [
+  {
+    id: "dup:thanks-reply",
+    type: "duplicate",
+    krIds: ["kr1", "kr2"],
+    taskIds: [idOfTitle("お礼状を送る"), idOfTitle("応募者への返信を行う")],
+    summary: "どちらも「お礼や返信の文面づくり」です。文面のひな形を共通にできるかもしれません。",
+    fixed: true,
+  },
+  {
+    id: "dup:guide-doc",
+    type: "duplicate",
+    krIds: ["kr2", "kr3"],
+    taskIds: [idOfTitle("利用案内ページを更新する"), idOfTitle("使い方メモを書く")],
+    summary: "どちらも「利用者向けの案内文書づくり」です。書き方の型や置き場所を揃えられるかもしれません。",
+    fixed: true,
+  },
+];
+
+// 今週（11/6〜11/10）の自己申告。TF3-2だけ前の週のまま
+export const selfReportsInit: Record<string, SelfReport> = {
+  tf11: { level: "順調", note: "提案資料の初稿は予定どおり。英語版は後ろ倒しにする。", date: "2026-11-07" },
+  tf12: { level: "注意", note: "ヒアリングが1社遅れている。お礼状の発送も溜まり気味。", date: "2026-11-09" },
+  tf21: { level: "順調", note: "予約フォームの作り直しに着手済み。", date: "2026-11-06" },
+  tf22: { level: "相談したい", note: "説明会の会場が押さえきれていない。人手の配分を相談したい。", date: "2026-11-09" },
+  tf31: { level: "順調", note: "試作が動いた。次は結果の確認。", date: "2026-11-08" },
+  tf32: { level: "注意", note: "ルール案がまだ出せていない。", date: "2026-11-02" },
+  tf33: { level: "順調", note: "窓口の運用案を作り始めた。", date: "2026-11-10" },
+};
+
+// 月初のチェックポイント。10月・11月分があり、12月は未取込
+export const checkpointsInit: Checkpoint[] = [
+  { tfId: "tf11", month: "2026-10", text: "展示会のフォロー先を10社に絞る。提案資料の骨子を固める。" },
+  { tfId: "tf11", month: "2026-11", text: "提案資料の初稿を出す。フォロー訪問を5件入れる。" },
+  { tfId: "tf12", month: "2026-10", text: "ヒアリング対象を10社選ぶ。" },
+  { tfId: "tf12", month: "2026-11", text: "10社のヒアリングを終え、内容を整理する。" },
+  { tfId: "tf21", month: "2026-10", text: "現行サイトの課題を洗い出し、画面案を作る。" },
+  { tfId: "tf21", month: "2026-11", text: "予約フォームを作り直し、公開前の確認まで進める。" },
+  { tfId: "tf22", month: "2026-10", text: "募集チラシと掲載先を決める。" },
+  { tfId: "tf22", month: "2026-11", text: "説明会を開き、応募者への返信を終える。" },
+  { tfId: "tf31", month: "2026-10", text: "自動化の対象レポートを洗い出す。" },
+  { tfId: "tf31", month: "2026-11", text: "月次レポートを1本、自動で作れる状態にする。" },
+  { tfId: "tf32", month: "2026-10", text: "資料の置き場所を決める。" },
+  { tfId: "tf32", month: "2026-11", text: "名前のルールを決め、資料を移し始める。" },
+  { tfId: "tf33", month: "2026-10", text: "相談窓口の対象と体制を決める。" },
+  { tfId: "tf33", month: "2026-11", text: "窓口の運用案を作り、試験的に1件受ける。" },
+];
+
+/** モックで「今月のチェックポイントを取り込む」を押したときに入る12月分 */
+export const checkpointsDec: Checkpoint[] = [
+  { tfId: "tf11", month: "2026-12", text: "新規開拓の進め方を1枚にまとめ、チームで共有する。" },
+  { tfId: "tf12", month: "2026-12", text: "ヒアリングの結果をもとに、関係を深める施策を2つ決める。" },
+  { tfId: "tf21", month: "2026-12", text: "新しい予約サイトを公開する。" },
+  { tfId: "tf22", month: "2026-12", text: "確保したボランティアの活動を始める。" },
+  { tfId: "tf31", month: "2026-12", text: "営業部の週次集計を置き換える。" },
+  { tfId: "tf32", month: "2026-12", text: "資料の移行を終え、全員に説明する。" },
+  { tfId: "tf33", month: "2026-12", text: "窓口の利用状況を振り返り、改善点を決める。" },
+];
 
 export const lastMemos: Record<string, TeamMemo> = {
   ta: {

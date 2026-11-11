@@ -1,4 +1,4 @@
-import type { Member, OkrItem, Pj, Seg, Task, Team } from "./types";
+import type { Checkpoint, Member, OkrItem, Pj, Quarter, Seg, Synergy, Task, Team } from "./types";
 
 export const TODAY = "2026-11-10";
 const DAY_MS = 86400000;
@@ -59,10 +59,14 @@ export function isStaleTask(t: Task, today: string, days = STALE_DAYS): boolean 
   return isOpen(t) && diffDays(today, t.updated) >= days;
 }
 
-/** KR・TF などの範囲：中のタスクが1件も直近 days 日以内に動いていない（タスクなしも停滞扱い） */
+/** KR・TF などの範囲：タスクはあるが、どれも直近 days 日以内に動いていない。タスクが1件も無いものは「未登録」で別扱い */
 export function isStaleScope(tasks: Task[], today: string, days = STALE_DAYS): boolean {
-  if (tasks.length === 0) return true;
+  if (tasks.length === 0) return false;
   return tasks.every((t) => diffDays(today, t.updated) >= days);
+}
+
+export function isUnregistered(tasks: Task[]): boolean {
+  return tasks.length === 0;
 }
 
 export function daysSinceLastMove(tasks: Task[], today: string): number | null {
@@ -76,14 +80,34 @@ export interface Movement {
   overdue: number;
 }
 
-/** 直近7日（今日を含む）の動き */
-export function movement(tasks: Task[], today: string): Movement {
+/** 動きを数える期間（両端を含む） */
+export interface Window {
+  from: string;
+  to: string;
+}
+
+export function inWindow(date: string, win: Window): boolean {
+  return date >= win.from && date <= win.to;
+}
+
+/** 前回チェックインの翌日〜今回のチェックイン日（今日が曜日に当たれば今日が今回） */
+export function weekWindow(today: string, weekday: number): Window {
+  const to = nextCheckinDate(today, weekday);
+  return { from: addDays(to, -6), to };
+}
+
+/** 画面に出す期間の文字 */
+export function formatWindow(win: Window): string {
+  return `${formatMd(win.from)}〜${formatMd(win.to)}`;
+}
+
+/** 期間内の動き。期間を渡さなければ直近7日（今日を含む） */
+export function movement(tasks: Task[], today: string, win: Window = { from: addDays(today, -6), to: today }): Movement {
   let updated = 0;
   let completed = 0;
   let overdue = 0;
   for (const t of tasks) {
-    const ago = diffDays(today, t.updated);
-    if (ago >= 0 && ago <= 6) {
+    if (inWindow(t.updated, win)) {
       updated++;
       if (t.status === "完了") completed++;
     }
@@ -103,6 +127,43 @@ export function weeklyCompleted(tasks: Task[], today: string, weeks = 4): number
     if (bucket < weeks) out[weeks - 1 - bucket]++;
   }
   return out;
+}
+
+/** 四半期に有効な項目だけ（Objective・KRは常に有効） */
+export function itemsInQuarter(items: OkrItem[], q: Quarter): OkrItem[] {
+  return items.filter((i) => i.kind !== "tf" || (i.quarters ?? []).includes(q));
+}
+
+export function uniqueTasks(list: Task[]): Task[] {
+  const seen = new Set<string>();
+  return list.filter((t) => (seen.has(t.id) ? false : (seen.add(t.id), true)));
+}
+
+/** 全体の集計：TFにつながるPJのタスクを、共有PJでも1回だけ数える */
+export function tasksForAll(tasks: Task[], pjs: Pj[]): Task[] {
+  const ids = new Set(pjs.filter((p) => p.tfIds.length > 0).map((p) => p.id));
+  return tasks.filter((t) => ids.has(t.pjId));
+}
+
+/** 共有PJ：2つ以上のTFに紐づくPJ。exceptTfId を渡すとその TF 以外の共有先を返す */
+export function sharedTfs(pj: Pj, items: OkrItem[], exceptTfId?: string): OkrItem[] {
+  if (pj.tfIds.length < 2) return [];
+  return pj.tfIds
+    .filter((id) => id !== exceptTfId)
+    .map((id) => items.find((i) => i.id === id))
+    .filter((i): i is OkrItem => !!i);
+}
+
+export function isSharedAcrossKrs(pj: Pj, items: OkrItem[]): boolean {
+  return new Set(pj.tfIds.map((id) => items.find((i) => i.id === id)?.parentId)).size > 1;
+}
+
+export function krIdsOfPj(pj: Pj, items: OkrItem[]): string[] {
+  return [...new Set(pj.tfIds.map((id) => items.find((i) => i.id === id)?.parentId).filter((x): x is string => !!x))];
+}
+
+export function checkpointOf(cps: Checkpoint[], tfId: string, month: string): Checkpoint | undefined {
+  return cps.find((c) => c.tfId === tfId && c.month === month);
 }
 
 export function tasksForTf(tasks: Task[], pjs: Pj[], tfId: string): Task[] {
@@ -138,29 +199,48 @@ export interface MatrixCell {
 export interface MatrixRow {
   member: Member;
   cells: Record<string, MatrixCell>;
+  /** 重複を除いた合計（共有PJのタスクを複数KRで数えない） */
+  total: MatrixCell;
 }
 
-/** メンバー × KR。セル＝その人が担当するタスクのうち直近7日の更新件数と未完了件数 */
+export interface MatrixFooter {
+  cells: Record<string, MatrixCell>;
+  total: MatrixCell;
+}
+
+function cellOf(list: Task[], win: Window): MatrixCell {
+  return { updated: list.filter((t) => inWindow(t.updated, win)).length, open: list.filter(isOpen).length };
+}
+
+/**
+ * メンバー × KR。セル＝その人が担当するタスクのうち期間内の更新件数と未完了件数。
+ * KRごとには数えるが、合計は共有PJの重複を除く
+ */
 export function buildMatrix(
   members: Member[],
   krIds: string[],
   krTasks: Record<string, Task[]>,
-  today: string,
-): MatrixRow[] {
-  return members.map((member) => {
+  win: Window,
+): { rows: MatrixRow[]; footer: MatrixFooter } {
+  const rows = members.map((member) => {
     const cells: Record<string, MatrixCell> = {};
+    const all: Task[] = [];
     for (const krId of krIds) {
       const mine = (krTasks[krId] ?? []).filter((t) => t.assigneeId === member.id);
-      cells[krId] = {
-        updated: mine.filter((t) => {
-          const ago = diffDays(today, t.updated);
-          return ago >= 0 && ago <= 6;
-        }).length,
-        open: mine.filter(isOpen).length,
-      };
+      cells[krId] = cellOf(mine, win);
+      all.push(...mine);
     }
-    return { member, cells };
+    return { member, cells, total: cellOf(uniqueTasks(all), win) };
   });
+  const ids = new Set(members.map((m) => m.id));
+  const footerCells: Record<string, MatrixCell> = {};
+  const footerAll: Task[] = [];
+  for (const krId of krIds) {
+    const mine = (krTasks[krId] ?? []).filter((t) => ids.has(t.assigneeId));
+    footerCells[krId] = cellOf(mine, win);
+    footerAll.push(...mine);
+  }
+  return { rows, footer: { cells: footerCells, total: cellOf(uniqueTasks(footerAll), win) } };
 }
 
 // ---------- 文字単位の差分 ----------
@@ -263,6 +343,9 @@ export interface PreReport {
   staleTasks: Task[];
   staleKrIds: string[];
   staleTfIds: string[];
+  unregisteredKrIds: string[];
+  unregisteredTfIds: string[];
+  window: Window;
 }
 
 function groupByMember(members: Member[], tasks: Task[]): MemberTasks[] {
@@ -285,22 +368,23 @@ export function buildPreReport(args: {
   const teamTasks = tasks.filter((t) => ids.has(t.assigneeId));
   const checkin = nextCheckinDate(today, team.checkinWeekday);
   const connected = new Set(pjs.filter((p) => p.tfIds.length > 0).map((p) => p.id));
-  const staleScopeIds = (kind: "kr" | "tf") =>
+  const scopeIds = (kind: "kr" | "tf", test: (ts: Task[]) => boolean) =>
     items
       .filter((i) => i.kind === kind)
-      .filter((i) => {
-        const ts = kind === "kr" ? tasksForKr(tasks, pjs, items, i.id) : tasksForTf(tasks, pjs, i.id);
-        return isStaleScope(ts, today);
-      })
+      .filter((i) => test(kind === "kr" ? tasksForKr(tasks, pjs, items, i.id) : tasksForTf(tasks, pjs, i.id)))
       .map((i) => i.id);
+  const isStale = (ts: Task[]) => isStaleScope(ts, today);
   return {
     team,
     checkin,
     dueSoon: groupByMember(teamMembers, dueBeforeCheckin(teamTasks, today, checkin)),
     overdue: groupByMember(teamMembers, overdueTasks(teamTasks, today)),
     staleTasks: teamTasks.filter((t) => isStaleTask(t, today) && connected.has(t.pjId)),
-    staleKrIds: staleScopeIds("kr"),
-    staleTfIds: staleScopeIds("tf"),
+    staleKrIds: scopeIds("kr", isStale),
+    staleTfIds: scopeIds("tf", isStale),
+    unregisteredKrIds: scopeIds("kr", isUnregistered),
+    unregisteredTfIds: scopeIds("tf", isUnregistered),
+    window: weekWindow(today, team.checkinWeekday),
   };
 }
 
@@ -335,12 +419,16 @@ export function buildReportMarkdown(args: {
   tfLabel: (id: string) => string;
   pjName: (pjId: string) => string;
   today: string;
+  /** TFリーダーの申告とチェックポイントを1行ずつ */
+  selfLines?: string[];
+  /** 取り上げた「つながり」を1行ずつ */
+  linkLines?: string[];
 }): string {
   const { report, krLabel, tfLabel, pjName, today } = args;
   const out: string[] = [];
   out.push(`# ${report.team.name} 事前レポート（チェックイン ${formatMd(report.checkin)}）`);
   out.push("");
-  out.push(`作成日：${formatMd(today)}`);
+  out.push(`作成日：${formatMd(today)} 今週の動きの期間：${formatWindow(report.window)}`);
   const section = (title: string, groups: MemberTasks[]) => {
     out.push("", `## ${title}`);
     if (groups.length === 0) out.push("なし");
@@ -358,5 +446,106 @@ export function buildReportMarkdown(args: {
     ...report.staleTasks.map((t) => `- ${t.title}（${pjName(t.pjId)}）最終更新 ${formatMd(t.updated)}`),
   ];
   out.push(...(stale.length ? stale : ["なし"]));
+  const unreg = [
+    ...report.unregisteredKrIds.map((id) => `- ${krLabel(id)}`),
+    ...report.unregisteredTfIds.map((id) => `- ${tfLabel(id)}`),
+  ];
+  out.push("", "## タスク未登録", ...(unreg.length ? unreg : ["なし"]));
+  out.push("", `## TFリーダーの申告（${formatWindow(report.window)}）`, ...(args.selfLines?.length ? args.selfLines : ["なし"]));
+  out.push("", "## つながり（チェックインで取り上げるもの）", ...(args.linkLines?.length ? args.linkLines : ["なし"]));
   return out.join("\n");
+}
+
+// ---------- つながり（KRをまたぐシナジーの候補） ----------
+
+export const SYNERGY_LABEL: Record<Synergy["type"], string> = {
+  "same-subject": "同じ相手・対象",
+  handoff: "受け渡し",
+  duplicate: "重複",
+  crunch: "集中",
+};
+
+function krsOfTask(t: Task, pjs: Pj[], items: OkrItem[]): string[] {
+  const pj = pjs.find((p) => p.id === t.pjId);
+  return pj ? krIdsOfPj(pj, items) : [];
+}
+
+/** 別のPJの2つのタスクが、異なるKRにまたがるか（同じPJの中は「つながり」と呼ばない） */
+function crossKr(a: Task, b: Task, pjs: Pj[], items: OkrItem[]): boolean {
+  if (a.pjId === b.pjId) return false;
+  const ka = krsOfTask(a, pjs, items);
+  const kb = krsOfTask(b, pjs, items);
+  return ka.some((x) => kb.some((y) => x !== y));
+}
+
+function unionKrs(list: Task[], pjs: Pj[], items: OkrItem[]): string[] {
+  return [...new Set(list.flatMap((t) => krsOfTask(t, pjs, items)))].sort();
+}
+
+/** その日を含む週の月曜日 */
+export function weekStartOf(s: string): string {
+  const wd = weekdayOf(s);
+  return addDays(s, -((wd + 6) % 7));
+}
+
+export const CRUNCH_MIN_TASKS = 4;
+
+/** (a)(b)(d) を機械的に求める。(c) は呼び出し側が固定の候補を足す */
+export function buildSynergies(args: { tasks: Task[]; pjs: Pj[]; items: OkrItem[]; today: string; members: Member[] }): Synergy[] {
+  const { tasks, pjs, items, today, members } = args;
+  const out: Synergy[] = [];
+  const krName = (ids: string[]) => ids.map((id) => items.find((i) => i.id === id)?.label ?? id).join("・");
+
+  const bySubject = new Map<string, Task[]>();
+  for (const t of tasks) if (t.subject) bySubject.set(t.subject, [...(bySubject.get(t.subject) ?? []), t]);
+  for (const [subject, list] of bySubject) {
+    const hit = list.some((a, i) => list.slice(i + 1).some((b) => crossKr(a, b, pjs, items)));
+    if (!hit) continue;
+    const krs = unionKrs(list, pjs, items);
+    out.push({
+      id: `same:${subject}`,
+      type: "same-subject",
+      krIds: krs,
+      taskIds: list.map((t) => t.id),
+      summary: `「${subject}」を、${krName(krs)}のタスクがそれぞれ扱っています。窓口や情報を揃えると、先方への動きが重ならずに済みます。`,
+    });
+  }
+
+  for (const t of tasks) {
+    for (const depId of t.dependsOn ?? []) {
+      const dep = tasks.find((x) => x.id === depId);
+      if (!dep || !crossKr(dep, t, pjs, items)) continue;
+      const krs = unionKrs([dep, t], pjs, items);
+      const note = dep.due > t.due ? "前提の期日のほうが後ろにあります。" : dep.status === "完了" ? "前提はすでに完了しています。" : "前提の完了を待っている状態です。";
+      out.push({
+        id: `handoff:${dep.id}>${t.id}`,
+        type: "handoff",
+        krIds: krs,
+        taskIds: [dep.id, t.id],
+        summary: `「${dep.title}」が、別のKRの「${t.title}」の前提になっています。${note}`,
+      });
+    }
+  }
+
+  for (const m of members) {
+    const byWeek = new Map<string, Task[]>();
+    for (const t of tasks) {
+      if (t.assigneeId !== m.id || !isOpen(t) || t.due < today) continue;
+      if (krsOfTask(t, pjs, items).length === 0) continue;
+      const w = weekStartOf(t.due);
+      byWeek.set(w, [...(byWeek.get(w) ?? []), t]);
+    }
+    for (const [w, list] of byWeek) {
+      const krs = unionKrs(list, pjs, items);
+      if (list.length < CRUNCH_MIN_TASKS || krs.length < 2) continue;
+      out.push({
+        id: `crunch:${m.id}:${w}`,
+        type: "crunch",
+        krIds: krs,
+        taskIds: list.map((t) => t.id),
+        summary: `${m.name}さんに、${formatMd(w)}の週に${krName(krs)}の期日が${list.length}件重なっています。`,
+      });
+    }
+  }
+  return out;
 }

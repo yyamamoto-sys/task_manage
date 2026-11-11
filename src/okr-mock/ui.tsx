@@ -1,7 +1,8 @@
 import { useEffect, type ReactNode } from "react";
-import { members } from "./fixtures";
-import { diffDays, formatMd, isOpen, TODAY } from "./logic";
-import type { Seg, Task } from "./types";
+import { members, teams } from "./fixtures";
+import { diffDays, formatMd, formatWindow, isOpen, isSharedAcrossKrs, isStaleScope, isUnregistered, sharedTfs, TODAY } from "./logic";
+import { useMock, useWeek } from "./state";
+import type { OkrItem, Pj, ReportLevel, Seg, Task } from "./types";
 
 export function memberOf(id: string) {
   return members.find((m) => m.id === id);
@@ -77,5 +78,49 @@ export function Modal({ title, onClose, children, footer }: { title: string; onC
         <div className="mk-modal-foot">{footer}</div>
       </div>
     </div>
+  );
+}
+
+export function LevelChip({ level }: { level: ReportLevel }) {
+  const cls = level === "順調" ? "mk-chip-green" : level === "注意" ? "mk-chip-yellow" : "mk-chip-red";
+  return <span className={`mk-chip ${cls}`}>{level}</span>;
+}
+
+/** タスクが無い範囲は「停滞」ではなく「タスク未登録」、動いていない範囲は「停滞」 */
+export function ScopeBadge({ tasks: list }: { tasks: Task[] }) {
+  if (isUnregistered(list)) return <span className="mk-chip mk-chip-yellow">タスク未登録</span>;
+  if (isStaleScope(list, TODAY)) return <span className="mk-chip mk-chip-red">停滞（7日以上動きなし）</span>;
+  return null;
+}
+
+/** 今週の動きの期間と、どのチームの周期で数えているか */
+export function WeekNote() {
+  const { teamId, setTeamId } = useMock();
+  const { team, win } = useWeek();
+  return (
+    <div className="mk-row mk-small" style={{ margin: "4px 0 8px" }}>
+      <span>
+        今週の動き：<strong>{formatWindow(win)}</strong>（{team.name}の前回チェックインの翌日〜今回のチェックイン日）
+      </span>
+      <select className="mk-select mk-small" style={{ width: 120 }} aria-label="数えるチーム" value={teamId} onChange={(e) => setTeamId(e.target.value)}>
+        {teams.map((t) => (
+          <option key={t.id} value={t.id}>
+            {t.name}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+/** 共有PJの印：どのTFと共有しているか */
+export function SharedMark({ pj, items, exceptTfId }: { pj: Pj; items: OkrItem[]; exceptTfId?: string }) {
+  const others = sharedTfs(pj, items, exceptTfId);
+  if (others.length === 0) return null;
+  const across = isSharedAcrossKrs(pj, items);
+  return (
+    <span className="mk-chip mk-chip-blue" style={{ marginLeft: 4 }} title="複数のTFに紐づくPJです。KR・全体の集計では1回だけ数えます">
+      共有PJ：{others.map((i) => i.label).join("・")}と共有{across ? "（別KR）" : ""}
+    </span>
   );
 }
