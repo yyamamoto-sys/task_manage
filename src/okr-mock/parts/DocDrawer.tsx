@@ -1,31 +1,40 @@
-import { useEffect, useRef, useState } from "react";
-import { resources } from "../fixtures";
-import { BANDS } from "../logic";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { detectConflicts, mergeDrafts, unresolved } from "../confirm";
+import { nextCheckin, resources } from "../fixtures";
+import { BANDS, formatMd } from "../logic";
 import { useMock } from "../state";
 import type { Band } from "../types";
-import { krLabel, krName, nameOf, valueText } from "../ui";
+import { krLabel, krName, nameOf, useFocusTrap, valueText } from "../ui";
 
-/** 「資料を読ませる」の引き出し。資料を選ぶ → AIの下書き → まとめて確定。確定すると閉じる */
+/** 「資料を読ませる」の引き出し。資料を選ぶ（複数可）→ AIの下書き → 資料どうしの食い違いを選ぶ → まとめて確定 */
 export function DocDrawer() {
-  const { records, items, confirmImport, setDrawerOpen, showToast } = useMock();
-  const [resId, setResId] = useState<string | null>(null);
+  const { records, items, confirmImport, confirmedBy, setDrawerOpen, showToast } = useMock();
+  const [resIds, setResIds] = useState<string[]>([]);
   const [read, setRead] = useState(false);
   const [values, setValues] = useState<Record<string, number | Band>>({});
+  const [picks, setPicks] = useState<Record<string, number>>({});
   const ref = useRef<HTMLDivElement>(null);
-  const res = resources.find((r) => r.id === resId);
+  const selected = useMemo(() => resources.filter((r) => resIds.includes(r.id)), [resIds]);
   const krs = items.filter((i) => i.kind === "kr");
   const close = () => setDrawerOpen(false);
+  const checkinDate = nextCheckin.date;
+  const conflicts = useMemo(() => detectConflicts(selected, records, checkinDate), [selected, records, checkinDate]);
+  const drafts = useMemo(() => mergeDrafts(selected, conflicts, picks), [selected, conflicts, picks]);
+  const open = unresolved(conflicts, picks);
+  const confirmer = confirmedBy[nextCheckin.id];
 
   useEffect(() => {
     const prev = document.activeElement as HTMLElement | null;
     ref.current?.focus();
     return () => prev?.focus?.();
   }, []);
+  useFocusTrap(ref, true);
 
-  const pick = (id: string) => {
-    setResId(id);
+  const toggle = (id: string) => {
+    setResIds((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
     setRead(false);
     setValues({});
+    setPicks({});
   };
 
   return (
@@ -47,28 +56,33 @@ export function DocDrawer() {
             閉じる
           </button>
         </div>
-        <p className="mk-muted">チェックインの資料からKRの現状・決定事項・宿題の下書きを取り出し、直したい行だけ直して、まとめて確定します。誰でも操作できます。</p>
+        <p className="mk-muted">チェックインの後に使います。資料からKRの現状・決定事項・宿題の下書きを取り出し、直したい行だけ直して、まとめて確定します。誰でも操作できます。</p>
+        {confirmer && (
+          <div className="mk-card mk-note" role="status">
+            この回（{formatMd(nextCheckin.date)} {nextCheckin.title}）は{nameOf(confirmer)}さんが確定済みです。続けて別の資料を確定すると、決定事項と宿題は資料ごとに足し合わされます。
+          </div>
+        )}
         <div className="mk-card mk-note" role="note">
           モックです。実際のファイルは読み込まず、AIも呼び出しません。下の結果は固定のデータです。
         </div>
 
-        <h3 className="mk-h3">1. 資料を選ぶ</h3>
+        <h3 className="mk-h3">1. 資料を選ぶ（複数選べます）</h3>
         <fieldset className="mk-fieldset">
-          <legend className="mk-small">読ませる資料（架空の2件）</legend>
+          <legend className="mk-small">読ませる資料（架空の2件・どちらも同じ回のもの）</legend>
           {resources.map((r) => (
-            <label key={r.id} className={`mk-opt${resId === r.id ? " is-on" : ""}`}>
-              <input type="radio" name="res" checked={resId === r.id} onChange={() => pick(r.id)} /> {r.name} <span className="mk-muted">{r.kind}</span>
+            <label key={r.id} className={`mk-opt${resIds.includes(r.id) ? " is-on" : ""}`}>
+              <input type="checkbox" name="res" checked={resIds.includes(r.id)} onChange={() => toggle(r.id)} /> {r.name} <span className="mk-muted">{r.kind}</span>
             </label>
           ))}
         </fieldset>
-        <button type="button" className="mk-btn mk-btn-primary" style={{ marginTop: 8 }} disabled={!res} onClick={() => setRead(true)}>
+        <button type="button" className="mk-btn mk-btn-primary" style={{ marginTop: 8 }} disabled={selected.length === 0} onClick={() => setRead(true)}>
           読み取る（模擬）
         </button>
 
-        {res && read && (
+        {selected.length > 0 && read && (
           <>
             <h3 className="mk-h3">2. AIが読み取った下書き</h3>
-            <p className="mk-muted">直したい行だけ、数値やバンドを直してください。直さなければ下書きのまま確定します。</p>
+            <p className="mk-muted">直したい行だけ、数値や達成度を直してください。直さなければ下書きのまま確定します。</p>
             <div className="mk-table-wrap">
               <table className="mk-table">
                 <thead>
@@ -80,15 +94,18 @@ export function DocDrawer() {
                   </tr>
                 </thead>
                 <tbody>
-                  {res.drafts.map((d) => {
+                  {drafts.map((d) => {
                     const r = records[d.krId];
                     const cur = values[d.krId] ?? d.value;
+                    const inConflict = conflicts.some((c) => c.krId === d.krId);
                     return (
                       <tr key={d.krId}>
                         <td>{krName(d.krId)}</td>
                         <td>{valueText(r, r.value)}</td>
                         <td>
-                          {r.kind === "number" ? (
+                          {inConflict && picks[d.krId] === undefined ? (
+                            <span className="mk-chip mk-chip-yellow">下で選んでください</span>
+                          ) : r.kind === "number" ? (
                             <label>
                               <span className="mk-sr">{krName(d.krId)}の現状</span>
                               <input
@@ -113,7 +130,7 @@ export function DocDrawer() {
                                   </option>
                                 ))}
                               </select>{" "}
-                              <span className="mk-chip mk-chip-yellow">仮の区分</span>
+                              <span className="mk-chip mk-chip-yellow">達成度（仮の区分）</span>
                             </label>
                           )}
                         </td>
@@ -126,38 +143,64 @@ export function DocDrawer() {
                 </tbody>
               </table>
             </div>
-            {krs.some((k) => !res.drafts.some((d) => d.krId === k.id)) && (
+            {krs.some((k) => !drafts.some((d) => d.krId === k.id)) && (
               <p className="mk-muted">
-                資料に出てこなかったKR：{krs.filter((k) => !res.drafts.some((d) => d.krId === k.id)).map((k) => krLabel(k.id)).join("、")}（前回の値のまま、表で「未更新」と表示します）
+                資料に出てこなかったKR：{krs.filter((k) => !drafts.some((d) => d.krId === k.id)).map((k) => krLabel(k.id)).join("、")}（前回の値のまま、「未更新」と表示します）
               </p>
+            )}
+
+            {conflicts.length > 0 && (
+              <>
+                <h3 className="mk-h3">資料どうしの食い違い（どちらを採るか選んでください）</h3>
+                {conflicts.map((c) => (
+                  <fieldset key={c.krId} className="mk-fieldset mk-conflict">
+                    <legend className="mk-small">
+                      <strong>{krName(c.krId)}</strong>
+                    </legend>
+                    {c.options.map((o, i) => (
+                      <label key={i} className={`mk-opt${picks[c.krId] === i ? " is-on" : ""}`}>
+                        <input type="radio" name={`conf-${c.krId}`} checked={picks[c.krId] === i} onChange={() => setPicks((p) => ({ ...p, [c.krId]: i }))} />{" "}
+                        <strong>{valueText(records[c.krId], o.value)}</strong>{" "}
+                        <span className="mk-muted">
+                          {o.existing ? "すでに確定済みの値：" : ""}
+                          {o.source.doc} {o.source.page}
+                        </span>
+                      </label>
+                    ))}
+                  </fieldset>
+                ))}
+              </>
             )}
 
             <h3 className="mk-h3">3. 決定事項と宿題の取り出し結果</h3>
             <ul className="mk-list">
-              {res.decisions.map((d, i) => (
-                <li key={i}>
-                  <span className={`mk-chip ${d.kind === "決定" ? "mk-chip-blue" : "mk-chip-yellow"}`}>{d.kind}</span> {d.text}
-                  {d.ownerId ? ` 担当：${nameOf(d.ownerId)}` : ""}{" "}
-                  <span className="mk-muted">
-                    {d.source.doc} {d.source.page}
-                  </span>
-                </li>
-              ))}
+              {selected.flatMap((res) =>
+                res.decisions.map((d, i) => (
+                  <li key={`${res.id}-${i}`}>
+                    <span className={`mk-chip ${d.kind === "決定" ? "mk-chip-blue" : "mk-chip-yellow"}`}>{d.kind}</span> {d.text}
+                    {d.ownerId ? ` 担当：${nameOf(d.ownerId)}` : ""}{" "}
+                    <span className="mk-muted">
+                      {d.source.doc} {d.source.page}
+                    </span>
+                  </li>
+                )),
+              )}
             </ul>
 
             <div className="mk-row" style={{ marginTop: 14 }}>
               <button
                 type="button"
                 className="mk-btn mk-btn-primary"
+                disabled={open.length > 0}
                 onClick={() => {
-                  const found = confirmImport(res.id, values);
+                  const found = confirmImport(resIds, picks, values);
                   setDrawerOpen(false);
-                  showToast(found.length > 0 ? `図に反映しました。${found.map((c) => `${krLabel(c.krId)}が${c.kind === "half" ? "半分を越えました" : "目標に届きました"}`).join("、")}` : "図に反映し、決定事項と宿題の欄に加えました");
+                  showToast(found.length > 0 ? `地図に反映しました。${found.map((c) => `${krLabel(c.krId)}が${c.kind === "half" ? "半分を越えました" : "目標に届きました"}`).join("、")}` : "地図に反映し、決定事項と宿題の欄に加えました");
                 }}
               >
                 まとめて確定
               </button>
-              <span className="mk-muted">確定すると、図と帯が新しい値になります。</span>
+              <span className="mk-muted">{open.length > 0 ? "食い違いのすべてで、採る値を選ぶと押せます。" : "確定すると、地図と帯が新しい値になります。"}</span>
             </div>
           </>
         )}

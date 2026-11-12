@@ -130,10 +130,52 @@
 
 @media (max-width: 1100px) {
   .mk-flowwrap.has-panel { grid-template-columns: minmax(0, 1fr); }
-  .mk-panel { position: static; max-height: none; }
+  /* 幅が狭いときは図の下ではなく、右から出る引き出し */
+  .mk-panel { position: fixed; top: 0; right: 0; bottom: 0; z-index: 45; width: min(420px, 100%); max-height: none; border-radius: 16px 0 0 16px; box-shadow: var(--shadow-lg); outline: none; pointer-events: auto; }
   .mk-band-body { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 700px) {
   .mk-head { gap: 8px; }
   .mk-guide { flex-direction: column; align-items: flex-start; }
 }
+
+/* 「遅れ」の橙：白地の文字にも、橙の上の文字にも対比 4.5:1 以上（fixtures の WARN と同じ値。テストで照合） */
+:root { --mk-warn: #944d00; --mk-on-warn: #ffffff; }
+[data-theme="dark"] { --mk-warn: #ffb454; --mk-on-warn: #2b1a00; }
+.mk-fill-warn { fill: var(--mk-warn); }
+.mk-stroke-warn { stroke: var(--mk-warn); }
+.mk-text-warn { fill: var(--mk-warn); }
+.mk-text-on-warn { fill: var(--mk-on-warn); }
+.mk-text-on-fill { fill: #fff; }
+
+/* 見ている人の切替（上部の細い帯） */
+.mk-viewer { display: inline-flex; align-items: center; gap: 4px; font-weight: 500; }
+
+/* 資料ボタンの添え書き */
+.mk-withnote { display: inline-flex; flex-direction: column; align-items: center; gap: 1px; }
+.mk-btn-note { font-size: 10px; color: var(--color-text-secondary); }
+
+/* 増減の札（確定の直後）。動きを減らす設定では静止表示し、次の操作で消す（state.tsx） */
+.mk-delta {
+  position: absolute; top: -9px; right: 8px; padding: 1px 9px; border-radius: 999px; font-size: 12px; font-weight: 700;
+  background: var(--color-brand); color: #fff; box-shadow: var(--shadow-sm); animation: mk-pop 0.5s ease-out;
+}
+.mk-gauge { position: relative; }
+.mk-deltatag { animation: mk-pop 0.5s ease-out; }
+@keyframes mk-pop { from { transform: translateY(6px) scale(0.7); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .mk-delta, .mk-deltatag { animation: none; }
+}
+
+/* 今週やる・選択中の案内・食い違い */
+.mk-pickbtn { padding: 1px 10px; border-radius: 999px; border: 1px solid var(--color-border-secondary); background: var(--color-bg-primary); color: var(--color-text-primary); font-size: 12px; cursor: pointer; }
+.mk-pickbtn.is-on { background: var(--color-brand); border-color: var(--color-brand); color: #fff; font-weight: 700; }
+.mk-pickbtn:focus-visible, .mk-panel:focus-visible { outline: 3px solid var(--color-brand); outline-offset: 2px; }
+.mk-armed { margin: 4px 0; padding: 6px 12px; border-radius: 10px; background: var(--color-bg-info); color: var(--color-text-info); font-weight: 700; font-size: 13px; }
+.mk-conflict { margin: 6px 0; padding: 6px 10px; border: 1px solid var(--color-border-warning) !important; border-radius: 12px; }
+.mk-bandline { margin: 6px 0 0; padding-left: 18px; font-size: 12px; }
+.mk-panel-scrim { position: fixed; inset: 0; z-index: 44; border: none; background: var(--tour-scrim); cursor: default; }
+
+/* KRの点：文字を添える／色が足りないときの模様 */
+.mk-kdot-labeled { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; white-space: nowrap; }
+.mk-kdot.has-pattern { background-image: repeating-linear-gradient(-45deg, rgba(255, 255, 255, 0.85) 0 2px, transparent 2px 4px); }

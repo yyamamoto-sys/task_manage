@@ -42,6 +42,8 @@ export interface Task {
   status: TaskStatus;
   /** 最終更新日 YYYY-MM-DD（完了のときは完了日） */
   updated: string;
+  /** 完了した時点でつながっていたKR。後のTF構成の変化で図から落ちないように記録として持つ */
+  doneKrIds?: string[];
 }
 
 export interface Seg {
@@ -69,6 +71,10 @@ interface RecordBase {
 export interface NumberRecord extends RecordBase {
   kind: "number";
   unit: string;
+  /** 期首値。進み＝（現状−期首）÷（目標値−期首） */
+  start: number;
+  /** 増やす／減らす */
+  direction: "up" | "down";
   target: number;
   value: number;
   prev: number;
@@ -99,6 +105,8 @@ export interface Decision {
   source: Source;
   /** 関わるKR（KR詳細パネルに出す） */
   krIds: string[];
+  /** どの資料から取り出したか（同じ回の資料ごとに足し合わせるため） */
+  resourceId?: string;
 }
 
 /** AIが資料から読み取った下書き（1KR分） */
@@ -128,7 +136,7 @@ export interface AiCandidate {
   reason: string;
 }
 
-export type Effect = "よく効いた" | "少し" | "効かせられなかった";
+export type Effect = "よく効いた" | "少し" | "今週は届かず";
 export type Match = "そのとおり" | "少し違う" | "違う";
 
 export interface KrAnswer {
@@ -139,4 +147,25 @@ export interface KrAnswer {
 export interface PastWeek {
   weekStart: string;
   answers: Record<string, { effect: Effect; match: Match; view: string }>;
+}
+
+/** Kintone（正）から読んだTFの1行 */
+export interface KintoneRow {
+  id: string;
+  label: string;
+  text: string;
+  parentId: string;
+}
+
+export interface ConflictOption {
+  value: number | Band;
+  source: Source;
+  /** すでに確定済みの値か */
+  existing: boolean;
+}
+
+/** 同じKRについて、資料どうし（または確定済みの値）で値が違うもの */
+export interface Conflict {
+  krId: string;
+  options: ConflictOption[];
 }

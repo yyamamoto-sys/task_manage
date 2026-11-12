@@ -33,7 +33,7 @@ export function DecisionsFold() {
                         <tr>
                           <th style={{ width: 60 }}>区分</th>
                           <th>内容</th>
-                          <th style={{ width: 50 }}>KR</th>
+                          <th style={{ width: 96 }}>KR</th>
                           <th style={{ width: 100 }}>担当者</th>
                           <th>出典</th>
                         </tr>
@@ -46,7 +46,7 @@ export function DecisionsFold() {
                             </td>
                             <td>{d.text}</td>
                             <td>
-                              <KrDots krIds={d.krIds} />
+                              <KrDots krIds={d.krIds} labeled />
                             </td>
                             <td>{d.ownerId ? nameOf(d.ownerId) : "―"}</td>
                             <td>

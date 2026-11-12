@@ -10,15 +10,16 @@ export function CompareTable() {
   return (
     <div>
       <p className="mk-muted">
-        KRごとの目標と現状です。直近のチェックイン（{formatMd(latest)}）の資料に出てこなかったKRは、前回の値のまま「未更新」と表示します。数値で測れないKRは達成度バンドで表します。
-        <span className="mk-chip mk-chip-yellow">仮の区分</span> 現在は {BANDS.join("／")} の5段階です。
+        KRごとの目標値と現状です。直近のチェックイン（{formatMd(latest)}）の資料に出てこなかったKRは、前回の値のまま「未更新」と表示します。数値で測れないKRは達成度で表します。
+        <span className="mk-chip mk-chip-yellow">達成度（仮の区分）</span> 現在は {BANDS.join("／")} の5段階です。
       </p>
       <div className="mk-table-wrap">
         <table className="mk-table">
           <thead>
             <tr>
               <th>KR</th>
-              <th>目標</th>
+              <th>目標値</th>
+              <th>期首値</th>
               <th>現状</th>
               <th>差</th>
               <th>前回からの動き</th>
@@ -35,6 +36,7 @@ export function CompareTable() {
                     <span className="mk-chip mk-chip-blue">{krLabel(kr.id)}</span> {krText(kr.id)}
                   </td>
                   <td>{valueText(r, r.target)}</td>
+                  <td>{r.kind === "number" ? valueText(r, r.start) : "―"}</td>
                   <td>
                     <strong>{valueText(r, r.value)}</strong>
                   </td>

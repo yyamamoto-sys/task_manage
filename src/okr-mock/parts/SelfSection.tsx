@@ -1,11 +1,11 @@
 import { useState } from "react";
-import { aiViews, KR_COLORS, OWNER_ID, PERIOD_NAME, PERIOD_START, pastWeeks, tasks } from "../fixtures";
-import { addDays, buildSummaryText, buildup, formatMd, krIdsOfTask, TODAY, weekStartOf } from "../logic";
+import { krStyle, PERIOD_NAME, PERIOD_START, pastWeeks, tasks, WEEK_START } from "../fixtures";
+import { addDays, answerKey, buildSummaryText, buildup, formatMd, krIdsOfTask, picksOutcome, TODAY, tasksMovedInWeek, weekKrIds, weeklyView } from "../logic";
 import { useMock } from "../state";
 import type { Effect, Match } from "../types";
-import { krLabel, krName, nameOf, PrivateGuard } from "../ui";
+import { krLabel, krName, nameOf, StatusChip } from "../ui";
 
-const EFFECTS: Effect[] = ["よく効いた", "少し", "効かせられなかった"];
+const EFFECTS: Effect[] = ["よく効いた", "少し", "今週は届かず"];
 const MATCHES: Match[] = ["そのとおり", "少し違う", "違う"];
 
 function Choice<T extends string>({ name, options, value, onChange }: { name: string; options: T[]; value?: T; onChange: (v: T) => void }) {
@@ -20,36 +20,73 @@ function Choice<T extends string>({ name, options, value, onChange }: { name: st
   );
 }
 
+/** 今週やると選んだ仕事が、どうなったか */
+function Picks() {
+  const { picks } = useMock();
+  const out = picksOutcome(tasks, picks);
+  return (
+    <div>
+      {out.total === 0 ? (
+        <p className="mk-muted">まだ選んでいません。「今週ここに力を」の自分の仕事で「今週やる」を押すと、ここに出ます。</p>
+      ) : (
+        <>
+          <p className="mk-small">
+            終えた {out.counts["終えた"]}件／進行中 {out.counts["進行中"]}件／未着手 {out.counts["未着手"]}件
+          </p>
+          <ul className="mk-list mk-list-tight">
+            {out.rows.map(({ task, outcome }) => (
+              <li key={task.id}>
+                {task.title} <StatusChip status={task.status} /> <span className="mk-muted">{outcome}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
+  );
+}
+
 function Reflect() {
-  const { linkCtx, answers, setAnswer } = useMock();
+  const { viewerId, linkCtx, items, answers, setAnswer } = useMock();
   const [showPast, setShowPast] = useState(false);
-  const ws = weekStartOf(TODAY);
-  const myKrs = [...new Set(tasks.filter((t) => t.assigneeId === OWNER_ID).flatMap((t) => krIdsOfTask(t, linkCtx)))].sort();
+  const krOrder = items.filter((i) => i.kind === "kr").map((k) => k.id);
+  const myKrs = weekKrIds(tasks, viewerId, WEEK_START, linkCtx, krOrder);
+  const past = pastWeeks[viewerId] ?? [];
   return (
     <div>
       <p className="mk-muted">
-        今週（{formatMd(ws)}〜{formatMd(addDays(ws, 6))}）に関わったKRごとに、選んで答えます。文章は書きません。自分で開いたときだけ使います。
+        今週（{formatMd(WEEK_START)}〜{formatMd(addDays(WEEK_START, 6))}）に動いた仕事がつながるKRごとに、選んで答えます。文章は書きません。自分で開いたときだけ使います。
       </p>
-      <div className="mk-reflect-grid">
-        {myKrs.map((k) => (
-          <section key={k} className="mk-reflect-item" style={{ borderTopColor: KR_COLORS[k] }} aria-label={krName(k)}>
-            <strong>{krName(k)}</strong>
-            <div className="mk-small" style={{ margin: "6px 0 2px" }}>
-              今週の効き具合
-            </div>
-            <Choice name={`eff-${k}`} options={EFFECTS} value={answers[k]?.effect} onChange={(v) => setAnswer(k, { effect: v })} />
-            <div className="mk-aiview">
-              <span className="mk-chip mk-chip-blue">AIの見立て</span> {aiViews[k] ?? "今週のあなたの仕事は、このKRを少し進めました。"}
-            </div>
-            <Choice name={`mat-${k}`} options={MATCHES} value={answers[k]?.match} onChange={(v) => setAnswer(k, { match: v })} />
-          </section>
-        ))}
-      </div>
-      <button type="button" className="mk-btn mk-btn-sm" aria-expanded={showPast} onClick={() => setShowPast((v) => !v)}>
-        {showPast ? "過去の週を閉じる" : "過去の週を見返す"}
-      </button>
+      {myKrs.length === 0 ? (
+        <p className="mk-muted">今週は動いた仕事がありません。</p>
+      ) : (
+        <div className="mk-reflect-grid">
+          {myKrs.map((k) => {
+            const a = answers[answerKey(WEEK_START, k)];
+            const moved = tasksMovedInWeek(tasks, viewerId, WEEK_START).filter((t) => krIdsOfTask(t, linkCtx).includes(k));
+            return (
+              <section key={k} className="mk-reflect-item" style={{ borderTopColor: krStyle(k).color }} aria-label={krName(k)}>
+                <strong>{krName(k)}</strong>
+                <div className="mk-small" style={{ margin: "6px 0 2px" }}>
+                  今週の効き具合
+                </div>
+                <Choice name={`eff-${k}`} options={EFFECTS} value={a?.effect} onChange={(v) => setAnswer(k, { effect: v })} />
+                <div className="mk-aiview">
+                  <span className="mk-chip mk-chip-blue">AIの見立て</span> {weeklyView(moved)}
+                </div>
+                <Choice name={`mat-${k}`} options={MATCHES} value={a?.match} onChange={(v) => setAnswer(k, { match: v })} />
+              </section>
+            );
+          })}
+        </div>
+      )}
+      {past.length > 0 && (
+        <button type="button" className="mk-btn mk-btn-sm" aria-expanded={showPast} onClick={() => setShowPast((v) => !v)}>
+          {showPast ? "過去の週を閉じる" : "過去の週を見返す"}
+        </button>
+      )}
       {showPast &&
-        pastWeeks.map((w) => (
+        past.map((w) => (
           <div key={w.weekStart} className="mk-table-wrap" style={{ marginTop: 10 }}>
             <strong>{formatMd(w.weekStart)}の週</strong>
             <table className="mk-table">
@@ -62,12 +99,12 @@ function Reflect() {
                 </tr>
               </thead>
               <tbody>
-                {Object.entries(w.answers).map(([k, a]) => (
+                {Object.entries(w.answers).map(([k, x]) => (
                   <tr key={k}>
                     <td>{krName(k)}</td>
-                    <td>{a.effect}</td>
-                    <td>{a.view}</td>
-                    <td>{a.match}</td>
+                    <td>{x.effect}</td>
+                    <td>{x.view}</td>
+                    <td>{x.match}</td>
                   </tr>
                 ))}
               </tbody>
@@ -79,9 +116,9 @@ function Reflect() {
 }
 
 function Buildup() {
-  const { items, linkCtx } = useMock();
+  const { items, linkCtx, viewerId } = useMock();
   const krs = items.filter((i) => i.kind === "kr").map((k) => k.id);
-  const b = buildup(tasks, OWNER_ID, krs, PERIOD_START, TODAY, linkCtx);
+  const b = buildup(tasks, viewerId, krs, PERIOD_START, TODAY, linkCtx);
   const colW = 30;
   const H = 150;
   const top = 18;
@@ -93,7 +130,7 @@ function Buildup() {
     <div>
       <div className="mk-row mk-small">
         {krs.map((k) => (
-          <span key={k} className="mk-chip" style={{ borderLeft: `8px solid ${KR_COLORS[k]}` }}>
+          <span key={k} className="mk-chip" style={{ borderLeft: `8px solid ${krStyle(k).color}` }}>
             {krName(k)}
           </span>
         ))}
@@ -109,7 +146,7 @@ function Buildup() {
                   const h = n * unit;
                   y -= h;
                   return h > 0 ? (
-                    <rect key={k} x={10 + i * colW + 4} y={y} width={colW - 8} height={h} rx={ki === krs.length - 1 ? 4 : 1} fill={KR_COLORS[k]}>
+                    <rect key={k} x={10 + i * colW + 4} y={y} width={colW - 8} height={h} rx={ki === krs.length - 1 ? 4 : 1} fill={krStyle(k).color}>
                       <title>{`${formatMd(w)}の週 ${krLabel(k)}：累計${n}件`}</title>
                     </rect>
                   ) : null;
@@ -127,22 +164,22 @@ function Buildup() {
           })}
         </svg>
       </div>
-      <p className="mk-muted">週の始まり（月曜）ごとの累計です。棒の上の数字は合計で、複数のKRにつながる仕事は、それぞれのKRに積んだうえで合計では1回に数えます。</p>
+      <p className="mk-muted">週の始まり（月曜）ごとの累計です。今期（{PERIOD_START}以降）に終えた仕事だけを数えます。棒の上の数字は合計で、複数のKRにつながる仕事は、それぞれのKRに積んだうえで合計では1回に数えます。</p>
     </div>
   );
 }
 
 function Summary() {
-  const { items, linkCtx, how, showToast } = useMock();
+  const { items, linkCtx, how, showToast, viewerId } = useMock();
   const [text, setText] = useState<string | null>(null);
   const make = () =>
     setText(
       buildSummaryText({
         period: PERIOD_NAME,
-        owner: nameOf(OWNER_ID),
+        owner: nameOf(viewerId),
         krs: items.filter((i) => i.kind === "kr"),
         tasks,
-        memberId: OWNER_ID,
+        memberId: viewerId,
         start: PERIOD_START,
         today: TODAY,
         ctx: linkCtx,
@@ -177,19 +214,21 @@ function Summary() {
 }
 
 export function SelfSection() {
+  const { viewerId } = useMock();
   return (
     <section className="mk-card" aria-labelledby="mk-self-h">
       <h2 id="mk-self-h" className="mk-h2 mk-h2-big">
-        あなただけの振り返り
+        {nameOf(viewerId)}さんだけの振り返り
       </h2>
-      <PrivateGuard>
-        <h3 className="mk-h3">今週の振り返り</h3>
-        <Reflect />
-        <h3 className="mk-h3">効きの積み上がり</h3>
-        <Buildup />
-        <h3 className="mk-h3">期のまとめ</h3>
-        <Summary />
-      </PrivateGuard>
+      <p className="mk-muted">ここは本人だけの部分です。ほかの人にも、GMにも見えません。</p>
+      <h3 className="mk-h3">今週やると選んだ仕事</h3>
+      <Picks />
+      <h3 className="mk-h3">今週の振り返り</h3>
+      <Reflect />
+      <h3 className="mk-h3">効きの積み上がり</h3>
+      <Buildup />
+      <h3 className="mk-h3">期のまとめ</h3>
+      <Summary />
     </section>
   );
 }

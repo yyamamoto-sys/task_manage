@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { members, OWNER_ID, VIEWER_IDS } from "./fixtures";
+import { members, VIEWER_IDS } from "./fixtures";
 import { formatFull, TODAY } from "./logic";
 import { MockProvider, useMock, type InitialView } from "./state";
 import { CompareTable } from "./parts/CompareTable";
@@ -14,7 +14,7 @@ import { GoalsScreen } from "./screens/GoalsScreen";
 import { Modal } from "./ui";
 
 function Header() {
-  const { viewerId, setViewerId, mode, setMode, setDrawerOpen, setModal, locked } = useMock();
+  const { mode, setMode, setDrawerOpen, setModal, locked } = useMock();
   return (
     <header className="mk-head print-hide">
       <div className="mk-head-title">
@@ -33,20 +33,6 @@ function Header() {
         </div>
       </div>
       <span className="mk-spacer" />
-      <label className="mk-small">
-        見ている人{" "}
-        <select className="mk-select" style={{ width: 190, display: "inline-block" }} value={viewerId} onChange={(e) => setViewerId(e.target.value)}>
-          {VIEWER_IDS.map((id) => {
-            const m = members.find((x) => x.id === id)!;
-            return (
-              <option key={id} value={id}>
-                {m.name}（{id === OWNER_ID ? "本人・" : ""}
-                {m.role}）
-              </option>
-            );
-          })}
-        </select>
-      </label>
       <div className="mk-seg" role="radiogroup" aria-label="表示の切替">
         {(
           [
@@ -60,10 +46,13 @@ function Header() {
           </label>
         ))}
       </div>
-      <button type="button" className="mk-btn mk-btn-primary" onClick={() => setDrawerOpen(true)}>
-        資料を読ませる
-      </button>
-      <button type="button" className="mk-iconbtn" aria-label={`目標の取り込み${locked ? "" : "（確定待ち）"}`} title="目標の取り込み" onClick={() => setModal("goals")}>
+      <span className="mk-withnote">
+        <button type="button" className="mk-btn mk-btn-primary" onClick={() => setDrawerOpen(true)}>
+          資料を読ませる
+        </button>
+        <span className="mk-btn-note">チェックインの後に</span>
+      </span>
+      <button type="button" className="mk-iconbtn" aria-label={`O・KRの取り込み${locked ? "" : "（確定待ち）"}`} title="O・KRの取り込み" onClick={() => setModal("goals")}>
         <svg width={18} height={18} viewBox="-10 -10 20 20" aria-hidden="true">
           <circle r={3} fill="none" stroke="currentColor" strokeWidth={1.8} />
           <path
@@ -81,25 +70,27 @@ function Header() {
 }
 
 function Guide() {
-  const { guideOpen, closeGuide, setDrawerOpen, setMode, isOwner } = useMock();
+  const { guideOpen, closeGuide, setMode } = useMock();
   if (!guideOpen) return null;
   return (
     <nav className="mk-guide print-hide" aria-label="はじめての人向けの案内">
       <ol className="mk-guide-steps">
         <li>
           <span className="mk-guide-no">1</span>
-          <button type="button" className="mk-linkbtn" onClick={() => setDrawerOpen(true)}>
-            資料を読ませる
-          </button>
+          <a className="mk-linkbtn" href="#mk-flow-h">
+            地図で進みを見る
+          </a>
         </li>
         <li>
           <span className="mk-guide-no">2</span>
-          <span>地図で進みを見る</span>
+          <a className="mk-linkbtn" href="#mk-focus-h">
+            力を入れるKRを確かめる
+          </a>
         </li>
         <li>
           <span className="mk-guide-no">3</span>
-          <button type="button" className="mk-linkbtn" onClick={() => setMode("self")} disabled={!isOwner} title={isOwner ? undefined : "本人の立場のときに使えます"}>
-            自分の仕事を確かめる
+          <button type="button" className="mk-linkbtn" onClick={() => setMode("self")}>
+            今週やる仕事を選ぶ
           </button>
         </li>
       </ol>
@@ -111,7 +102,7 @@ function Guide() {
 }
 
 function Shell() {
-  const { toast, sel, mode, isOwner, drawerOpen, modal, setModal } = useMock();
+  const { toast, sel, mode, drawerOpen, modal, setModal, viewerId, setViewerId } = useMock();
   const [dark, setDark] = useState(false);
   useEffect(() => {
     if (dark) document.documentElement.setAttribute("data-theme", "dark");
@@ -123,6 +114,19 @@ function Shell() {
       <div className="mk-banner print-hide" role="note">
         OKRモード モック（架空データ・保存されません）
         <span className="mk-banner-sub">今日＝{formatFull(TODAY)}で固定</span>
+        <label className="mk-small mk-viewer">
+          見ている人（モック用の切替）{" "}
+          <select className="mk-select" style={{ width: 170, display: "inline-block" }} value={viewerId} onChange={(e) => setViewerId(e.target.value)}>
+            {VIEWER_IDS.map((id) => {
+              const m = members.find((x) => x.id === id)!;
+              return (
+                <option key={id} value={id}>
+                  {m.name}（{m.role}）
+                </option>
+              );
+            })}
+          </select>
+        </label>
         <button type="button" className="mk-btn mk-btn-sm" onClick={() => setDark((d) => !d)}>
           {dark ? "ライトにする" : "ダークにする"}
         </button>
@@ -136,12 +140,12 @@ function Shell() {
           <FlowDiagram />
           <DetailPanel />
         </div>
-        {mode === "self" && isOwner && <SelfSection />}
+        {mode === "self" && <SelfSection />}
         <DecisionsFold />
       </main>
       {drawerOpen && <DocDrawer />}
       {modal === "goals" && (
-        <Modal title="目標の取り込み" onClose={() => setModal(null)} wide>
+        <Modal title="O・KRの取り込み" onClose={() => setModal(null)} wide>
           <GoalsScreen />
         </Modal>
       )}
