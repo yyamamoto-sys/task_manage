@@ -190,7 +190,7 @@ describe("今週ここに力を", () => {
   });
   it("候補を採る（上書き）とそのKRにつながり、候補から外れる", () => {
     const c = candidateTasksForKr(tasks, M2, "kr2", ctx, aiCandidates)[0];
-    const o: LinkCtx = { ...ctx, overrides: { [c.task.id]: "kr2" } };
+    const o: LinkCtx = { ...ctx, overrides: { [c.task.id]: ["kr2"] } };
     expect(krIdsOfTask(c.task, o)).toEqual(["kr2"]);
     expect(candidateTasksForKr(tasks, M2, "kr2", o, aiCandidates).map((x) => x.task.id)).not.toContain(c.task.id);
   });
@@ -253,14 +253,14 @@ describe("仕事とKRのつながり", () => {
   });
   it("上書きすると既定のつながりを置き換える", () => {
     const p7 = titled("資料の置き場所を決める");
-    expect(krIdsOfTask(p7, { ...ctx, overrides: { [p7.id]: "kr1" } })).toEqual(["kr1"]);
+    expect(krIdsOfTask(p7, { ...ctx, overrides: { [p7.id]: ["kr1"] } })).toEqual(["kr1"]);
   });
   it("PJにTFが無い仕事・PJに属さない個人の仕事はつながりなし。AIの提案を採る（上書き）とつながる", () => {
     for (const title of ["交流会の出し物を考える", "AI勉強会の資料を読む"]) {
       const t = titled(title);
       expect(unlinkedTasks([t], ctx)).toHaveLength(1);
       const c = aiCandidates[t.pjId][0];
-      expect(unlinkedTasks([t], { ...ctx, overrides: { [t.id]: c.krId } })).toHaveLength(0);
+      expect(unlinkedTasks([t], { ...ctx, overrides: { [t.id]: [c.krId] } })).toHaveLength(0);
     }
   });
   it("共有PJの仕事は、複数KRにつながっても「つながっている仕事」では1回", () => {
@@ -302,7 +302,7 @@ describe("期間と過去のつながり", () => {
   });
   it("記録があっても、本人が後からつなぎ先を変えれば上書きが優先される", () => {
     const t = tasks.find((x) => x.pjId === "p9")!;
-    expect(krIdsOfTask(t, { ...ctx, overrides: { [t.id]: "kr3" } })).toEqual(["kr3"]);
+    expect(krIdsOfTask(t, { ...ctx, overrides: { [t.id]: ["kr3"] } })).toEqual(["kr3"]);
   });
 });
 
@@ -327,7 +327,7 @@ describe("前回更新〜今回更新の間に終えた仕事", () => {
   });
   it("別のKRにつなぎ直した仕事は、元のKRの動きには入らない", () => {
     const t = titled("提案の想定質問集を作る");
-    const o = { ...ctx, overrides: { [t.id]: "kr3" } };
+    const o = { ...ctx, overrides: { [t.id]: ["kr3"] } };
     expect(tasksDoneBetween(tasks, M2, "kr1", "2026-10-20", "2026-11-03", o).map((x) => x.id)).not.toContain(t.id);
     expect(tasksDoneBetween(tasks, M2, "kr3", "2026-10-20", "2026-11-03", o).map((x) => x.id)).toContain(t.id);
   });

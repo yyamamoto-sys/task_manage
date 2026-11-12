@@ -76,6 +76,13 @@ export function flowCounts(args: { tasks: Task[]; ctx: LinkCtx; ownerId: string;
   return { edges: [...edgeMap.values()], loose, linkedByPj };
 }
 
+/** 地図に出ている仕事のうち、結節点（2つ以上のKRにつながる仕事）のID。共有PJの仕事も1回 */
+export function junctionIdsOf(counts: FlowCounts, ctx: LinkCtx): Set<string> {
+  const ids = new Set<string>();
+  for (const list of Object.values(counts.linkedByPj)) for (const t of list) if (krIdsOfTask(t, ctx).length >= 2) ids.add(t.id);
+  return ids;
+}
+
 /**
  * 合計 total を件数の割合で分ける。細くなりすぎる帯は min に固定し、残りを割合で分け直す（合計は total のまま）。
  * 帯の数が多すぎて min を並べても total に収まらないときは、均等に分ける

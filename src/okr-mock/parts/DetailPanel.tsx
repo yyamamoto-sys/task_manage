@@ -14,6 +14,8 @@ import {
   periodTasks,
   PERSONAL_PJ,
   outcomeWorkLine,
+  sharedWork,
+  sortKrIds,
   stepsToTarget,
   tasksDoneBetween,
   tasksOfKr,
@@ -21,10 +23,11 @@ import {
   workDigest,
 } from "../logic";
 import { useMock } from "../state";
-import { KrDots, krLabel, krName, krText, mdOf, nameOf, PaceBadge, signed, StatusChip, useFocusTrap, useNarrow, valueText } from "../ui";
+import { proposalKey } from "../userState";
+import { JunctionMark, KrDot, KrDots, krLabel, krListText, krName, krText, mdOf, nameOf, PaceBadge, signed, StatusChip, useFocusTrap, useNarrow, valueText } from "../ui";
 
 function KrPanel({ krId }: { krId: string }) {
-  const { records, checkins, decisions, linkCtx, viewerId, setSel, setModal, confirmedLinks } = useMock();
+  const { records, checkins, decisions, linkCtx, viewerId, setSel, setModal, confirmedLinks, items } = useMock();
   const r = records[krId];
   const color = krStyle(krId).color;
   const elapsed = periodElapsed(PERIOD_START, PERIOD_END, TODAY);
@@ -33,6 +36,7 @@ function KrPanel({ krId }: { krId: string }) {
   const stale = isNotUpdated(r, latestCheckinDate(checkins));
   const unit = r.kind === "number" ? r.unit : "段";
   const krTasks = tasksOfKr(periodTasks(tasks, PERIOD_START), krId, linkCtx);
+  const shared = sharedWork(periodTasks(tasks, PERIOD_START), krId, linkCtx, items.filter((i) => i.kind === "kr").map((i) => i.id));
   const done = tasksDoneBetween(tasks, viewerId, krId, r.prevAt, r.updatedAt, linkCtx);
   const related = decisions.filter((d) => d.krIds.includes(krId));
   const work = workDigest(krTasks);
@@ -145,6 +149,31 @@ function KrPanel({ krId }: { krId: string }) {
         ))}
       </ul>
 
+      {shared.length > 0 && (
+        <>
+          <h4 className="mk-panel-sub">
+            <JunctionMark /> ほかのKRとも重なる仕事（全員に見えます）
+          </h4>
+          {shared.map((s) => (
+            <div key={s.krId} className="mk-shared">
+              <div className="mk-small">
+                <KrDot krId={s.krId} labeled /> {krText(s.krId)}と共有している仕事（{s.tasks.length}件）
+              </div>
+              <ul className="mk-list mk-list-tight">
+                {s.tasks.map((t) => (
+                  <li key={t.id}>
+                    <button type="button" className="mk-linkbtn" onClick={() => setSel({ type: "task", id: t.id })}>
+                      {t.title}
+                    </button>{" "}
+                    <span className="mk-muted">{nameOf(t.assigneeId)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </>
+      )}
+
       <h4 className="mk-panel-sub">この動きの間にあなたが終えた仕事</h4>
       <p className="mk-muted">
         {formatMd(r.prevAt)}の翌日から{formatMd(r.updatedAt)}までに完了した仕事です（あなたにだけ見えます）。
@@ -184,7 +213,7 @@ function KrPanel({ krId }: { krId: string }) {
 }
 
 function TaskPanel({ taskId }: { taskId: string }) {
-  const { linkCtx, overrides, setOverride, proposals, takeProposal, setProposal, how, setHow, viewerId, setSel, mode } = useMock();
+  const { linkCtx, items, overrides, setOverride, proposals, takeProposal, setProposal, how, setHow, viewerId, setSel, mode } = useMock();
   const t = tasks.find((x) => x.id === taskId);
   if (!t) return null;
   const pj = pjsInit.find((p) => p.id === t.pjId);
@@ -193,8 +222,17 @@ function TaskPanel({ taskId }: { taskId: string }) {
   const cands = aiCandidates[t.pjId] ?? [];
   const mine = t.assigneeId === viewerId;
   const override = overrides[t.id];
-  const skipped = proposals[t.id] === "skipped";
   const effectKr = krs[0];
+  const krOrder = items.filter((i) => i.kind === "kr").map((i) => i.id);
+  const candIds = cands.map((c) => c.krId);
+  const others = krOrder.filter((k) => !candIds.includes(k));
+  const toggleKr = (k: string) => setOverride(t, sortKrIds(krs.includes(k) ? krs.filter((x) => x !== k) : [...krs, k], krOrder));
+  const krCheck = (krId: string, reason?: string) => (
+    <label key={krId} className={`mk-opt${krs.includes(krId) ? " is-on" : ""}`}>
+      <input type="checkbox" checked={krs.includes(krId)} onChange={() => toggleKr(krId)} /> <strong>{krName(krId)}</strong>
+      {reason && <span className="mk-muted"> {reason}</span>}
+    </label>
+  );
 
   return (
     <>
@@ -221,57 +259,70 @@ function TaskPanel({ taskId }: { taskId: string }) {
           )}
         </dd>
       </dl>
+      {krs.length >= 2 && (
+        <p className="mk-junction-line">
+          <JunctionMark /> この仕事は {krListText(krs)} の結節点です
+        </p>
+      )}
 
       {krs.length === 0 ? (
         mine && mode === "self" ? (
           <>
             <h4 className="mk-panel-sub">AIの提案</h4>
-            {cands[0] ? (
-              <p className="mk-small">
-                つなぎ先の候補：<strong>{krName(cands[0].krId)}</strong>
-                <br />
-                <span className="mk-muted">{cands[0].reason}</span>
-              </p>
-            ) : (
-              <p className="mk-muted">提案はありません。</p>
-            )}
-            <div className="mk-row">
-              {cands[0] && (
-                <button type="button" className="mk-btn mk-btn-sm mk-btn-primary" onClick={() => takeProposal(t, cands[0].krId)}>
-                  採る
-                </button>
-              )}
-              {skipped ? (
-                <button type="button" className="mk-btn mk-btn-sm" onClick={() => setProposal(t.id, undefined)}>
-                  見送りを取り消す
-                </button>
-              ) : (
-                <button type="button" className="mk-btn mk-btn-sm" onClick={() => setProposal(t.id, "skipped")}>
-                  見送る
-                </button>
-              )}
-              {skipped && <span className="mk-chip">見送り済み</span>}
-            </div>
+            {cands.length === 0 && <p className="mk-muted">提案はありません。</p>}
+            {cands.map((c) => {
+              const state = proposals[proposalKey(t.id, c.krId)];
+              return (
+                <div key={c.krId} className="mk-proposal">
+                  <p className="mk-small">
+                    つなぎ先の候補：<strong>{krName(c.krId)}</strong>
+                    <br />
+                    <span className="mk-muted">{c.reason}</span>
+                  </p>
+                  <div className="mk-row">
+                    <button type="button" className="mk-btn mk-btn-sm mk-btn-primary" onClick={() => takeProposal(t, c.krId)}>
+                      採る
+                    </button>
+                    {state === "skipped" ? (
+                      <button type="button" className="mk-btn mk-btn-sm" onClick={() => setProposal(t.id, c.krId, undefined)}>
+                        見送りを取り消す
+                      </button>
+                    ) : (
+                      <button type="button" className="mk-btn mk-btn-sm" onClick={() => setProposal(t.id, c.krId, "skipped")}>
+                        見送る
+                      </button>
+                    )}
+                    {state === "skipped" && <span className="mk-chip">見送り済み</span>}
+                  </div>
+                </div>
+              );
+            })}
+            <h4 className="mk-panel-sub">ほかのKRにつなぐ（複数選べます）</h4>
+            <fieldset className="mk-fieldset">
+              <legend className="mk-sr">ほかのKR</legend>
+              {others.map((k) => krCheck(k))}
+            </fieldset>
           </>
         ) : (
           <p className="mk-muted">この仕事はどのKRにもつながっていません。名前つきの一覧とAIの提案は、担当の本人が「自分」表示で見るときだけ出ます。</p>
         )
       ) : mine ? (
         <>
-          <h4 className="mk-panel-sub">つなぎ先を変える（AIの候補から選ぶ）</h4>
+          <h4 className="mk-panel-sub">つなぎ先を変える（複数選べます）</h4>
           <fieldset className="mk-fieldset">
             <legend className="mk-sr">つなぎ先</legend>
-            {cands.map((c) => (
-              <label key={c.krId} className={`mk-opt${override === c.krId ? " is-on" : ""}`}>
-                <input type="radio" name={`link-${t.id}`} checked={override === c.krId} onChange={() => setOverride(t, c.krId)} /> <strong>{krName(c.krId)}</strong>
-                <span className="mk-muted"> {c.reason}</span>
-              </label>
-            ))}
-            <label className={`mk-opt${override === undefined ? " is-on" : ""}`}>
-              <input type="radio" name={`link-${t.id}`} checked={override === undefined} onChange={() => setOverride(t, undefined)} /> もとのつなぎにする
-            </label>
+            {cands.length > 0 && <div className="mk-small mk-muted">AIの候補</div>}
+            {cands.map((c) => krCheck(c.krId, c.reason))}
+            {others.length > 0 && <div className="mk-small mk-muted">ほかのKR</div>}
+            {others.map((k) => krCheck(k))}
           </fieldset>
-          <p className="mk-muted">つなぎ先を変えると、下で選んだ「どう効くか」は消えます。</p>
+          <div className="mk-row">
+            <button type="button" className="mk-btn mk-btn-sm" disabled={override === undefined} onClick={() => setOverride(t, undefined)}>
+              もとに戻す
+            </button>
+            <span className="mk-muted">属するPJのKRに戻ります。</span>
+          </div>
+          <p className="mk-muted">つなぎ先から外したKRの「どう効くか」だけが消えます。</p>
           {krs.map((k) => (
             <div key={k}>
               <h4 className="mk-panel-sub">この仕事は{krLabel(k)}にどう効くか（AIの案から選ぶ）</h4>

@@ -192,3 +192,15 @@
 /* KRの点：文字を添える／色が足りないときの模様 */
 .mk-kdot-labeled { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; white-space: nowrap; }
 .mk-kdot.has-pattern { background-image: repeating-linear-gradient(-45deg, rgba(255, 255, 255, 0.85) 0 2px, transparent 2px 4px); }
+
+/* 結節点（2つ以上のKRにつながる仕事）：輪が2つ重なった印。強調中はほかを薄くする */
+.mk-junction-glyph circle, .mk-junction-mark circle { stroke: var(--color-text-primary); }
+.mk-junction-mark { vertical-align: middle; }
+.mk-junction-line { display: flex; align-items: center; gap: 6px; margin: 6px 0; font-weight: 700; font-size: 13px; }
+.mk-jbtn { display: inline-flex; align-items: center; gap: 4px; margin-left: 12px; }
+.mk-jbtn.is-on { background: var(--color-brand); border-color: var(--color-brand); color: #fff; font-weight: 700; }
+.mk-jbtn.is-on .mk-junction-mark circle { stroke: #fff; }
+.mk-jbtn:disabled { opacity: 0.6; cursor: default; }
+.mk-shared { margin: 4px 0 8px; }
+.mk-proposal { margin: 6px 0 10px; }
+.is-dim { opacity: 0.16; }

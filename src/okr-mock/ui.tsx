@@ -63,6 +63,31 @@ export function KrDots({ krIds, labeled }: { krIds: string[]; labeled?: boolean 
   );
 }
 
+/** 結節点の印（SVGの中）。輪が2つ重なった形。★（成果につながった仕事）とは別の形。色には頼らず、形で見分ける */
+export function JunctionGlyph({ x = 0, y = 0, r = 3.6 }: { x?: number; y?: number; r?: number }) {
+  return (
+    <g transform={`translate(${x} ${y})`} aria-hidden="true" className="mk-junction-glyph">
+      <circle cx={-r * 0.6} cy={0} r={r} fill="none" strokeWidth={1.5} />
+      <circle cx={r * 0.6} cy={0} r={r} fill="none" strokeWidth={1.5} />
+    </g>
+  );
+}
+
+/** 結節点の印（文の中に置く） */
+export function JunctionMark() {
+  return (
+    <svg width={18} height={12} viewBox="-9 -6 18 12" className="mk-junction-mark" role="img" aria-label="結節点の印">
+      <JunctionGlyph r={4} />
+    </svg>
+  );
+}
+
+/** 「KR1 と KR3」「KR1・KR2・KR3」 */
+export function krListText(krIds: string[]): string {
+  const ls = krIds.map(krLabel);
+  return ls.length === 2 ? `${ls[0]} と ${ls[1]}` : ls.join("・");
+}
+
 export function valueText(r: KrRecord, v: number | string): string {
   return r.kind === "number" ? `${v}${r.unit}` : String(v);
 }

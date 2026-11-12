@@ -15,7 +15,7 @@ import {
   tasks as allTasks,
   WEEK_START,
 } from "./fixtures";
-import { applyDrafts, compareOkr, crossedMilestones, deltaText, importKintone, itemsInQuarter, type LinkCtx, type Milestone } from "./logic";
+import { applyDrafts, compareOkr, crossedMilestones, defaultKrIdsOfTask, deltaText, importKintone, itemsInQuarter, type LinkCtx, type Milestone } from "./logic";
 import type { Band, Checkin, ClaimStatus, Decision, KintoneRow, KrAnswer, KrRecord, OkrItem, OutcomeNote, Task } from "./types";
 import * as U from "./userState";
 
@@ -73,11 +73,17 @@ interface MockState {
   confirmImport: (resourceIds: string[], picks: Record<string, number>, values: Record<string, number | Band>) => Celebration[];
   linkCtx: LinkCtx;
   /** 見ている人の分だけ */
-  overrides: Record<string, string>;
-  setOverride: (task: Task, krId: string | undefined) => void;
+  overrides: Record<string, string[]>;
+  /** つなぎ先を選び直す（KRの集合。空＝どれにもつながない）。undefined＝PJの既定に戻す */
+  setOverride: (task: Task, krIds: string[] | undefined) => void;
+  /** 提案の採否（仕事×KRごと） */
   proposals: Record<string, "taken" | "skipped">;
+  /** 提案を1件採る。いまのつなぎ先に足す（置き換えない） */
   takeProposal: (task: Task, krId: string) => void;
-  setProposal: (taskId: string, v: "skipped" | undefined) => void;
+  setProposal: (taskId: string, krId: string, v: "skipped" | undefined) => void;
+  /** 地図で結節点の仕事とその帯だけを強調するか */
+  junctionOnly: boolean;
+  setJunctionOnly: (v: boolean) => void;
   how: Record<string, string>;
   setHow: (taskId: string, krId: string, text: string | undefined) => void;
   personalLinks: { personalId: string; krId: string }[];
@@ -113,6 +119,10 @@ export interface InitialView {
   drawerOpen?: boolean;
   confirmedBy?: Record<string, string>;
   changes?: Change[];
+  /** 結節点だけを強調した状態で始める（描画の確認用） */
+  junctionOnly?: boolean;
+  /** 本人が選んだつなぎ先の初期状態を差し替える（利用者ID → 仕事ID → KRの集合。描画の確認用。書かない利用者は空） */
+  overrides?: Record<string, Record<string, string[]>>;
   /** 確定済みの成果の記述と、利用者ごとの結びつきへの答え（描画の確認用） */
   outcome?: { notes: OutcomeNote[]; claims: Record<string, Record<string, ClaimStatus>> };
 }
@@ -140,10 +150,14 @@ export function MockProvider({ children, initial }: { children: ReactNode; initi
   const [users, setUsers] = useState<U.UserStates>(() => {
     const base = U.initialUserStates(WEEK_START);
     for (const [uid, claims] of Object.entries(initial?.outcome?.claims ?? {})) base[uid] = { ...U.userOf(base, uid), claims };
+    if (initial?.overrides) {
+      for (const uid of new Set([...Object.keys(base), ...Object.keys(initial.overrides)])) base[uid] = { ...U.userOf(base, uid), overrides: initial.overrides[uid] ?? {} };
+    }
     return base;
   });
   const [outcomeNotes, setOutcomeNotes] = useState<OutcomeNote[]>(initial?.outcome?.notes ?? []);
   const [toast, setToast] = useState<string | null>(null);
+  const [junctionOnly, setJunctionOnly] = useState(initial?.junctionOnly ?? false);
   const timer = useRef<number | undefined>(undefined);
   const celebTimer = useRef<number | undefined>(undefined);
   const celebSeq = useRef(0);
@@ -249,10 +263,13 @@ export function MockProvider({ children, initial }: { children: ReactNode; initi
       },
       linkCtx,
       overrides: me.overrides,
-      setOverride: (task, krId) => setUsers((p) => U.setOverride(p, viewerId, task, krId)),
+      setOverride: (task, krIds) => setUsers((p) => U.setOverride(p, viewerId, task, krIds, defaultKrIdsOfTask(task, linkCtx))),
       proposals: me.proposals,
-      takeProposal: (task, krId) => setUsers((p) => U.takeProposal(p, viewerId, task, krId)),
-      setProposal: (taskId, v) => setUsers((p) => U.setProposal(p, viewerId, taskId, v)),
+      takeProposal: (task, krId) =>
+        setUsers((p) => U.takeProposal(p, viewerId, task, krId, U.userOf(p, viewerId).overrides[task.id] ?? defaultKrIdsOfTask(task, linkCtx), defaultKrIdsOfTask(task, linkCtx))),
+      setProposal: (taskId, krId, v) => setUsers((p) => U.setProposal(p, viewerId, taskId, krId, v)),
+      junctionOnly,
+      setJunctionOnly,
       how: me.how,
       setHow: (taskId, krId, text) => setUsers((p) => U.setHow(p, viewerId, taskId, krId, text)),
       personalLinks: me.personalLinks,
@@ -268,7 +285,7 @@ export function MockProvider({ children, initial }: { children: ReactNode; initi
       toast,
       showToast,
     }),
-    [viewerId, mode, sel, guideOpen, drawerOpen, modal, celebrations, changes, decisionsOpen, newDecisions, items, locked, imported, records, checkins, decisions, confirmedBy, linkCtx, me, outcomeNotes, confirmedLinks, toast, showToast],
+    [viewerId, mode, sel, guideOpen, drawerOpen, modal, junctionOnly, celebrations, changes, decisionsOpen, newDecisions, items, locked, imported, records, checkins, decisions, confirmedBy, linkCtx, me, outcomeNotes, confirmedLinks, toast, showToast],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

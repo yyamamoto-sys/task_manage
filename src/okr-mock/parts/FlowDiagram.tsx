@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { flowCounts, layoutFlow, OTHER_PJ, ribbonPath, type Ribbon } from "../flow";
-import { krStyle, PERIOD_END, PERIOD_START, personalOkrs, PERSONAL_NAME, MINE_COLOR, pjsInit, tasks } from "../fixtures";
-import { BANDS, krPace, krProgress, overallProgress, periodElapsed, PERSONAL_PJ, stepsToTarget, TODAY } from "../logic";
+import { flowCounts, junctionIdsOf, layoutFlow, OTHER_PJ, ribbonPath, type Ribbon } from "../flow";
+import { proposalKey } from "../userState";
+import { aiCandidates, krStyle, PERIOD_END, PERIOD_START, personalOkrs, PERSONAL_NAME, MINE_COLOR, pjsInit, tasks } from "../fixtures";
+import { BANDS, krIdsOfTask, krPace, krProgress, overallProgress, periodElapsed, PERSONAL_PJ, stepsToTarget, TODAY } from "../logic";
 import { useMock } from "../state";
-import { Burst, krLabel, krText, memberOf, outcomeLine, PACE_INFO, PaceGlyph, SvgButton, surnameOf, trunc, wrapLines } from "../ui";
+import { Burst, JunctionGlyph, JunctionMark, krLabel, krListText, krText, memberOf, outcomeLine, PACE_INFO, PaceGlyph, SvgButton, surnameOf, trunc, wrapLines } from "../ui";
 
 const TOP = 28;
 
@@ -12,10 +13,10 @@ function pjName(id: string): string {
   return pjsInit.find((p) => p.id === id)?.name ?? id;
 }
 
-function RibbonShape({ r, krId, label, onActivate }: { r: Ribbon; krId: string; label: string; onActivate: () => void }) {
+function RibbonShape({ r, krId, label, onActivate, dim }: { r: Ribbon; krId: string; label: string; onActivate: () => void; dim?: boolean }) {
   const st = krStyle(krId);
   return (
-    <SvgButton label={label} onActivate={onActivate} className="mk-ribbon" focusable={false}>
+    <SvgButton label={label} onActivate={onActivate} className={`mk-ribbon${dim ? " is-dim" : ""}`} focusable={false}>
       <title>{label}</title>
       {r.segments.map((s) => {
         const d = ribbonPath(r, s.offset, s.thickness);
@@ -33,7 +34,7 @@ function RibbonShape({ r, krId, label, onActivate }: { r: Ribbon; krId: string; 
 }
 
 export function FlowDiagram() {
-  const { mode, viewerId, items, records, linkCtx, sel, setSel, personalLinks, togglePersonalLink, celebrations, changes, proposals, confirmedLinks } = useMock();
+  const { mode, viewerId, items, records, linkCtx, sel, setSel, personalLinks, togglePersonalLink, celebrations, changes, proposals, confirmedLinks, junctionOnly, setJunctionOnly } = useMock();
   const scope = mode === "self" ? "self" : "team";
   const [expanded, setExpanded] = useState<string[]>([]);
   const [armed, setArmed] = useState<string | null>(null);
@@ -113,6 +114,14 @@ export function FlowDiagram() {
 
   const personalPort = (pid: string) => layout.personal.find((p) => p.id === pid)!;
 
+  // 結節点＝2つ以上のKRにつながる仕事。強調は、結節点が1件以上あるときだけ効く
+  const junctionIds = useMemo(() => junctionIdsOf(counts, linkCtx), [counts, linkCtx]);
+  const jOn = junctionOnly && junctionIds.size > 0;
+  const edgeHasJunction = (krId: string, pjIds: string[] | null) => counts.edges.some((e) => e.krId === krId && (pjIds === null || pjIds.includes(e.pjId)) && e.taskIds.some((id) => junctionIds.has(id)));
+  const pjMembers = (pjId: string) => (pjId === OTHER_PJ ? (layout.pjNodes.find((n) => n.pjId === OTHER_PJ)?.members.map((m) => m.pjId) ?? []) : [pjId]);
+  const junctionInPj = (pjId: string) => pjMembers(pjId).reduce((s, id) => s + (counts.linkedByPj[id] ?? []).filter((t) => junctionIds.has(t.id)).length, 0);
+  const dimIf = (cond: boolean) => (jOn && cond ? " is-dim" : "");
+
   // 成果につながったと確かめられた仕事（全員に見える）。PJ→KRの帯と、PJの中の仕事に★を付ける
   const starredTasks = new Set(confirmedLinks.map((c) => c.task.id));
   const starsOnRibbon = (r: Ribbon): number => {
@@ -130,6 +139,16 @@ export function FlowDiagram() {
           </svg>
           {scope === "self" ? "あなたの仕事の地図" : "仕事がどこへ流れているか"}
         </h2>
+        <button
+          type="button"
+          className={`mk-btn mk-btn-sm mk-jbtn${jOn ? " is-on" : ""}`}
+          aria-pressed={jOn}
+          disabled={junctionIds.size === 0}
+          title="2つ以上のKRにつながっている仕事とその帯だけを強調します。もう一度押すと戻ります"
+          onClick={() => setJunctionOnly(!junctionOnly)}
+        >
+          <JunctionMark /> 結節点 {junctionIds.size}件
+        </button>
         <span className="mk-spacer" />
         <div className="mk-legend" aria-label="凡例">
           <span>
@@ -143,6 +162,10 @@ export function FlowDiagram() {
           <span>
             <b aria-hidden="true">★</b>
             成果につながった仕事
+          </span>
+          <span>
+            <JunctionMark />
+            結節点（2つ以上のKRにつながる仕事）
           </span>
         </div>
       </div>
@@ -221,12 +244,14 @@ export function FlowDiagram() {
                 krId={r.toId}
                 label={`${r.fromId === OTHER_PJ ? "ほかのPJ" : pjName(r.fromId)}から${krLabel(r.toId)}へ：終えた仕事${r.done}件、残り${r.open}件${starsOnRibbon(r) > 0 ? `、成果につながった仕事${starsOnRibbon(r)}件` : ""}。押すと${krLabel(r.toId)}の詳細を開きます`}
                 onActivate={() => setSel({ type: "kr", id: r.toId })}
+                dim={jOn && !edgeHasJunction(r.toId, pjMembers(r.fromId))}
               />
             ))}
             {layout.krO.map((r) => (
               <RibbonShape
                 key={r.id}
                 r={r}
+                dim={jOn && !edgeHasJunction(r.fromId, null)}
                 krId={r.fromId}
                 label={`${krLabel(r.fromId)}からO（めざす姿）へ：終えた仕事${r.done}件、残り${r.open}件。押すと${krLabel(r.fromId)}の詳細を開きます`}
                 onActivate={() => setSel({ type: "kr", id: r.fromId })}
@@ -235,7 +260,7 @@ export function FlowDiagram() {
             {layout.pjKr.map((r) => {
               const stars = starsOnRibbon(r);
               return (
-                <text key={`n-${r.id}`} x={r.labelX - 4} y={r.labelY} fontSize={10.5} className="mk-svgtext" pointerEvents="none">
+                <text key={`n-${r.id}`} x={r.labelX - 4} y={r.labelY} fontSize={10.5} className={`mk-svgtext${dimIf(!edgeHasJunction(r.toId, pjMembers(r.fromId)))}`} pointerEvents="none">
                   仕事 完了 {r.done}／残り {r.open}
                   {stars > 0 ? ` ★${stars}` : ""}
                 </text>
@@ -287,9 +312,10 @@ export function FlowDiagram() {
               const label = isOther
                 ? `ほか${n.members.length}PJ：終えた仕事${n.done}件、残り${n.open}件。押すとPJの一覧を${n.expanded ? "閉じます" : "開きます"}`
                 : `PJ「${name}」：終えた仕事${n.done}件、残り${n.open}件。押すと仕事を${n.expanded ? "閉じます" : "開きます"}`;
+              const jc = junctionInPj(n.pjId);
               return (
-                <g key={n.pjId}>
-                  <SvgButton label={label} onActivate={() => setExpanded((e) => (e.includes(n.pjId) ? e.filter((x) => x !== n.pjId) : [...e, n.pjId]))} expanded={n.expanded}>
+                <g key={n.pjId} className={dimIf(jc === 0).trim() || undefined}>
+                  <SvgButton label={`${label}${jc > 0 ? `。結節点の仕事${jc}件を含みます` : ""}`} onActivate={() => setExpanded((e) => (e.includes(n.pjId) ? e.filter((x) => x !== n.pjId) : [...e, n.pjId]))} expanded={n.expanded}>
                     <rect x={n.x} y={n.y} width={n.w} height={n.h} rx={12} className="mk-fnode" />
                     <path d={`M ${n.x + 12} ${n.y + 11} h 7 l 2 2.5 h 9 v 11 h -18 Z`} fill="#7c8db5" opacity={0.85} />
                     <text x={n.x + 36} y={n.y + 22} fontSize={12} fontWeight={700} className="mk-svgtext">
@@ -298,6 +324,14 @@ export function FlowDiagram() {
                     <text x={n.x + 36} y={n.y + 36} fontSize={10.5} className="mk-svgtext-muted">
                       仕事 完了 {n.done}／残り {n.open}
                     </text>
+                    {jc > 0 && (
+                      <>
+                        <JunctionGlyph x={n.x + n.w - 62} y={n.y + 33} />
+                        <text x={n.x + n.w - 52} y={n.y + 36} fontSize={9.5} className="mk-svgtext">
+                          結節点 {jc}
+                        </text>
+                      </>
+                    )}
                     <path d={n.expanded ? `M ${n.x + n.w - 22} ${n.y + 18} l 6 6 l 6 -6` : `M ${n.x + n.w - 20} ${n.y + 14} l 6 6 l -6 6`} stroke="currentColor" strokeWidth={2} fill="none" className="mk-svgtext-muted" strokeLinecap="round" strokeLinejoin="round" />
                   </SvgButton>
                   {n.rows.map((row) => {
@@ -318,8 +352,16 @@ export function FlowDiagram() {
                     const t = taskOf(row.id);
                     const m = memberOf(t.assigneeId);
                     const isSel = sel?.type === "task" && sel.id === t.id;
+                    const tk = krIdsOfTask(t, linkCtx);
+                    const isJ = tk.length >= 2;
+                    const starred = starredTasks.has(t.id);
                     return (
-                      <SvgButton key={t.id} label={`仕事「${t.title}」担当${m?.name}、${t.status}${starredTasks.has(t.id) ? "、成果につながった仕事" : ""}。押すと詳細を開きます`} onActivate={() => setSel({ type: "task", id: t.id })}>
+                      <SvgButton
+                        key={t.id}
+                        className={dimIf(!isJ).trim() || undefined}
+                        label={`仕事「${t.title}」担当${m?.name}、${t.status}${starred ? "、成果につながった仕事" : ""}${isJ ? `、結節点（${krListText(tk)}）` : ""}。押すと詳細を開きます`}
+                        onActivate={() => setSel({ type: "task", id: t.id })}
+                      >
                         <rect x={n.x + 10} y={row.y} width={n.w - 10} height={20} rx={8} className={`mk-trow${isSel ? " is-sel" : ""}`} />
                         {t.status === "完了" ? (
                           <circle cx={n.x + 22} cy={row.y + 10} r={5} fill="#1a9a6b" />
@@ -332,9 +374,17 @@ export function FlowDiagram() {
                           <circle cx={n.x + 22} cy={row.y + 10} r={5} fill="none" stroke="#8a93a6" strokeWidth={1.6} />
                         )}
                         <text x={n.x + 34} y={row.y + 14} fontSize={10.5} className="mk-svgtext">
-                          {starredTasks.has(t.id) ? "★" : ""}
-                          {trunc(t.title, starredTasks.has(t.id) ? 10 : 11)}
+                          {starred ? "★" : ""}
+                          {trunc(t.title, (starred ? 10 : 11) - (isJ ? 4 : 0))}
                         </text>
+                        {isJ && (
+                          <>
+                            <JunctionGlyph x={n.x + n.w - 82} y={row.y + 10} />
+                            {tk.map((k, i) => (
+                              <circle key={k} cx={n.x + n.w - 70 + i * 8} cy={row.y + 10} r={3} fill={krStyle(k).color} />
+                            ))}
+                          </>
+                        )}
                         <circle cx={n.x + n.w - 40} cy={row.y + 10} r={4} fill={m?.color} />
                         <text x={n.x + n.w - 33} y={row.y + 14} fontSize={9.5} className="mk-svgtext-muted">
                           {surnameOf(t.assigneeId)}
@@ -367,6 +417,7 @@ export function FlowDiagram() {
                 <SvgButton
                   key={n.krId}
                   krId={n.krId}
+                  className={dimIf(!edgeHasJunction(n.krId, null)).trim() || undefined}
                   label={label}
                   onActivate={() => {
                     if (armed) {
@@ -482,7 +533,8 @@ export function FlowDiagram() {
                 </text>
                 {layout.loose.map((n) => {
                   const t = taskOf(n.taskId);
-                  const skipped = proposals[t.id] === "skipped";
+                  const tc = aiCandidates[t.pjId] ?? [];
+                  const skipped = tc.length > 0 && tc.every((c) => proposals[proposalKey(t.id, c.krId)] === "skipped");
                   const isSel = sel?.type === "task" && sel.id === t.id;
                   return (
                     <SvgButton key={t.id} label={`つながらない仕事「${t.title}」（${pjName(t.pjId)}）${skipped ? "。提案は見送り済み" : ""}。押すと詳細を開きます`} onActivate={() => setSel({ type: "task", id: t.id })}>

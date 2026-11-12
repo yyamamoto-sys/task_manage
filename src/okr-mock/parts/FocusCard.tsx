@@ -1,5 +1,5 @@
 import { aiCandidates, krStyle, PERIOD_END, PERIOD_START, tasks } from "../fixtures";
-import { candidateTasksForKr, formatMd, latestCheckinDate, periodElapsed, TODAY, weeklyFocus } from "../logic";
+import { candidateTasksForKr, formatMd, krIdsOfTask, latestCheckinDate, periodElapsed, TODAY, weeklyFocus } from "../logic";
 import { useMock } from "../state";
 import { krLabel, krText, StatusChip } from "../ui";
 import { ClaimsBanner } from "./Claims";
@@ -74,7 +74,7 @@ export function FocusCard() {
                                 className="mk-btn mk-btn-sm mk-btn-primary"
                                 onClick={() => {
                                   takeProposal(c.task, f.krId);
-                                  showToast(`「${c.task.title}」を${krLabel(f.krId)}につなぎました`);
+                                  showToast(`「${c.task.title}」を${krLabel(f.krId)}${krIdsOfTask(c.task, linkCtx).length > 0 ? "にも" : "に"}つなぎました`);
                                 }}
                               >
                                 採る

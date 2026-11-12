@@ -1,13 +1,13 @@
 // 人ごとの状態（つなぎ先の変更・提案の採否・「どう効くか」・個人OKRのつなぎ・振り返り・今週やる）。
 // 「本人」＝いま見ている人。すべて利用者IDごとに分け、他の人の分は読まない・書かない。
-import { personalLinksInit, picksInit } from "./fixtures";
+import { overridesInit, personalLinksInit, picksInit } from "./fixtures";
 import { answerKey, howKey } from "./logic";
 import type { ClaimStatus, KrAnswer, OutcomeNote, Task } from "./types";
 
 export interface UserState {
-  /** つなぎ先を変えた仕事（仕事ID → KR ID） */
-  overrides: Record<string, string>;
-  /** AIの提案の採否（仕事ID） */
+  /** つなぎ先を選んだ仕事（仕事ID → KR IDの集合）。空＝どのKRにもつながない */
+  overrides: Record<string, string[]>;
+  /** AIの提案の採否（仕事×KR。proposalKey） */
   proposals: Record<string, "taken" | "skipped">;
   /** どう効くか（仕事×KR → 一言） */
   how: Record<string, string>;
@@ -30,8 +30,8 @@ export function userOf(s: UserStates, id: string): UserState {
 
 export function initialUserStates(weekStart: string): UserStates {
   const out: UserStates = {};
-  for (const id of new Set([...Object.keys(personalLinksInit), ...Object.keys(picksInit)])) {
-    out[id] = { ...emptyUser(), personalLinks: personalLinksInit[id] ?? [], picks: picksInit[id] ? { [weekStart]: picksInit[id] } : {} };
+  for (const id of new Set([...Object.keys(personalLinksInit), ...Object.keys(picksInit), ...Object.keys(overridesInit)])) {
+    out[id] = { ...emptyUser(), personalLinks: personalLinksInit[id] ?? [], picks: picksInit[id] ? { [weekStart]: picksInit[id] } : {}, overrides: { ...(overridesInit[id] ?? {}) } };
   }
   return out;
 }
@@ -43,40 +43,52 @@ function patch(s: UserStates, id: string, fn: (u: UserState) => UserState): User
 }
 
 /** 全員分のつなぎ先の変更をまとめたもの（図は全員の仕事を描くので、全員分を使う） */
-export function mergedOverrides(s: UserStates): Record<string, string> {
+export function mergedOverrides(s: UserStates): Record<string, string[]> {
   return Object.assign({}, ...Object.values(s).map((u) => u.overrides));
 }
 
+const sameSet = (a: string[], b: string[]) => a.length === b.length && a.every((k) => b.includes(k));
+
+/** 提案の持ち方：仕事×KR（候補が複数あるとき、1件ずつ採る・見送る） */
+export const proposalKey = (taskId: string, krId: string) => `${taskId}|${krId}`;
+
 /**
- * つなぎ先を変える／もとに戻す（krId を渡さない）。担当者本人だけが変えられる。
- * つなぎ先が変わると、その仕事の「どう効くか」は消す。もとに戻すと、採った提案の記録も戻す
+ * つなぎ先を選び直す（krIds＝選んだKRの集合。空配列＝どのKRにもつながない）／もとに戻す（krIds を渡さない）。担当者本人だけが変えられる。
+ * defaultKrs はその仕事の既定のつなぎ先（もとに戻すと、これになる）。
+ * つなぎ先から外れたKRの「どう効くか」と、採った提案の記録だけを消す（残したKRの答えは消さない）
  */
-export function setOverride(s: UserStates, userId: string, task: Task, krId: string | undefined): UserStates {
+export function setOverride(s: UserStates, userId: string, task: Task, krIds: string[] | undefined, defaultKrs: string[]): UserStates {
   if (task.assigneeId !== userId) return s;
   return patch(s, userId, (u) => {
-    if (u.overrides[task.id] === krId) return u;
+    const before = u.overrides[task.id] ?? defaultKrs;
+    const after = krIds ?? defaultKrs;
+    if (krIds === undefined ? u.overrides[task.id] === undefined : u.overrides[task.id] !== undefined && sameSet(u.overrides[task.id], krIds)) return u;
     const overrides = { ...u.overrides };
-    if (krId) overrides[task.id] = krId;
+    if (krIds) overrides[task.id] = [...new Set(krIds)];
     else delete overrides[task.id];
-    const how = Object.fromEntries(Object.entries(u.how).filter(([k]) => !k.startsWith(`${task.id}|`)));
-    const proposals = { ...u.proposals };
-    if (!krId && proposals[task.id] === "taken") delete proposals[task.id];
+    const gone = (key: string) => before.includes(key.split("|")[1]) && !after.includes(key.split("|")[1]);
+    const how = Object.fromEntries(Object.entries(u.how).filter(([k]) => !(k.startsWith(`${task.id}|`) && gone(k))));
+    const proposals = Object.fromEntries(Object.entries(u.proposals).filter(([k, v]) => !(k.startsWith(`${task.id}|`) && v === "taken" && !after.includes(k.split("|")[1]))));
     return { ...u, overrides, how, proposals };
   });
 }
 
-/** AIの提案を採る＝つなぎ先を変えて、採った記録を残す */
-export function takeProposal(s: UserStates, userId: string, task: Task, krId: string): UserStates {
+/** AIの提案を1件採る＝いまのつなぎ先に足して（置き換えない）、採った記録を残す */
+export function takeProposal(s: UserStates, userId: string, task: Task, krId: string, currentKrs: string[], defaultKrs: string[]): UserStates {
   if (task.assigneeId !== userId) return s;
-  const moved = setOverride(s, userId, task, krId);
-  return patch(moved, userId, (u) => ({ ...u, proposals: { ...u.proposals, [task.id]: "taken" } }));
+  const moved = setOverride(s, userId, task, [...currentKrs.filter((k) => k !== krId), krId], defaultKrs);
+  return patch(moved, userId, (u) => {
+    const proposals = { ...u.proposals, [proposalKey(task.id, krId)]: "taken" as const };
+    return { ...u, proposals };
+  });
 }
 
-export function setProposal(s: UserStates, userId: string, taskId: string, v: "skipped" | undefined): UserStates {
+export function setProposal(s: UserStates, userId: string, taskId: string, krId: string, v: "skipped" | undefined): UserStates {
   return patch(s, userId, (u) => {
     const proposals = { ...u.proposals };
-    if (v) proposals[taskId] = v;
-    else delete proposals[taskId];
+    const key = proposalKey(taskId, krId);
+    if (v) proposals[key] = v;
+    else delete proposals[key];
     return { ...u, proposals };
   });
 }

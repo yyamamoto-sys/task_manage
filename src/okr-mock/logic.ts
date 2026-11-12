@@ -140,20 +140,49 @@ export function krIdsOfPj(pj: Pj, items: OkrItem[]): string[] {
 export interface LinkCtx {
   pjs: Pj[];
   items: OkrItem[];
-  /** 担当者本人がつなぎ先を変えた仕事（仕事ID → KR ID）。全員分をまとめたもの。あれば既定のつながりを置き換える */
-  overrides: Record<string, string>;
+  /**
+   * 担当者本人がつなぎ先を選んだ仕事（仕事ID → KR IDの集合）。全員分をまとめたもの。
+   * あれば既定のつながりを置き換える。空の集合＝どのKRにもつながない
+   */
+  overrides: Record<string, string[]>;
 }
 
-/**
- * 仕事がつながるKR。上書きがあればそれ。完了した仕事は「完了した時点のつながり」の記録を使う。
- * それ以外は属するPJのKR（共有PJで同じKRに2回付いても1つ）
- */
-export function krIdsOfTask(task: Task, ctx: LinkCtx): string[] {
-  const o = ctx.overrides[task.id];
-  if (o) return [o];
+/** 本人が選ぶ前の既定のつなぎ先。完了した仕事は「完了した時点のつながり」の記録、それ以外は属するPJのKR（共有PJで同じKRに2回付いても1つ） */
+export function defaultKrIdsOfTask(task: Task, ctx: LinkCtx): string[] {
   if (task.status === "完了" && task.doneKrIds) return task.doneKrIds;
   const pj = ctx.pjs.find((p) => p.id === task.pjId);
   return pj ? krIdsOfPj(pj, ctx.items) : [];
+}
+
+/** 仕事がつながるKR。本人が選んだ集合があればそれ（0個もありうる）。なければ既定 */
+export function krIdsOfTask(task: Task, ctx: LinkCtx): string[] {
+  const o = ctx.overrides[task.id];
+  return o ?? defaultKrIdsOfTask(task, ctx);
+}
+
+/** 結節点＝2つ以上のKRにつながっている仕事（PJの既定で複数につながるものも、本人が選んだものも含む）。共有PJの仕事も1回 */
+export function junctionTasks(tasks: Task[], ctx: LinkCtx): Task[] {
+  return uniqueTasks(tasks.filter((t) => krIdsOfTask(t, ctx).length >= 2));
+}
+
+export interface SharedWork {
+  /** 相手のKR */
+  krId: string;
+  tasks: Task[];
+}
+
+/** このKRと仕事を共有している（同じ仕事が両方につながる）KRごとの、共有している仕事。共有が無いKRは出さない */
+export function sharedWork(tasks: Task[], krId: string, ctx: LinkCtx, krOrder: string[]): SharedWork[] {
+  const mine = tasksOfKr(tasks, krId, ctx);
+  return krOrder
+    .filter((k) => k !== krId)
+    .map((k) => ({ krId: k, tasks: mine.filter((t) => krIdsOfTask(t, ctx).includes(k)) }))
+    .filter((s) => s.tasks.length > 0);
+}
+
+/** KRの並び順にそろえる（重複は除く） */
+export function sortKrIds(ids: string[], krOrder: string[]): string[] {
+  return krOrder.filter((k) => ids.includes(k));
 }
 
 /** KRにつながる仕事。1つの仕事は同じKRに1回だけ数える */

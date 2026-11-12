@@ -141,13 +141,13 @@ describe("流れの図：件数の数え方", () => {
   });
   it("個人の仕事につなぎ先を付けると、「個人の仕事」のまとまりとして図に現れる", () => {
     const t = tasks.find((x) => x.pjId === PERSONAL_PJ && x.assigneeId === "m2")!;
-    const c = flowCounts({ tasks, ...base, ctx: { ...ctx, overrides: { [t.id]: "kr3" } }, scope: "team" });
+    const c = flowCounts({ tasks, ...base, ctx: { ...ctx, overrides: { [t.id]: ["kr3"] } }, scope: "team" });
     expect(edge(c, PERSONAL_PJ, "kr3")!.open).toBe(1);
     expect(c.loose).toHaveLength(team.loose.length - 1);
   });
   it("提案を採る（上書き）とつながる", () => {
     const first = tasks.find((t) => t.pjId === "p8")!;
-    const after = flowCounts({ tasks, ...base, ctx: { ...ctx, overrides: { [first.id]: "kr1" } }, scope: "team" });
+    const after = flowCounts({ tasks, ...base, ctx: { ...ctx, overrides: { [first.id]: ["kr1"] } }, scope: "team" });
     expect(after.loose).toHaveLength(team.loose.length - 1);
     expect(edge(after, "p8", "kr1")!.open).toBe(1);
   });

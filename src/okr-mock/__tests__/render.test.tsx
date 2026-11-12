@@ -158,7 +158,7 @@ describe("詳細パネルと引き出し", () => {
     expect(h).toContain("つなぎ先を変える");
     expect(h).toContain("KR2にどう効くか");
     expect(h).toContain("KR3にどう効くか");
-    expect(h).toContain("つなぎ先を変えると、下で選んだ「どう効くか」は消えます");
+    expect(h).toContain("つなぎ先から外したKRの「どう効くか」だけが消えます");
   });
   it("引き出しを開くと資料の選択が出る。その回を確定済みの人がいれば表示する", () => {
     expect(html({ drawerOpen: true })).toContain("読ませる資料");

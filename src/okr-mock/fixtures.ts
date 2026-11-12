@@ -432,9 +432,30 @@ export const personalLinksInit: Record<string, { personalId: string; krId: strin
   m2: [
     { personalId: "po1", krId: "kr1" },
     { personalId: "po2", krId: "kr3" },
+    { personalId: "po1", krId: "kr3" },
+    { personalId: "po3", krId: "kr2" },
   ],
   m3: [{ personalId: "po4", krId: "kr1" }],
   m1: [{ personalId: "po7", krId: "kr3" }],
+};
+
+/**
+ * 本人が選んだつなぎ先の最初の状態（人ごと）。PJの既定は1つのKRだが、本人が2つ目（3人目も）を足した例。
+ * 結節点（2つ以上のKRにつながる仕事）の見本。KRの組み合わせが偏らないようにし、3つにまたがる仕事を1件入れる
+ */
+export const overridesInit: Record<string, Record<string, string[]>> = {
+  m2: {
+    [taskIdByTitle("ヒアリング対象の過去取引を確認する")]: ["kr1", "kr2"],
+    [taskIdByTitle("月次レポートを1本、自動で作る")]: ["kr1", "kr3"],
+  },
+  m3: {
+    [taskIdByTitle("価格表を最新にする")]: ["kr1", "kr2", "kr3"],
+    [taskIdByTitle("共有フォルダの権限を整える")]: ["kr2", "kr3"],
+  },
+  m1: {
+    [taskIdByTitle("ヒアリング結果の速報を出す")]: ["kr1", "kr3"],
+    [taskIdByTitle("社内レビューを受ける")]: ["kr1", "kr2"],
+  },
 };
 
 /** 「今週やる」の最初の選択（人ごと。その人だけに見える） */

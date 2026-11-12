@@ -1,9 +1,14 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { detectConflicts, mergeDecisions, mergeDrafts, unresolved } from "../confirm";
-import { checkinsInit, decisionsInit, KR_PALETTE, krStyle, krStyleAt, nextCheckin, okrItems, recordsInit, resources, tasks, WARN, WEEK_START } from "../fixtures";
-import { answerKey, applyDrafts, contrastRatio, howKey } from "../logic";
+import { checkinsInit, decisionsInit, KR_PALETTE, krStyle, krStyleAt, nextCheckin, okrItems, pjsInit, recordsInit, resources, tasks, WARN, WEEK_START } from "../fixtures";
+import { answerKey, applyDrafts, contrastRatio, defaultKrIdsOfTask, howKey, itemsInQuarter, krIdsOfTask, type LinkCtx, unlinkedTasks } from "../logic";
+import type { Task } from "../types";
 import * as U from "../userState";
+
+const baseCtx: LinkCtx = { pjs: pjsInit, items: itemsInQuarter(okrItems, "4Q"), overrides: {} };
+/** その仕事の既定のつなぎ先（本人が選ぶ前） */
+const dk = (t: Task) => defaultKrIdsOfTask(t, baseCtx);
 
 const t2 = tasks.find((t) => t.assigneeId === "m3" && t.pjId === "p1" && t.status !== "完了")!;
 const t2m2 = tasks.find((t) => t.assigneeId === "m2" && t.pjId === "p1" && t.status !== "完了")!;
@@ -14,22 +19,22 @@ const minutes = resources.find((r) => r.id === "minutes")!;
 describe("状態は利用者IDごとに分かれる（本人＝見ている人）", () => {
   it("鈴木以外（高橋）でも、自分の仕事のつなぎ先を変えられる。他の人の状態は動かない", () => {
     const before = fresh();
-    const after = U.setOverride(before, "m3", t2, "kr3");
-    expect(after.m3.overrides[t2.id]).toBe("kr3");
-    expect(U.userOf(after, "m2").overrides).toEqual({});
-    expect(U.userOf(after, "m1").overrides).toEqual({});
-    expect(U.mergedOverrides(after)[t2.id]).toBe("kr3");
+    const after = U.setOverride(before, "m3", t2, ["kr3"], dk(t2));
+    expect(after.m3.overrides[t2.id]).toEqual(["kr3"]);
+    expect(U.userOf(after, "m2").overrides).toEqual(U.userOf(before, "m2").overrides);
+    expect(U.userOf(after, "m1").overrides).toEqual(U.userOf(before, "m1").overrides);
+    expect(U.mergedOverrides(after)[t2.id]).toEqual(["kr3"]);
   });
   it("他の人の仕事のつなぎ先は変えられない（状態も変わらない）", () => {
     const before = fresh();
-    expect(U.setOverride(before, "m3", t2m2, "kr3")).toBe(before);
-    expect(U.takeProposal(before, "m3", t2m2, "kr3")).toBe(before);
+    expect(U.setOverride(before, "m3", t2m2, ["kr3"], dk(t2m2))).toBe(before);
+    expect(U.takeProposal(before, "m3", t2m2, "kr3", [], [])).toBe(before);
     expect(U.togglePick(before, "m3", WEEK_START, t2m2)).toBe(before);
   });
   it("どう効くか・提案の採否・個人OKRのつなぎ・振り返り・今週やるは、人ごとに別", () => {
     let s = fresh();
     s = U.setHow(s, "m3", t2.id, "kr1", "提案の質を上げて、紹介を増やす");
-    s = U.setProposal(s, "m3", "any", "skipped");
+    s = U.setProposal(s, "m3", "any", "kr1", "skipped");
     s = U.toggleLink(s, "m3", "po5", "kr2");
     s = U.setAnswer(s, "m3", WEEK_START, "kr1", { effect: "少し" });
     s = U.togglePick(s, "m3", WEEK_START, t2);
@@ -64,31 +69,84 @@ describe("「どう効くか」は仕事×KR。つなぎ先を変えたら消え
     expect(Object.keys(s.m1.how)).toEqual([howKey(mine.id, "kr3")]);
     expect(two.assigneeId).toBe("m1");
   });
-  it("つなぎ先を変えると、その仕事の答えは（全KR分）消え、他の仕事の答えは残る", () => {
-    let s = fresh();
+  it("つなぎ先から外したKRの答えだけ消える。残したKR・他の仕事の答えは残る", () => {
+    let s = U.setOverride(fresh(), "m3", t2, ["kr1", "kr2"], dk(t2));
     s = U.setHow(s, "m3", t2.id, "kr1", "x");
+    s = U.setHow(s, "m3", t2.id, "kr2", "z");
     s = U.setHow(s, "m3", "other", "kr1", "y");
-    s = U.setOverride(s, "m3", t2, "kr2");
-    expect(Object.keys(s.m3.how)).toEqual([howKey("other", "kr1")]);
+    s = U.setOverride(s, "m3", t2, ["kr1", "kr3"], dk(t2));
+    expect(Object.keys(s.m3.how).sort()).toEqual([howKey(t2.id, "kr1"), howKey("other", "kr1")].sort());
   });
-  it("もとに戻したときも消す。同じつなぎ先を選び直しても（変化なし）消さない", () => {
-    let s = U.setOverride(fresh(), "m3", t2, "kr2");
+  it("同じ集合を選び直しても（変化なし）何も消さない。もとに戻すと、既定に入っていないKRの答えが消える", () => {
+    let s = U.setOverride(fresh(), "m3", t2, ["kr2", "kr3"], dk(t2));
     s = U.setHow(s, "m3", t2.id, "kr2", "x");
-    expect(U.setOverride(s, "m3", t2, "kr2")).toBe(s);
-    s = U.setOverride(s, "m3", t2, undefined);
+    s = U.setHow(s, "m3", t2.id, "kr3", "w");
+    expect(U.setOverride(s, "m3", t2, ["kr3", "kr2"], dk(t2))).toBe(s);
+    expect(dk(t2)).toEqual(["kr1"]);
+    s = U.setOverride(s, "m3", t2, undefined, dk(t2));
     expect(s.m3.how).toEqual({});
     expect(s.m3.overrides[t2.id]).toBeUndefined();
   });
+  it("複数のKRを選べる。0個（どのKRにもつながない）も選べる", () => {
+    let s = U.setOverride(fresh(), "m3", t2, ["kr1", "kr2", "kr3"], dk(t2));
+    expect(s.m3.overrides[t2.id]).toEqual(["kr1", "kr2", "kr3"]);
+    s = U.setOverride(s, "m3", t2, [], dk(t2));
+    expect(s.m3.overrides[t2.id]).toEqual([]);
+    const ctx: LinkCtx = { ...baseCtx, overrides: U.mergedOverrides(s) };
+    expect(krIdsOfTask(t2, ctx)).toEqual([]);
+    expect(unlinkedTasks([t2], ctx)).toHaveLength(1);
+  });
   it("つなぎを「もとに戻す」と、採った提案の記録も戻る（見送りの記録は残る）", () => {
     const loose = tasks.find((t) => t.assigneeId === "m2" && t.pjId === "p8")!;
-    let s = U.takeProposal(fresh(), "m2", loose, "kr1");
-    expect(s.m2.proposals[loose.id]).toBe("taken");
-    expect(s.m2.overrides[loose.id]).toBe("kr1");
-    s = U.setOverride(s, "m2", loose, undefined);
-    expect(s.m2.proposals[loose.id]).toBeUndefined();
-    s = U.setProposal(s, "m2", loose.id, "skipped");
-    s = U.setOverride(s, "m2", loose, undefined);
-    expect(s.m2.proposals[loose.id]).toBe("skipped");
+    let s = U.takeProposal(fresh(), "m2", loose, "kr1", [], dk(loose));
+    expect(s.m2.proposals[U.proposalKey(loose.id, "kr1")]).toBe("taken");
+    expect(s.m2.overrides[loose.id]).toEqual(["kr1"]);
+    s = U.setOverride(s, "m2", loose, undefined, dk(loose));
+    expect(s.m2.proposals[U.proposalKey(loose.id, "kr1")]).toBeUndefined();
+    s = U.setProposal(s, "m2", loose.id, "kr3", "skipped");
+    s = U.setOverride(s, "m2", loose, undefined, dk(loose));
+    expect(s.m2.proposals[U.proposalKey(loose.id, "kr3")]).toBe("skipped");
+  });
+  it("提案は候補ごとに複数採れる（置き換えず足す）。1件ずつ見送れる", () => {
+    const loose = tasks.find((t) => t.assigneeId === "m2" && t.pjId === "p8")!;
+    let s = U.takeProposal(fresh(), "m2", loose, "kr1", [], dk(loose));
+    s = U.takeProposal(s, "m2", loose, "kr3", s.m2.overrides[loose.id], dk(loose));
+    expect(s.m2.overrides[loose.id]).toEqual(["kr1", "kr3"]);
+    s = U.setHow(s, "m2", loose.id, "kr1", "h");
+    s = U.setProposal(s, "m2", loose.id, "kr2", "skipped");
+    expect(s.m2.proposals[U.proposalKey(loose.id, "kr1")]).toBe("taken");
+    expect(s.m2.proposals[U.proposalKey(loose.id, "kr3")]).toBe("taken");
+    expect(s.m2.proposals[U.proposalKey(loose.id, "kr2")]).toBe("skipped");
+    s = U.setOverride(s, "m2", loose, ["kr3"], dk(loose));
+    expect(s.m2.proposals[U.proposalKey(loose.id, "kr1")]).toBeUndefined();
+    expect(s.m2.proposals[U.proposalKey(loose.id, "kr3")]).toBe("taken");
+    expect(s.m2.how).toEqual({});
+  });
+  it("既存のつなぎ先に足す：もとの既定のKRを残したまま、提案を採ると既定＋提案になる", () => {
+    const p1 = tasks.find((t) => t.pjId === "p1" && t.assigneeId === "m3" && t.status !== "完了")!;
+    const s = U.takeProposal(fresh(), "m3", p1, "kr3", dk(p1), dk(p1));
+    expect(s.m3.overrides[p1.id]).toEqual(["kr1", "kr3"]);
+  });
+});
+
+describe("結節点の見本（初期データ）", () => {
+  it("3人それぞれに1〜2件。KRの組み合わせは偏らず、3つにまたがる仕事が1件ある", () => {
+    const ctx: LinkCtx = { ...baseCtx, overrides: U.mergedOverrides(fresh()) };
+    const sets = new Set<string>();
+    for (const id of ["m1", "m2", "m3"]) {
+      const own = Object.keys(fresh()[id].overrides);
+      expect(own.length).toBeGreaterThanOrEqual(1);
+      expect(own.length).toBeLessThanOrEqual(2);
+      for (const tid of own) {
+        const t = tasks.find((x) => x.id === tid)!;
+        expect(t.assigneeId).toBe(id);
+        expect(dk(t)).toHaveLength(1);
+        expect(krIdsOfTask(t, ctx).length).toBeGreaterThanOrEqual(2);
+        sets.add(krIdsOfTask(t, ctx).join("+"));
+      }
+    }
+    expect(sets.size).toBeGreaterThanOrEqual(4);
+    expect([...sets].filter((x) => x.split("+").length === 3)).toHaveLength(1);
   });
 });
 
