@@ -46,7 +46,7 @@ export const okrItems: OkrItem[] = [
   { id: "obj", kind: "objective", parentId: null, label: "目標", text: "地域と企業が一緒に動く「共創の輪」を広げる" },
   { id: "kr1", kind: "kr", parentId: "obj", label: "KR1", text: "共創パートナー企業を30社にする" },
   { id: "kr2", kind: "kr", parentId: "obj", label: "KR2", text: "地域拠点の稼働率を80%にする" },
-  { id: "kr3", kind: "kr", parentId: "obj", label: "KR3", text: "社内の定型業務を減らす（数値で測れないため達成度で見る）" },
+  { id: "kr3", kind: "kr", parentId: "obj", label: "KR3", text: "社内の定型業務を減らす（達成度で見る）" },
   { id: "tf11", kind: "tf", parentId: "kr1", label: "TF1-1", text: "新規開拓の進め方を仕組みにする", quarters: ["3Q", "4Q"], leaderId: "m2" },
   { id: "tf12", kind: "tf", parentId: "kr1", label: "TF1-2", text: "既存のお客様との関係を深める", quarters: ["3Q", "4Q"], leaderId: "m3" },
   { id: "tf21", kind: "tf", parentId: "kr2", label: "TF2-1", text: "拠点の予約までの流れを分かりやすくする", quarters: ["3Q", "4Q"], leaderId: "m5" },
@@ -57,7 +57,10 @@ export const okrItems: OkrItem[] = [
 ];
 
 /** KRを色で区別するための色（色の点・積み上がりグラフ・線で使う。色だけに頼らず名前も添える） */
-export const KR_COLORS: Record<string, string> = { kr1: "#3d4f8a", kr2: "#2f6b3c", kr3: "#b4531c" };
+export const KR_COLORS: Record<string, string> = { kr1: "#3b6fd4", kr2: "#1a9a6b", kr3: "#e0782a" };
+/** 本人の分を帯の中で見せる色（KRの色とも、他の人の色とも重ならない） */
+export const MINE_COLOR = "#c2338a";
+export const PERIOD_END = "2026-12-31";
 
 /** Kintone の PDF から読んだ体のデータ。確定案と2か所だけ文言が違う（どちらも今期のTF） */
 export const kintoneTexts: Record<string, string> = Object.fromEntries(okrItems.map((i) => [i.id, i.text]));
@@ -188,13 +191,13 @@ export const recordsInit: Record<string, KrRecord> = {
 // ---------- 決定事項と宿題 ----------
 
 export const decisionsInit: Decision[] = [
-  { id: "d1", checkinId: "c1", kind: "決定", text: "提案資料は11月中旬までに初稿を出す", ownerId: null, source: { doc: "議事録_20261006.txt", page: "2段落目" } },
-  { id: "d2", checkinId: "c1", kind: "宿題", text: "展示会のフォロー先を10社に絞る", ownerId: "m4", source: { doc: "議事録_20261006.txt", page: "4段落目" } },
-  { id: "d3", checkinId: "c2", kind: "決定", text: "予約フォームの作り直しを優先する", ownerId: null, source: { doc: "議事録_20261020.txt", page: "3段落目" } },
-  { id: "d4", checkinId: "c2", kind: "宿題", text: "対象レポートの洗い出しを終える", ownerId: "m2", source: { doc: "議事録_20261020.txt", page: "5段落目" } },
-  { id: "d5", checkinId: "c3", kind: "決定", text: "説明会の日程を早めに確定する", ownerId: null, source: { doc: "議事録_20261103.txt", page: "2段落目" } },
-  { id: "d6", checkinId: "c3", kind: "宿題", text: "ヒアリングの4〜6社目を今週中に行う", ownerId: "m2", source: { doc: "議事録_20261103.txt", page: "6段落目" } },
-  { id: "d7", checkinId: "c3", kind: "宿題", text: "ナレッジ整理のルール案を出す", ownerId: "m6", source: { doc: "チェックイン資料_20261103.pptx", page: "p.7" } },
+  { id: "d1", checkinId: "c1", kind: "決定", text: "提案資料は11月中旬までに初稿を出す", ownerId: null, source: { doc: "議事録_20261006.txt", page: "2段落目" }, krIds: ["kr1"] },
+  { id: "d2", checkinId: "c1", kind: "宿題", text: "展示会のフォロー先を10社に絞る", ownerId: "m4", source: { doc: "議事録_20261006.txt", page: "4段落目" }, krIds: ["kr1"] },
+  { id: "d3", checkinId: "c2", kind: "決定", text: "予約フォームの作り直しを優先する", ownerId: null, source: { doc: "議事録_20261020.txt", page: "3段落目" }, krIds: ["kr2"] },
+  { id: "d4", checkinId: "c2", kind: "宿題", text: "対象レポートの洗い出しを終える", ownerId: "m2", source: { doc: "議事録_20261020.txt", page: "5段落目" }, krIds: ["kr3"] },
+  { id: "d5", checkinId: "c3", kind: "決定", text: "説明会の日程を早めに確定する", ownerId: null, source: { doc: "議事録_20261103.txt", page: "2段落目" }, krIds: ["kr2"] },
+  { id: "d6", checkinId: "c3", kind: "宿題", text: "ヒアリングの4〜6社目を今週中に行う", ownerId: "m2", source: { doc: "議事録_20261103.txt", page: "6段落目" }, krIds: ["kr1"] },
+  { id: "d7", checkinId: "c3", kind: "宿題", text: "ナレッジ整理のルール案を出す", ownerId: "m6", source: { doc: "チェックイン資料_20261103.pptx", page: "p.7" }, krIds: ["kr3"] },
 ];
 
 // ---------- 資料を読ませる（結果は固定データ） ----------
@@ -210,9 +213,9 @@ export const resources: Resource[] = [
       { krId: "kr3", value: "B", source: { doc: "チェックイン資料_20261110.pptx", page: "p.5" } },
     ],
     decisions: [
-      { kind: "決定", text: "新規開拓の進め方を1枚にまとめ、12月に共有する", ownerId: null, source: { doc: "チェックイン資料_20261110.pptx", page: "p.8" } },
-      { kind: "宿題", text: "月次レポート1本の自動化を終える", ownerId: "m2", source: { doc: "チェックイン資料_20261110.pptx", page: "p.6" } },
-      { kind: "宿題", text: "予約フォームの公開日を決める", ownerId: "m5", source: { doc: "チェックイン資料_20261110.pptx", page: "p.9" } },
+      { kind: "決定", text: "新規開拓の進め方を1枚にまとめ、12月に共有する", ownerId: null, source: { doc: "チェックイン資料_20261110.pptx", page: "p.8" }, krIds: ["kr1"] },
+      { kind: "宿題", text: "月次レポート1本の自動化を終える", ownerId: "m2", source: { doc: "チェックイン資料_20261110.pptx", page: "p.6" }, krIds: ["kr3"] },
+      { kind: "宿題", text: "予約フォームの公開日を決める", ownerId: "m5", source: { doc: "チェックイン資料_20261110.pptx", page: "p.9" }, krIds: ["kr2"] },
     ],
   },
   {
@@ -225,8 +228,8 @@ export const resources: Resource[] = [
       { krId: "kr2", value: 73, source: { doc: "議事録_20261110.txt", page: "4段落目" } },
     ],
     decisions: [
-      { kind: "決定", text: "説明会は12月第1週に開く", ownerId: null, source: { doc: "議事録_20261110.txt", page: "5段落目" } },
-      { kind: "宿題", text: "反応の良かった先に再連絡する", ownerId: "m4", source: { doc: "議事録_20261110.txt", page: "7段落目" } },
+      { kind: "決定", text: "説明会は12月第1週に開く", ownerId: null, source: { doc: "議事録_20261110.txt", page: "5段落目" }, krIds: ["kr2"] },
+      { kind: "宿題", text: "反応の良かった先に再連絡する", ownerId: "m4", source: { doc: "議事録_20261110.txt", page: "7段落目" }, krIds: ["kr1"] },
     ],
   },
 ];

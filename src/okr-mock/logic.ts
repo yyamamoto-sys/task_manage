@@ -225,6 +225,102 @@ export function itemsInQuarter(items: OkrItem[], q: "3Q" | "4Q"): OkrItem[] {
   return items.filter((i) => i.kind !== "tf" || (i.quarters ?? []).includes(q));
 }
 
+// ---------- 進みと遅れ（第4版） ----------
+
+const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
+
+/** 期の経過割合（0〜1）。期の始め＝0、期の終わり＝1 */
+export function periodElapsed(start: string, end: string, today: string): number {
+  const total = diffDays(end, start);
+  return total <= 0 ? 1 : clamp01(diffDays(today, start) / total);
+}
+
+/** KRの進み（0〜1）。数値は 現状÷目標。バンドは最下段（D）を0、目標のバンドを1として段で測る */
+export function krProgress(r: KrRecord): number {
+  if (r.kind === "number") return r.target <= 0 ? 0 : clamp01(r.value / r.target);
+  const span = bandRank(r.target) - 1;
+  return span <= 0 ? 1 : clamp01((bandRank(r.value) - 1) / span);
+}
+
+export type Pace = "reached" | "ahead" | "behind";
+
+/** 目標に届いた／期の経過に対して進みが追いついている（ahead）／下回っている（behind） */
+export function krPace(r: KrRecord, elapsed: number): Pace {
+  const p = krProgress(r);
+  if (p >= 1) return "reached";
+  return p < elapsed ? "behind" : "ahead";
+}
+
+/** 期の経過割合 − 進み。正なら遅れ（その大きさ）、負なら先行 */
+export function paceGap(r: KrRecord, elapsed: number): number {
+  return elapsed - krProgress(r);
+}
+
+export function overallProgress(records: Record<string, KrRecord>, krIds: string[]): number {
+  const list = krIds.map((k) => records[k]).filter((r): r is KrRecord => !!r);
+  return list.length === 0 ? 0 : list.reduce((s, r) => s + krProgress(r), 0) / list.length;
+}
+
+/** 遅れているKR。遅れの大きい順に最大 max 個 */
+export function focusKrs(records: Record<string, KrRecord>, krIds: string[], elapsed: number, max = 2): string[] {
+  return krIds
+    .filter((k) => records[k] && krPace(records[k], elapsed) === "behind")
+    .sort((a, b) => paceGap(records[b], elapsed) - paceGap(records[a], elapsed))
+    .slice(0, max);
+}
+
+/** そのKRにつながる、その人の未着手・進行中の仕事。期日の近い（超過を含む）順に最大 max 件 */
+export function focusTasks(tasks: Task[], memberId: string, krId: string, ctx: LinkCtx, max = 3): Task[] {
+  const open = tasksOfKr(
+    tasks.filter((t) => t.assigneeId === memberId && isOpen(t)),
+    krId,
+    ctx,
+  );
+  return open
+    .sort((a, b) => (a.due < b.due ? -1 : a.due > b.due ? 1 : Number(b.status === "進行中") - Number(a.status === "進行中")))
+    .slice(0, max);
+}
+
+export interface FocusItem {
+  krId: string;
+  /** 遅れの大きさ（割合の差。0.12＝12ポイント） */
+  gap: number;
+  /** そのKRにつながる未完了の仕事の件数（全員分・1件は1回） */
+  openCount: number;
+  /** 本人視点のときだけ入る、本人の仕事（上位3件） */
+  mine: Task[];
+}
+
+export function weeklyFocus(args: {
+  records: Record<string, KrRecord>;
+  krIds: string[];
+  elapsed: number;
+  tasks: Task[];
+  ctx: LinkCtx;
+  memberId: string;
+  isOwnerView: boolean;
+}): FocusItem[] {
+  const { records, krIds, elapsed, tasks, ctx, memberId, isOwnerView } = args;
+  return focusKrs(records, krIds, elapsed).map((krId) => ({
+    krId,
+    gap: paceGap(records[krId], elapsed),
+    openCount: tasksOfKr(tasks.filter(isOpen), krId, ctx).length,
+    mine: isOwnerView ? focusTasks(tasks, memberId, krId, ctx) : [],
+  }));
+}
+
+export type Milestone = "half" | "reached";
+
+/** 確定の前後で越えた節目。半分（進み50%）を越えた／目標に届いた */
+export function crossedMilestones(before: KrRecord, after: KrRecord): Milestone[] {
+  const b = krProgress(before);
+  const a = krProgress(after);
+  const out: Milestone[] = [];
+  if (b < 0.5 && a >= 0.5 && a < 1) out.push("half");
+  if (b < 1 && a >= 1) out.push("reached");
+  return out;
+}
+
 // ---------- 文字単位の差分（Kintone取込の突き合わせ） ----------
 
 function mergeSegs(segs: Seg[]): Seg[] {

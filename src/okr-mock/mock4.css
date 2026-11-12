@@ -1,0 +1,139 @@
+/* 第4版：1枚の画面。図は自前のSVG。色は既存トークン＋KRごとの色（fixtures の KR_COLORS） */
+.mk-onepage { display: flex; flex-direction: column; gap: 14px; max-width: 1320px; width: 100%; margin: 0 auto; }
+.mk-h2-big { display: flex; align-items: center; gap: 8px; font-family: var(--font-display); font-size: 17px; margin: 0 0 8px; }
+.mk-h3 { font-size: 14px; margin: 16px 0 6px; }
+.mk-card { border-radius: 16px; }
+
+/* ヘッダ */
+.mk-head {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 16px; border-radius: 18px;
+  border: 1px solid var(--color-border-primary);
+  background: linear-gradient(100deg, rgba(59, 111, 212, 0.14), rgba(26, 154, 107, 0.12) 55%, rgba(224, 120, 42, 0.14)), var(--color-bg-primary);
+}
+.mk-head-title { display: flex; align-items: center; gap: 10px; }
+.mk-concept { font-size: 13px; color: var(--color-text-secondary); }
+.mk-seg { display: inline-flex; border: 1px solid var(--color-border-secondary); border-radius: var(--radius-full); overflow: hidden; background: var(--color-bg-primary); }
+.mk-seg-item { padding: 6px 16px; font-size: 13px; cursor: pointer; color: var(--color-text-secondary); position: relative; }
+.mk-seg-item.is-on { background: var(--color-brand); color: #fff; font-weight: 700; }
+.mk-seg-item:focus-within { outline: 3px solid var(--color-brand); outline-offset: -3px; }
+.mk-iconbtn {
+  position: relative; display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px;
+  border-radius: 50%; border: 1px solid var(--color-border-secondary); background: var(--color-bg-primary); color: var(--color-text-primary);
+}
+.mk-dot-abs { position: absolute; top: 2px; right: 2px; margin: 0; }
+.mk-btn { border-radius: var(--radius-full); }
+.mk-btn:focus-visible, .mk-linkbtn:focus-visible, .mk-gauge:focus-visible, .mk-iconbtn:focus-visible, .mk-foldbtn:focus-visible { outline: 3px solid var(--color-brand); outline-offset: 2px; }
+
+/* はじめての人向けの案内 */
+.mk-guide { display: flex; align-items: center; gap: 12px; padding: 8px 14px; border-radius: 14px; background: var(--color-bg-info); color: var(--color-text-info); }
+.mk-guide-steps { display: flex; gap: 22px; flex-wrap: wrap; list-style: none; margin: 0; padding: 0; flex: 1; font-size: 13px; }
+.mk-guide-steps li { display: flex; align-items: center; gap: 8px; }
+.mk-guide-no { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: var(--color-text-info); color: var(--color-bg-info); font-weight: 700; font-size: 12px; }
+.mk-linkbtn { border: none; background: transparent; padding: 0; font: inherit; color: var(--color-brand); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; text-align: left; }
+.mk-linkbtn:disabled { color: var(--color-text-tertiary); cursor: not-allowed; text-decoration: none; }
+[data-theme="dark"] .mk-linkbtn { color: var(--color-text-info); }
+
+/* チームはどこまで来たか */
+.mk-band-body { display: grid; grid-template-columns: minmax(300px, 1.1fr) minmax(0, 1.4fr); gap: 16px; align-items: center; }
+.mk-journey { width: 100%; height: auto; max-height: 200px; color: var(--color-text-primary); }
+.mk-svgtext { fill: var(--color-text-primary); }
+.mk-svgtext-muted { fill: var(--color-text-secondary); }
+.mk-track { fill: var(--color-bg-tertiary); }
+.mk-track-ring { stroke: var(--color-bg-tertiary); }
+.mk-tick { stroke: var(--color-text-tertiary); stroke-width: 1; }
+.mk-nowline { stroke: #4a5a8a; stroke-width: 2; stroke-dasharray: 3 3; }
+[data-theme="dark"] .mk-nowline { stroke: #9fb0e0; }
+.mk-elapsed-tick { stroke: var(--color-text-primary); stroke-width: 2.5; stroke-linecap: round; }
+.mk-gauges { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.mk-gauge {
+  display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 8px 12px; text-align: center;
+  border: 1px solid var(--color-border-primary); border-top: 5px solid; border-radius: 16px; background: var(--color-bg-secondary);
+  color: var(--color-text-primary); font: inherit; cursor: pointer;
+}
+.mk-gauge:hover, .mk-gauge.is-active { background: var(--color-bg-tertiary); box-shadow: var(--shadow-sm); }
+.mk-gauge-label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+.mk-gauge-text { font-size: 11px; color: var(--color-text-secondary); line-height: 1.35; }
+.mk-gauge-num { font-size: 12px; font-weight: 700; }
+.mk-pace { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 700; }
+.mk-bandsteps { display: inline-flex; gap: 3px; }
+.mk-bandsteps i { width: 22px; height: 16px; border-radius: 5px; background: var(--color-bg-tertiary); font-style: normal; font-size: 10px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; color: var(--color-text-secondary); }
+.mk-bandsteps i.on { color: #fff; }
+.mk-bandsteps i.target { outline: 2px dashed var(--color-text-primary); outline-offset: 1px; }
+
+/* 今週ここに力を */
+.mk-focus-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 10px; }
+.mk-focus-item { padding: 10px 14px; border-left: 6px solid; border-radius: 12px; background: var(--color-bg-secondary); }
+.mk-focus-tasks { margin: 0; padding-left: 20px; font-size: 13px; }
+.mk-focus-tasks li { padding: 3px 0; }
+
+/* 流れの図 */
+.mk-flowwrap { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; align-items: start; }
+.mk-flowwrap.has-panel { grid-template-columns: minmax(0, 1fr) 360px; }
+.mk-flowscroll { overflow-x: auto; }
+.mk-flowsvg { display: block; width: 100%; min-width: 760px; height: auto; color: var(--color-text-primary); }
+.mk-fnode { fill: var(--color-bg-primary); }
+.mk-fnode:not([stroke]) { stroke: var(--color-border-secondary); stroke-width: 1.5; }
+.mk-fnode.is-armed { fill: var(--color-bg-tertiary); }
+.mk-trow { fill: var(--color-bg-secondary); stroke: var(--color-border-primary); stroke-width: 1; }
+.mk-trow.is-sel, .mk-loose.is-sel { stroke: var(--color-brand); stroke-width: 2.5; }
+.mk-loose { fill: transparent; stroke: var(--color-text-tertiary); stroke-width: 1.6; stroke-dasharray: 5 4; }
+.mk-svgbtn { cursor: pointer; outline: none; }
+.mk-svgbtn:focus-visible { outline: 3px solid var(--color-brand); outline-offset: 2px; }
+.mk-svgbtn:focus-visible > .mk-fnode, .mk-svgbtn:focus-visible > .mk-trow, .mk-svgbtn:focus-visible > .mk-loose { stroke: var(--color-brand); stroke-width: 3.5; }
+.mk-ribbon-ring { stroke: none; }
+.mk-ribbon:hover > g { filter: brightness(1.12); }
+.mk-ribbon:focus-visible .mk-ribbon-ring { stroke: currentColor; stroke-width: 3; }
+.mk-linkhit:hover path:last-child { stroke: rgba(128, 128, 128, 0.25); }
+.mk-legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 11px; color: var(--color-text-secondary); }
+.mk-legend span { display: inline-flex; align-items: center; gap: 4px; }
+.mk-lg { display: inline-block; width: 18px; height: 10px; border-radius: 3px; }
+.mk-lg-done { background: #3b6fd4; }
+.mk-lg-open { background: repeating-linear-gradient(45deg, rgba(59, 111, 212, 0.75) 0 2px, rgba(59, 111, 212, 0.15) 2px 5px); }
+.mk-lg-mine { background: radial-gradient(circle, #fff 1.2px, #c2338a 1.6px) 0 0 / 5px 5px; }
+.mk-lg-loose { border: 1.6px dashed var(--color-text-tertiary); }
+
+/* 詳細パネル */
+.mk-panel { position: sticky; top: 8px; max-height: calc(100vh - 32px); overflow: auto; font-size: 13px; }
+.mk-panel-h { margin: 0 0 8px; padding-left: 10px; border-left: 6px solid; font-size: 15px; line-height: 1.4; }
+.mk-panel-sub { margin: 14px 0 4px; font-size: 13px; }
+.mk-dl { display: grid; grid-template-columns: 7em 1fr; gap: 4px 8px; margin: 0 0 8px; }
+.mk-dl dt { color: var(--color-text-secondary); font-size: 12px; }
+.mk-dl dd { margin: 0; }
+.mk-list-tight li { padding: 3px 0; }
+.mk-opt { display: block; padding: 6px 10px; margin: 4px 0; border: 1px solid var(--color-border-secondary); border-radius: 12px; font-size: 13px; cursor: pointer; }
+.mk-opt.is-on { background: var(--color-brand-light); border-color: var(--color-brand); }
+[data-theme="dark"] .mk-opt.is-on, [data-theme="dark"] .mk-choice.is-on { background: var(--color-bg-info); }
+.mk-reflect-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 10px; margin: 8px 0 12px; }
+.mk-reflect-item { padding: 10px 14px; border-top: 5px solid; border-radius: 12px; background: var(--color-bg-secondary); }
+.mk-foldbtn { border: none; background: transparent; font: inherit; font-weight: 700; color: inherit; cursor: pointer; padding: 2px 4px; border-radius: 8px; }
+
+/* 引き出し・ダイアログ */
+.mk-drawer-wrap { position: fixed; inset: 0; z-index: 50; display: flex; justify-content: flex-end; pointer-events: auto; }
+.mk-drawer-scrim { position: absolute; inset: 0; border: none; background: var(--tour-scrim); cursor: default; }
+.mk-drawer {
+  position: relative; width: min(600px, 100%); height: 100%; overflow: auto; padding: 16px 18px 32px;
+  background: var(--color-bg-primary); border-left: 1px solid var(--color-border-primary); box-shadow: var(--shadow-lg); outline: none;
+}
+.mk-modal-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; border-bottom: 1px solid var(--color-border-primary); }
+.mk-modal { outline: none; }
+
+/* 節目の小さな演出：1回だけ短く。動きを減らす設定のときは出さない */
+.mk-burst-ring { transform-box: fill-box; transform-origin: center; animation: mk-ring 1.1s ease-out forwards; }
+.mk-burst-dot { animation: mk-fly 1.3s ease-out forwards; }
+.mk-burst-label { animation: mk-fade 3.2s ease-out forwards; paint-order: stroke; stroke: var(--color-bg-primary); stroke-width: 4px; }
+@keyframes mk-ring { from { transform: scale(0.4); opacity: 1; } to { transform: scale(3.4); opacity: 0; } }
+@keyframes mk-fly { from { transform: translate(0, 0); opacity: 1; } to { transform: translate(var(--dx), var(--dy)); opacity: 0; } }
+@keyframes mk-fade { 0% { opacity: 0; } 12% { opacity: 1; } 80% { opacity: 1; } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .mk-burst { display: none; }
+}
+
+@media (max-width: 1100px) {
+  .mk-flowwrap.has-panel { grid-template-columns: minmax(0, 1fr); }
+  .mk-panel { position: static; max-height: none; }
+  .mk-band-body { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 700px) {
+  .mk-head { gap: 8px; }
+  .mk-guide { flex-direction: column; align-items: flex-start; }
+}

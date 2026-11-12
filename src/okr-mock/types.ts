@@ -97,6 +97,8 @@ export interface Decision {
   text: string;
   ownerId: string | null;
   source: Source;
+  /** 関わるKR（KR詳細パネルに出す） */
+  krIds: string[];
 }
 
 /** AIが資料から読み取った下書き（1KR分） */
