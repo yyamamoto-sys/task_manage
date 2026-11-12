@@ -106,7 +106,8 @@ describe("本人＝見ている人", () => {
     const h = html({ mode: "self" });
     expect(h).toContain("今週は届かず");
     expect(h).toContain("今週やると選んだ仕事");
-    expect(h).toContain("終えた 0件／進行中 2件／未着手 0件");
+    expect(h).toContain("進行中 2件");
+    expect(h).not.toContain("終えた 0件");
     const m1 = html({ mode: "self", viewerId: "m1" });
     expect(m1).toContain("まだ選んでいません");
   });

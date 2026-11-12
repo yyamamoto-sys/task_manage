@@ -1,11 +1,12 @@
-import { aiCandidates, krStyle, PERIOD_END, PERIOD_START, tasks } from "../fixtures";
+import { aiCandidates, krStyle, PERIOD_END, PERIOD_START } from "../fixtures";
 import { candidateTasksForKr, formatMd, krIdsOfTask, latestCheckinDate, periodElapsed, TODAY, weeklyFocus } from "../logic";
+import { krRegistration } from "../reach";
 import { useMock } from "../state";
 import { krLabel, krText, StatusChip } from "../ui";
 import { ClaimsBanner } from "./Claims";
 
 export function FocusCard() {
-  const { items, records, checkins, linkCtx, viewerId, setSel, picks, togglePick, takeProposal, showToast } = useMock();
+  const { tasks, items, records, checkins, linkCtx, viewerId, setSel, picks, togglePick, takeProposal, showToast } = useMock();
   const elapsed = periodElapsed(PERIOD_START, PERIOD_END, TODAY);
   const krIds = items.filter((i) => i.kind === "kr").map((k) => k.id);
   const list = weeklyFocus({ records, krIds, elapsed, tasks, ctx: linkCtx, memberId: viewerId, latest: latestCheckinDate(checkins) });
@@ -27,6 +28,7 @@ export function FocusCard() {
           <p className="mk-muted">自分の仕事の「今週やる」を押すと、今週やる仕事として印が付きます（あなたにだけ見えます）。</p>
           <div className="mk-focus-grid">
             {list.map((f) => {
+              const reg = krRegistration(f.krId, tasks, linkCtx, PERIOD_START);
               const cands = f.mine.length === 0 ? candidateTasksForKr(tasks, viewerId, f.krId, linkCtx, aiCandidates) : [];
               return (
                 <div key={f.krId} className="mk-focus-item" style={{ borderLeftColor: krStyle(f.krId).color }}>
@@ -37,7 +39,11 @@ export function FocusCard() {
                   </div>
                   <div className="mk-small mk-muted" style={{ margin: "2px 0 6px" }}>
                     {f.kind === "behind" ? `期の経過より ${f.points} ポイント遅れ` : `目標まで${f.steps}段`}
-                    {" ／ "}このKRにつながる未完了の仕事は全員で {f.openCount} 件{" "}
+                    {reg !== "none" && f.openCount > 0 && (
+                      <>
+                        {" ／ "}このKRにつながる未完了の仕事は{reg === "partial" ? "登録された分で" : "全員で"} {f.openCount} 件
+                      </>
+                    )}{" "}
                     <button type="button" className="mk-linkbtn" onClick={() => setSel({ type: "kr", id: f.krId })}>
                       詳細を開く
                     </button>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { members, VIEWER_IDS } from "./fixtures";
+import { members, PERIOD_START, REACH_PJ_IDS, tasks as allTasks, VIEWER_IDS } from "./fixtures";
 import { formatFull, TODAY } from "./logic";
+import { reachCounts, registeredTasks, type Reach } from "./reach";
 import { MockProvider, useMock, type InitialView } from "./state";
 import { CompareTable } from "./parts/CompareTable";
 import { DecisionsFold } from "./parts/DecisionsFold";
@@ -102,7 +103,13 @@ function Guide() {
 }
 
 function Shell() {
-  const { toast, mode, drawerOpen, modal, setModal, viewerId, setViewerId } = useMock();
+  const { toast, mode, drawerOpen, modal, setModal, viewerId, setViewerId, reach, setReach, linkCtx } = useMock();
+  const pjsCounts = reachCounts(registeredTasks(allTasks, "pjs", viewerId, REACH_PJ_IDS), linkCtx, PERIOD_START);
+  const reachLabels: Record<Reach, string> = {
+    all: "全員が登録（いまの架空データ）",
+    pjs: `${pjsCounts.total}PJ中${pjsCounts.registered}PJ（一部のPJだけ登録）`,
+    solo: "1人だけ（見ている人の仕事だけ登録）",
+  };
   const [dark, setDark] = useState(false);
   useEffect(() => {
     if (dark) document.documentElement.setAttribute("data-theme", "dark");
@@ -125,6 +132,16 @@ function Shell() {
                 </option>
               );
             })}
+          </select>
+        </label>
+        <label className="mk-small mk-viewer">
+          利用の広がり（モック用の切替・成果は変わりません）{" "}
+          <select className="mk-select" style={{ width: 250, display: "inline-block" }} value={reach} onChange={(e) => setReach(e.target.value as Reach)}>
+            {(["all", "pjs", "solo"] as const).map((r) => (
+              <option key={r} value={r}>
+                {reachLabels[r]}
+              </option>
+            ))}
           </select>
         </label>
         <button type="button" className="mk-btn mk-btn-sm" onClick={() => setDark((d) => !d)}>

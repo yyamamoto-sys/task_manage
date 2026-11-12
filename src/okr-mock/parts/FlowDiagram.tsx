@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { flowCounts, junctionIdsOf, layoutFlow, OTHER_PJ, ribbonPath, type Ribbon } from "../flow";
 import { proposalKey } from "../userState";
-import { aiCandidates, krStyle, PERIOD_END, PERIOD_START, personalOkrs, PERSONAL_NAME, MINE_COLOR, pjsInit, tasks } from "../fixtures";
+import { aiCandidates, krStyle, PERIOD_END, PERIOD_START, personalOkrs, PERSONAL_NAME, MINE_COLOR, pjsInit } from "../fixtures";
 import { BANDS, krIdsOfTask, krPace, krProgress, overallProgress, periodElapsed, PERSONAL_PJ, stepsToTarget, TODAY } from "../logic";
+import { krRegistration, reachCounts, reachNote, workPhrase } from "../reach";
 import { useMock } from "../state";
 import { Burst, JunctionGlyph, JunctionMark, krLabel, krListText, krText, memberOf, outcomeLine, PACE_INFO, PaceGlyph, SvgButton, surnameOf, trunc, wrapLines } from "../ui";
 
@@ -34,7 +35,7 @@ function RibbonShape({ r, krId, label, onActivate, dim }: { r: Ribbon; krId: str
 }
 
 export function FlowDiagram() {
-  const { mode, viewerId, items, records, linkCtx, sel, setSel, personalLinks, togglePersonalLink, celebrations, changes, proposals, confirmedLinks, junctionOnly, setJunctionOnly } = useMock();
+  const { mode, viewerId, tasks, items, records, linkCtx, sel, setSel, personalLinks, togglePersonalLink, celebrations, changes, proposals, confirmedLinks, junctionOnly, setJunctionOnly } = useMock();
   const scope = mode === "self" ? "self" : "team";
   const [expanded, setExpanded] = useState<string[]>([]);
   const [armed, setArmed] = useState<string | null>(null);
@@ -48,7 +49,7 @@ export function FlowDiagram() {
   const elapsed = periodElapsed(PERIOD_START, PERIOD_END, TODAY);
   const myPersonal = useMemo(() => personalOkrs.filter((p) => p.ownerId === viewerId), [viewerId]);
 
-  const counts = useMemo(() => flowCounts({ tasks, ctx: linkCtx, ownerId: viewerId, scope, periodStart: PERIOD_START }), [linkCtx, viewerId, scope]);
+  const counts = useMemo(() => flowCounts({ tasks, ctx: linkCtx, ownerId: viewerId, scope, periodStart: PERIOD_START }), [tasks, linkCtx, viewerId, scope]);
   const layout = useMemo(
     () => layoutFlow({ counts, krIds, personalIds: scope === "self" ? myPersonal.map((p) => p.id) : [], expanded, showLoose: scope === "self" }),
     [counts, krIds, scope, myPersonal, expanded],
@@ -101,6 +102,8 @@ export function FlowDiagram() {
     };
   }, [dragging, dragPid, personalLinks, togglePersonalLink]);
 
+  const krReg = useMemo(() => Object.fromEntries(krIds.map((k) => [k, krRegistration(k, tasks, linkCtx, PERIOD_START)])), [krIds, tasks, linkCtx]);
+  const note = reachNote(reachCounts(tasks, linkCtx, PERIOD_START));
   const objText = items.find((i) => i.kind === "objective")?.text ?? "";
   const overall = overallProgress(records, krIds);
   const H = layout.height + TOP;
@@ -139,16 +142,17 @@ export function FlowDiagram() {
           </svg>
           {scope === "self" ? "あなたの仕事の地図" : "仕事がどこへ流れているか"}
         </h2>
-        <button
-          type="button"
-          className={`mk-btn mk-btn-sm mk-jbtn${jOn ? " is-on" : ""}`}
-          aria-pressed={jOn}
-          disabled={junctionIds.size === 0}
-          title="2つ以上のKRにつながっている仕事とその帯だけを強調します。もう一度押すと戻ります"
-          onClick={() => setJunctionOnly(!junctionOnly)}
-        >
-          <JunctionMark /> 結節点 {junctionIds.size}件
-        </button>
+        {junctionIds.size > 0 && (
+          <button
+            type="button"
+            className={`mk-btn mk-btn-sm mk-jbtn${jOn ? " is-on" : ""}`}
+            aria-pressed={jOn}
+            title="2つ以上のKRにつながっている仕事とその帯だけを強調します。もう一度押すと戻ります"
+            onClick={() => setJunctionOnly(!junctionOnly)}
+          >
+            <JunctionMark /> 結節点 {junctionIds.size}件{note ? "（登録された分）" : ""}
+          </button>
+        )}
         <span className="mk-spacer" />
         <div className="mk-legend" aria-label="凡例">
           <span>
@@ -169,6 +173,11 @@ export function FlowDiagram() {
           </span>
         </div>
       </div>
+      {note && (
+        <p className="mk-muted mk-reachnote" role="note">
+          {note}
+        </p>
+      )}
       <p className="mk-muted mk-kindnote">バーと輪は成果（資料の数字）、帯は仕事（終えた・残り）。仕事を終えても、成果は資料を読ませるまで動きません</p>
       <p className="mk-muted">
         左のPJ（押すと仕事が開きます）から、中央のKR、右のO（めざす姿）へ。帯の太さは、そのKR向けの仕事のうち何割かを表します。KRを押すと詳細、仕事を押すとつなぎ先を確かめられます。
@@ -242,7 +251,7 @@ export function FlowDiagram() {
                 key={r.id}
                 r={r}
                 krId={r.toId}
-                label={`${r.fromId === OTHER_PJ ? "ほかのPJ" : pjName(r.fromId)}から${krLabel(r.toId)}へ：終えた仕事${r.done}件、残り${r.open}件${starsOnRibbon(r) > 0 ? `、成果につながった仕事${starsOnRibbon(r)}件` : ""}。押すと${krLabel(r.toId)}の詳細を開きます`}
+                label={`${r.fromId === OTHER_PJ ? "ほかのPJ" : pjName(r.fromId)}から${krLabel(r.toId)}へ：${workPhrase(r.done, r.open)}${starsOnRibbon(r) > 0 ? `、成果につながった仕事${starsOnRibbon(r)}件` : ""}。押すと${krLabel(r.toId)}の詳細を開きます`}
                 onActivate={() => setSel({ type: "kr", id: r.toId })}
                 dim={jOn && !edgeHasJunction(r.toId, pjMembers(r.fromId))}
               />
@@ -253,7 +262,7 @@ export function FlowDiagram() {
                 r={r}
                 dim={jOn && !edgeHasJunction(r.fromId, null)}
                 krId={r.fromId}
-                label={`${krLabel(r.fromId)}からO（めざす姿）へ：終えた仕事${r.done}件、残り${r.open}件。押すと${krLabel(r.fromId)}の詳細を開きます`}
+                label={`${krLabel(r.fromId)}からO（めざす姿）へ：${workPhrase(r.done, r.open)}。押すと${krLabel(r.fromId)}の詳細を開きます`}
                 onActivate={() => setSel({ type: "kr", id: r.fromId })}
               />
             ))}
@@ -310,12 +319,12 @@ export function FlowDiagram() {
               const isOther = n.pjId === OTHER_PJ;
               const name = isOther ? `ほか${n.members.length}PJ` : pjName(n.pjId);
               const label = isOther
-                ? `ほか${n.members.length}PJ：終えた仕事${n.done}件、残り${n.open}件。押すとPJの一覧を${n.expanded ? "閉じます" : "開きます"}`
-                : `PJ「${name}」：終えた仕事${n.done}件、残り${n.open}件。押すと仕事を${n.expanded ? "閉じます" : "開きます"}`;
+                ? `ほか${n.members.length}PJ：${workPhrase(n.done, n.open)}。押すとPJの一覧を${n.expanded ? "閉じます" : "開きます"}`
+                : `PJ「${name}」：${workPhrase(n.done, n.open)}。押すと仕事を${n.expanded ? "閉じます" : "開きます"}`;
               const jc = junctionInPj(n.pjId);
               return (
                 <g key={n.pjId} className={dimIf(jc === 0).trim() || undefined}>
-                  <SvgButton label={`${label}${jc > 0 ? `。結節点の仕事${jc}件を含みます` : ""}`} onActivate={() => setExpanded((e) => (e.includes(n.pjId) ? e.filter((x) => x !== n.pjId) : [...e, n.pjId]))} expanded={n.expanded}>
+                  <SvgButton label={`${label}${jc > 0 ? `。結節点の仕事${jc}件${note ? "（登録された分）" : ""}を含みます` : ""}`} onActivate={() => setExpanded((e) => (e.includes(n.pjId) ? e.filter((x) => x !== n.pjId) : [...e, n.pjId]))} expanded={n.expanded}>
                     <rect x={n.x} y={n.y} width={n.w} height={n.h} rx={12} className="mk-fnode" />
                     <path d={`M ${n.x + 12} ${n.y + 11} h 7 l 2 2.5 h 9 v 11 h -18 Z`} fill="#7c8db5" opacity={0.85} />
                     <text x={n.x + 36} y={n.y + 22} fontSize={12} fontWeight={700} className="mk-svgtext">
@@ -476,6 +485,14 @@ export function FlowDiagram() {
                         );
                       })
                   )}
+                  {krReg[n.krId] === "none" && (
+                    <g className="mk-noreg" aria-hidden="true">
+                      <rect x={n.x - 128} y={n.y + n.h / 2 - 17} width={116} height={34} rx={17} className="mk-noreg-box" />
+                      <text x={n.x - 70} y={n.y + n.h / 2 + 4} textAnchor="middle" fontSize={11.5} className="mk-svgtext-muted">
+                        仕事の登録なし
+                      </text>
+                    </g>
+                  )}
                   {cel && <Burst key={cel.id} x={n.x + n.w - 24} y={n.y + 14} color={color} kind={cel.kind} />}
                   {change && (
                     <g className="mk-deltatag" aria-hidden="true">
@@ -498,7 +515,7 @@ export function FlowDiagram() {
               const C = 2 * Math.PI * R;
               const lines = wrapLines(objText, 7, 4);
               return (
-                <g role="img" aria-label={`O（めざす姿）「${objText}」：全体の進み${Math.round(overall * 100)}パーセント（数値のKRの平均）、終えた仕事${o.done}件、残り${o.open}件（重複は1回に数えています）`}>
+                <g role="img" aria-label={`O（めざす姿）「${objText}」：全体の進み${Math.round(overall * 100)}パーセント（数値のKRの平均）${o.done + o.open > 0 ? `、${workPhrase(o.done, o.open)}（重複は1回に数えています）` : ""}`}>
                   <rect x={o.x} y={o.y} width={o.w} height={o.h} rx={20} className="mk-fnode" stroke="#4a5a8a" strokeWidth={2.5} />
                   <circle cx={cx} cy={cy} r={R} fill="none" strokeWidth={10} className="mk-track-ring" />
                   <circle cx={cx} cy={cy} r={R} fill="none" stroke="#4a5a8a" strokeWidth={10} strokeLinecap="round" strokeDasharray={`${overall * C} ${C}`} transform={`rotate(-90 ${cx} ${cy})`} />
@@ -510,12 +527,16 @@ export function FlowDiagram() {
                       {l}
                     </text>
                   ))}
-                  <text x={cx} y={o.y + o.h - 24} textAnchor="middle" fontSize={10} className="mk-svgtext-muted">
-                    仕事
-                  </text>
-                  <text x={cx} y={o.y + o.h - 10} textAnchor="middle" fontSize={10} className="mk-svgtext-muted">
-                    完了 {o.done}／残り {o.open}
-                  </text>
+                  {o.done + o.open > 0 && (
+                    <>
+                      <text x={cx} y={o.y + o.h - 24} textAnchor="middle" fontSize={10} className="mk-svgtext-muted">
+                        仕事
+                      </text>
+                      <text x={cx} y={o.y + o.h - 10} textAnchor="middle" fontSize={10} className="mk-svgtext-muted">
+                        完了 {o.done}／残り {o.open}
+                      </text>
+                    </>
+                  )}
                 </g>
               );
             })()}
@@ -556,7 +577,7 @@ export function FlowDiagram() {
       </div>
       {/* 地図が見えない環境でも、数字を読めるように */}
       <p className="mk-sr">
-        {krIds.map((k) => `${krLabel(k)}：終えた${krNode(k).done}件、残り${krNode(k).open}件`).join("。")}
+        {krIds.map((k) => (krReg[k] === "none" ? `${krLabel(k)}：仕事の登録なし` : `${krLabel(k)}：${workPhrase(krNode(k).done, krNode(k).open)}`)).join("。")}
       </p>
     </section>
   );

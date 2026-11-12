@@ -1,6 +1,7 @@
 // 架空データのみ。実在の人物・会社・数値とは無関係。
 import { addDays, PERSONAL_PJ, TODAY } from "./logic";
 import type {
+  Band,
   AiCandidate,
   Checkin,
   Decision,
@@ -241,6 +242,27 @@ export const recordsInit: Record<string, KrRecord> = {
   kr2: { krId: "kr2", kind: "number", unit: "%", start: 65, direction: "up", target: 80, value: 71, prev: 66, updatedAt: "2026-10-20", prevAt: "2026-10-06", source: { doc: "チェックイン資料_20261020.pptx", page: "p.4" } },
   kr3: { krId: "kr3", kind: "band", target: "A", value: "C", prev: "D", updatedAt: "2026-11-03", prevAt: "2026-10-20", source: { doc: "チェックイン資料_20261103.pptx", page: "p.5" } },
 };
+
+/** チェックインの回ごとの成果の値（recordsInit の現状・前回と食い違わない）。KRの詳細の「成果の推移」の元 */
+export const historyInit: Record<string, { date: string; value: number | Band }[]> = {
+  kr1: [
+    { date: "2026-10-06", value: 12 },
+    { date: "2026-10-20", value: 15 },
+    { date: "2026-11-03", value: 18 },
+  ],
+  kr2: [
+    { date: "2026-10-06", value: 66 },
+    { date: "2026-10-20", value: 71 },
+  ],
+  kr3: [
+    { date: "2026-10-06", value: "D" },
+    { date: "2026-10-20", value: "D" },
+    { date: "2026-11-03", value: "C" },
+  ],
+};
+
+/** 利用の広がり「一部のPJだけ登録」で、仕事が登録されているPJ（確認用の切替。KR1は登録なし・KR2とKR3は一部だけ登録になる） */
+export const REACH_PJ_IDS = ["p4", "p7"];
 
 // ---------- 決定事項と宿題 ----------
 

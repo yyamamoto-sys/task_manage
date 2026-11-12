@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { krStyle, PERIOD_NAME, PERIOD_START, pastWeeks, tasks, WEEK_START } from "../fixtures";
+import { krStyle, PERIOD_NAME, PERIOD_START, pastWeeks, WEEK_START } from "../fixtures";
 import { addDays, answerKey, buildSummaryText, buildup, formatMd, krIdsOfTask, picksOutcome, TODAY, tasksMovedInWeek, weekKrIds, weeklyView } from "../logic";
 import { useMock } from "../state";
 import type { Effect, Match } from "../types";
@@ -23,7 +23,7 @@ function Choice<T extends string>({ name, options, value, onChange }: { name: st
 
 /** 今週やると選んだ仕事が、どうなったか */
 function Picks() {
-  const { picks } = useMock();
+  const { picks, tasks } = useMock();
   const out = picksOutcome(tasks, picks);
   return (
     <div>
@@ -32,7 +32,10 @@ function Picks() {
       ) : (
         <>
           <p className="mk-small">
-            終えた {out.counts["終えた"]}件／進行中 {out.counts["進行中"]}件／未着手 {out.counts["未着手"]}件
+            {(["終えた", "進行中", "未着手"] as const)
+              .filter((k) => out.counts[k] > 0)
+              .map((k) => `${k} ${out.counts[k]}件`)
+              .join("／")}
           </p>
           <ul className="mk-list mk-list-tight">
             {out.rows.map(({ task, outcome }) => (
@@ -48,7 +51,7 @@ function Picks() {
 }
 
 function Reflect() {
-  const { viewerId, linkCtx, items, answers, setAnswer } = useMock();
+  const { viewerId, linkCtx, items, answers, setAnswer, tasks } = useMock();
   const [showPast, setShowPast] = useState(false);
   const krOrder = items.filter((i) => i.kind === "kr").map((k) => k.id);
   const myKrs = weekKrIds(tasks, viewerId, WEEK_START, linkCtx, krOrder);
@@ -123,7 +126,7 @@ function useMyOutcomes() {
 }
 
 function Buildup() {
-  const { items, linkCtx, viewerId } = useMock();
+  const { items, linkCtx, viewerId, tasks } = useMock();
   const mine = useMyOutcomes();
   const krs = items.filter((i) => i.kind === "kr").map((k) => k.id);
   const b = buildup(tasks, viewerId, krs, PERIOD_START, TODAY, linkCtx);
@@ -172,7 +175,7 @@ function Buildup() {
           })}
         </svg>
       </div>
-      <h4 className="mk-panel-sub">成果につながった仕事（{mine.length}件）</h4>
+      <h4 className="mk-panel-sub">成果につながった仕事{mine.length > 0 ? `（${mine.length}件）` : ""}</h4>
       {mine.length === 0 ? (
         <p className="mk-muted">まだありません。「成果につながったかもしれない仕事」で「そのとおり」を選ぶと、ここに積み上がります。</p>
       ) : (
@@ -190,9 +193,13 @@ function Buildup() {
 }
 
 function Summary() {
-  const { items, linkCtx, how, showToast, viewerId } = useMock();
+  const { items, linkCtx, how, showToast, viewerId, tasks, answers } = useMock();
   const mine = useMyOutcomes();
   const [text, setText] = useState<string | null>(null);
+  const reflections = [
+    ...(pastWeeks[viewerId] ?? []).flatMap((w) => Object.entries(w.answers).map(([k, x]) => ({ weekStart: w.weekStart, krLabel: krLabel(k), effect: x.effect as string }))),
+    ...Object.entries(answers).flatMap(([key, x]) => (x.effect ? [{ weekStart: key.split("|")[0], krLabel: krLabel(key.split("|")[1]), effect: x.effect as string }] : [])),
+  ].sort((p, q) => (p.weekStart < q.weekStart ? -1 : p.weekStart > q.weekStart ? 1 : 0));
   const make = () =>
     setText(
       buildSummaryText({
@@ -205,6 +212,7 @@ function Summary() {
         today: TODAY,
         ctx: linkCtx,
         how,
+        reflections,
         outcomes: mine.map((c) => ({ title: c.task.title, krLabel: krLabel(c.note.krId), change: c.note.change, excerpt: c.note.excerpt })),
       }),
     );

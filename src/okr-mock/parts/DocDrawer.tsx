@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { detectConflicts, mergeDrafts, notesOfResources, unresolved } from "../confirm";
-import { nextCheckin, resources, tasks } from "../fixtures";
+import { nextCheckin, resources } from "../fixtures";
 import { BANDS, formatMd } from "../logic";
 import { useMock } from "../state";
 import type { Band } from "../types";
@@ -8,7 +8,7 @@ import { krLabel, krName, nameOf, useFocusTrap, valueText } from "../ui";
 
 /** 「資料を読ませる」の引き出し。資料を選ぶ（複数可）→ AIの下書き → 資料どうしの食い違いを選ぶ → まとめて確定 */
 export function DocDrawer() {
-  const { records, items, confirmImport, confirmedBy, setDrawerOpen, showToast } = useMock();
+  const { records, items, confirmImport, confirmedBy, setDrawerOpen, showToast, tasks, reach } = useMock();
   const [resIds, setResIds] = useState<string[]>([]);
   const [read, setRead] = useState(false);
   const [values, setValues] = useState<Record<string, number | Band>>({});
@@ -22,7 +22,8 @@ export function DocDrawer() {
   const drafts = useMemo(() => mergeDrafts(selected, conflicts, picks), [selected, conflicts, picks]);
   const open = unresolved(conflicts, picks);
   const notes = useMemo(() => notesOfResources(selected), [selected]);
-  const confirmer = confirmedBy[nextCheckin.id];
+  // 他の人がいるときだけ出す（1人だけが使っている状態では、確定済みの案内は要らない）
+  const confirmer = reach === "solo" ? undefined : confirmedBy[nextCheckin.id];
 
   useEffect(() => {
     const prev = document.activeElement as HTMLElement | null;
@@ -182,9 +183,11 @@ export function DocDrawer() {
                   <span className="mk-muted">{n.sources.map((x) => `${x.doc} ${x.page}`).join("／")}</span>
                   {n.links.length === 0 ? (
                     <div className="mk-small mk-muted">関係しそうな仕事は見つかりませんでした（結びつきは届きません）。</div>
+                  ) : !n.links.some((l) => tasks.some((x) => x.id === l.taskId)) ? (
+                    <div className="mk-small mk-muted">関係しそうな仕事は登録にありません。</div>
                   ) : (
                     <ul className="mk-list mk-list-tight">
-                      {n.links.map((l) => {
+                      {n.links.filter((l) => tasks.some((x) => x.id === l.taskId)).map((l) => {
                         const t = tasks.find((x) => x.id === l.taskId);
                         return (
                           <li key={l.taskId}>

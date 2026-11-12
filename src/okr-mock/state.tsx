@@ -5,11 +5,13 @@ import {
   CURRENT_QUARTER,
   decisionsInit,
   DEFAULT_VIEWER,
+  historyInit,
   kintoneRows,
   nextCheckin,
   okrItems as okrAll,
   pjsInit,
   QUARTER_INFO,
+  REACH_PJ_IDS,
   recordsInit,
   resources,
   tasks as allTasks,
@@ -17,6 +19,7 @@ import {
 } from "./fixtures";
 import { applyDrafts, compareOkr, crossedMilestones, defaultKrIdsOfTask, deltaText, importKintone, itemsInQuarter, type LinkCtx, type Milestone } from "./logic";
 import type { Band, Checkin, ClaimStatus, Decision, KintoneRow, KrAnswer, KrRecord, OkrItem, OutcomeNote, Task } from "./types";
+import { addHistory, registeredTasks, type History, type Reach } from "./reach";
 import * as U from "./userState";
 
 export type ViewMode = "team" | "self";
@@ -72,6 +75,13 @@ interface MockState {
   /** 確定する（資料は複数選べる）。越えた節目を返す */
   confirmImport: (resourceIds: string[], picks: Record<string, number>, values: Record<string, number | Band>) => Celebration[];
   linkCtx: LinkCtx;
+  /** 利用の広がり（モックの確認用の切替）。成果は変わらず、アプリに登録された仕事の範囲だけが変わる */
+  reach: Reach;
+  setReach: (r: Reach) => void;
+  /** アプリに登録された仕事（利用の広がりで絞ったもの）。画面の仕事の数字はすべてこれから数える */
+  tasks: Task[];
+  /** 回ごとの成果の値（KRの詳細の「成果の推移」） */
+  history: History;
   /** 見ている人の分だけ */
   overrides: Record<string, string[]>;
   /** つなぎ先を選び直す（KRの集合。空＝どれにもつながない）。undefined＝PJの既定に戻す */
@@ -119,6 +129,8 @@ export interface InitialView {
   drawerOpen?: boolean;
   confirmedBy?: Record<string, string>;
   changes?: Change[];
+  /** 利用の広がりを指定して始める（描画の確認用。既定は全員が登録） */
+  reach?: Reach;
   /** 結節点だけを強調した状態で始める（描画の確認用） */
   junctionOnly?: boolean;
   /** 本人が選んだつなぎ先の初期状態を差し替える（利用者ID → 仕事ID → KRの集合。描画の確認用。書かない利用者は空） */
@@ -144,6 +156,8 @@ export function MockProvider({ children, initial }: { children: ReactNode; initi
   const [locked, setLocked] = useState(true);
   const [imported, setImported] = useState(true);
   const [records, setRecords] = useState<Record<string, KrRecord>>(recordsInit);
+  const [history, setHistory] = useState<History>(historyInit);
+  const [reach, setReachState] = useState<Reach>(initial?.reach ?? "all");
   const [checkins, setCheckins] = useState<Checkin[]>(checkinsInit);
   const [decisions, setDecisions] = useState<Decision[]>(decisionsInit);
   const [confirmedBy, setConfirmedBy] = useState<Record<string, string>>(initial?.confirmedBy ?? {});
@@ -187,7 +201,8 @@ export function MockProvider({ children, initial }: { children: ReactNode; initi
 
   const me = U.userOf(users, viewerId);
   const overridesAll = useMemo(() => U.mergedOverrides(users), [users]);
-  const confirmedLinks = useMemo(() => U.confirmedLinks(users, outcomeNotes, allTasks), [users, outcomeNotes]);
+  const regTasks = useMemo(() => registeredTasks(allTasks, reach, viewerId, REACH_PJ_IDS), [reach, viewerId]);
+  const confirmedLinks = useMemo(() => U.confirmedLinks(users, outcomeNotes, regTasks), [users, outcomeNotes, regTasks]);
   const linkCtx = useMemo<LinkCtx>(() => ({ pjs: pjsInit, items, overrides: overridesAll }), [items, overridesAll]);
 
   const value = useMemo<MockState>(
@@ -247,6 +262,7 @@ export function MockProvider({ children, initial }: { children: ReactNode; initi
           if (text) deltas.push({ krId: d.krId, text });
         }
         setRecords(next);
+        setHistory((p) => addHistory(p, drafts.map((d) => d.krId), Object.fromEntries(drafts.map((d) => [d.krId, next[d.krId].value])), ci.date));
         setCheckins((p) => (p.some((c) => c.id === ci.id) ? p : [...p, ci]));
         setDecisions((p) => mergeDecisions(p, selected, ci));
         setConfirmedBy((p) => ({ ...p, [ci.id]: viewerId }));
@@ -262,6 +278,13 @@ export function MockProvider({ children, initial }: { children: ReactNode; initi
         return found;
       },
       linkCtx,
+      reach,
+      setReach: (r) => {
+        setReachState(r);
+        setSel(null);
+      },
+      tasks: regTasks,
+      history,
       overrides: me.overrides,
       setOverride: (task, krIds) => setUsers((p) => U.setOverride(p, viewerId, task, krIds, defaultKrIdsOfTask(task, linkCtx))),
       proposals: me.proposals,
@@ -285,7 +308,7 @@ export function MockProvider({ children, initial }: { children: ReactNode; initi
       toast,
       showToast,
     }),
-    [viewerId, mode, sel, guideOpen, drawerOpen, modal, junctionOnly, celebrations, changes, decisionsOpen, newDecisions, items, locked, imported, records, checkins, decisions, confirmedBy, linkCtx, me, outcomeNotes, confirmedLinks, toast, showToast],
+    [viewerId, reach, regTasks, history, mode, sel, guideOpen, drawerOpen, modal, junctionOnly, celebrations, changes, decisionsOpen, newDecisions, items, locked, imported, records, checkins, decisions, confirmedBy, linkCtx, me, outcomeNotes, confirmedLinks, toast, showToast],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

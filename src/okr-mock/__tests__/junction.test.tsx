@@ -183,10 +183,10 @@ describe("結節点の描画", () => {
     expect(plainRibbons.length).toBeGreaterThan(0);
     expect(html({ junctionOnly: false })).not.toContain("is-dim");
   });
-  it("結節点が0件のとき、ボタンは押せず、強調が指定されていても薄くしない", () => {
+  it("結節点が無いとき、ボタンそのものを出さない（「0件」とは書かない）。強調が指定されていても薄くしない", () => {
     const h = html({ mode: "self", viewerId: "m3", overrides: {}, junctionOnly: true });
-    expect(h).toContain("結節点 0件");
-    expect(h).toMatch(/class="mk-btn mk-btn-sm mk-jbtn"[^>]*disabled/);
+    expect(h).not.toContain("mk-jbtn");
+    expect(h).not.toContain("結節点 0件");
     expect(h).not.toContain("is-dim");
   });
   it("結節点を含むPJノードに印と件数が出る", () => {

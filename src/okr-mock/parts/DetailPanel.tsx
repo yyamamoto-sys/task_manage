@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { aiCandidates, howOptions, krStyle, MINE_COLOR, PERIOD_END, PERIOD_START, pjsInit, PERSONAL_NAME, tasks } from "../fixtures";
+import { aiCandidates, howOptions, krStyle, MINE_COLOR, PERIOD_END, PERIOD_START, pjsInit, PERSONAL_NAME } from "../fixtures";
 import {
   formatMd,
   howKey,
@@ -22,12 +22,14 @@ import {
   TODAY,
   workDigest,
 } from "../logic";
+import { krRegistration } from "../reach";
 import { useMock } from "../state";
 import { proposalKey } from "../userState";
+import { TrendChart } from "./Trend";
 import { JunctionMark, KrDot, KrDots, krLabel, krListText, krName, krText, mdOf, nameOf, PaceBadge, signed, StatusChip, useFocusTrap, useNarrow, valueText } from "../ui";
 
 function KrPanel({ krId }: { krId: string }) {
-  const { records, checkins, decisions, linkCtx, viewerId, setSel, setModal, confirmedLinks, items } = useMock();
+  const { records, checkins, decisions, linkCtx, viewerId, setSel, setModal, confirmedLinks, items, tasks } = useMock();
   const r = records[krId];
   const color = krStyle(krId).color;
   const elapsed = periodElapsed(PERIOD_START, PERIOD_END, TODAY);
@@ -39,9 +41,13 @@ function KrPanel({ krId }: { krId: string }) {
   const shared = sharedWork(periodTasks(tasks, PERIOD_START), krId, linkCtx, items.filter((i) => i.kind === "kr").map((i) => i.id));
   const done = tasksDoneBetween(tasks, viewerId, krId, r.prevAt, r.updatedAt, linkCtx);
   const related = decisions.filter((d) => d.krIds.includes(krId));
+  const rounds = [...checkins].sort((a, b) => (a.date < b.date ? 1 : -1)).filter((c) => related.some((d) => d.checkinId === c.id));
   const work = workDigest(krTasks);
+  const reg = krRegistration(krId, tasks, linkCtx, PERIOD_START);
+  const partial = reg === "partial";
+  const scopeNote = partial ? "（登録された分）" : "";
   const outcomePct = Math.round(p * 100);
-  const gapLine = outcomeWorkLine(outcomePct, work);
+  const gapLine = partial ? null : outcomeWorkLine(outcomePct, work);
   const effective = confirmedLinks.filter((c) => c.note.krId === krId);
   const starred = new Set(effective.map((c) => c.task.id));
   return (
@@ -95,6 +101,13 @@ function KrPanel({ krId }: { krId: string }) {
           )}
         </dd>
       </dl>
+      <h4 className="mk-panel-sub">成果の推移（チェックインの回ごと）</h4>
+      <TrendChart krId={krId} />
+      {reg === "none" ? (
+        <p className="mk-muted mk-noreg-line">この KR につながる仕事は、アプリに登録されていません。成果はチェックイン資料の数字です。</p>
+      ) : (
+        <>
+          <h4 className="mk-panel-sub">成果と仕事の対比{scopeNote}</h4>
       <div className="mk-contrast" role="group" aria-label="成果と仕事の対比">
         <div className="mk-contrast-row">
           <span className="mk-contrast-k">成果</span>
@@ -117,6 +130,8 @@ function KrPanel({ krId }: { krId: string }) {
         </div>
         {gapLine && <p className="mk-contrast-gap">{gapLine}</p>}
       </div>
+        </>
+      )}
       <button type="button" className="mk-btn mk-btn-sm" onClick={() => setModal("table")}>
         表で見る（全KR）
       </button>
@@ -137,22 +152,26 @@ function KrPanel({ krId }: { krId: string }) {
         </ul>
       )}
 
-      <h4 className="mk-panel-sub">このKRにつながる仕事（全員に見えます）</h4>
-      <ul className="mk-list mk-list-tight">
-        {krTasks.map((t) => (
-          <li key={t.id}>
-            <button type="button" className="mk-linkbtn" onClick={() => setSel({ type: "task", id: t.id })}>
-              {t.title}
-            </button>{" "}
-            <span className="mk-muted">{nameOf(t.assigneeId)}</span> <StatusChip status={t.status} />
-          </li>
-        ))}
-      </ul>
+      {reg !== "none" && (
+        <>
+          <h4 className="mk-panel-sub">このKRにつながる仕事{scopeNote}（全員に見えます）</h4>
+          <ul className="mk-list mk-list-tight">
+            {krTasks.map((t) => (
+              <li key={t.id}>
+                <button type="button" className="mk-linkbtn" onClick={() => setSel({ type: "task", id: t.id })}>
+                  {t.title}
+                </button>{" "}
+                <span className="mk-muted">{nameOf(t.assigneeId)}</span> <StatusChip status={t.status} />
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
 
-      {shared.length > 0 && (
+      {reg !== "none" && shared.length > 0 && (
         <>
           <h4 className="mk-panel-sub">
-            <JunctionMark /> ほかのKRとも重なる仕事（全員に見えます）
+            <JunctionMark /> ほかのKRとも重なる仕事{scopeNote}（全員に見えます）
           </h4>
           {shared.map((s) => (
             <div key={s.krId} className="mk-shared">
@@ -174,46 +193,59 @@ function KrPanel({ krId }: { krId: string }) {
         </>
       )}
 
-      <h4 className="mk-panel-sub">この動きの間にあなたが終えた仕事</h4>
-      <p className="mk-muted">
-        {formatMd(r.prevAt)}の翌日から{formatMd(r.updatedAt)}までに完了した仕事です（あなたにだけ見えます）。
-      </p>
-      {done.length === 0 ? (
-        <p className="mk-muted">該当する仕事はありません。</p>
-      ) : (
-        <ul className="mk-list mk-list-tight">
-          {done.map((t) => (
-            <li key={t.id}>
-              {starred.has(t.id) && (
-                <>
-                  <b aria-label="成果につながった仕事">★</b>{" "}
-                </>
-              )}
-              {t.title} <span className="mk-muted">{formatMd(t.updated)}</span> <KrDots krIds={krIdsOfTask(t, linkCtx)} />
-            </li>
-          ))}
-        </ul>
+      {reg !== "none" && (
+        <>
+          <h4 className="mk-panel-sub">この動きの間にあなたが終えた仕事</h4>
+          <p className="mk-muted">
+            {formatMd(r.prevAt)}の翌日から{formatMd(r.updatedAt)}までに完了した仕事です（あなたにだけ見えます）。
+          </p>
+          {done.length === 0 ? (
+            <p className="mk-muted">該当する仕事はありません。</p>
+          ) : (
+            <ul className="mk-list mk-list-tight">
+              {done.map((t) => (
+                <li key={t.id}>
+                  {starred.has(t.id) && (
+                    <>
+                      <b aria-label="成果につながった仕事">★</b>{" "}
+                    </>
+                  )}
+                  {t.title} <span className="mk-muted">{formatMd(t.updated)}</span> <KrDots krIds={krIdsOfTask(t, linkCtx)} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
       )}
 
-      <h4 className="mk-panel-sub">このKRに関わる決定事項と宿題</h4>
+      <h4 className="mk-panel-sub">このKRに関わる決定事項と宿題（回ごと）</h4>
       {related.length === 0 ? (
         <p className="mk-muted">ありません。</p>
       ) : (
-        <ul className="mk-list mk-list-tight">
-          {related.map((d) => (
-            <li key={d.id}>
-              <span className={`mk-chip ${d.kind === "決定" ? "mk-chip-blue" : "mk-chip-yellow"}`}>{d.kind}</span> {d.text}
-              {d.ownerId ? <span className="mk-muted"> 担当：{nameOf(d.ownerId)}</span> : null}
-            </li>
-          ))}
-        </ul>
+        rounds.map((c) => (
+          <section key={c.id} aria-label={c.title}>
+            <div className="mk-small mk-muted">
+              {formatMd(c.date)} {c.title}
+            </div>
+            <ul className="mk-list mk-list-tight">
+              {related
+                .filter((d) => d.checkinId === c.id)
+                .map((d) => (
+                  <li key={d.id}>
+                    <span className={`mk-chip ${d.kind === "決定" ? "mk-chip-blue" : "mk-chip-yellow"}`}>{d.kind}</span> {d.text}
+                    {d.ownerId ? <span className="mk-muted"> 担当：{nameOf(d.ownerId)}</span> : null}
+                  </li>
+                ))}
+            </ul>
+          </section>
+        ))
       )}
     </>
   );
 }
 
 function TaskPanel({ taskId }: { taskId: string }) {
-  const { linkCtx, items, overrides, setOverride, proposals, takeProposal, setProposal, how, setHow, viewerId, setSel, mode } = useMock();
+  const { linkCtx, items, overrides, setOverride, proposals, takeProposal, setProposal, how, setHow, viewerId, setSel, mode, tasks } = useMock();
   const t = tasks.find((x) => x.id === taskId);
   if (!t) return null;
   const pj = pjsInit.find((p) => p.id === t.pjId);

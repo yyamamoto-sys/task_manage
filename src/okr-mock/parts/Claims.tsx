@@ -1,4 +1,3 @@
-import { tasks } from "../fixtures";
 import { claimKey } from "../userState";
 import { useMock } from "../state";
 import type { ClaimStatus } from "../types";
@@ -6,10 +5,11 @@ import { krLabel, nameOf } from "../ui";
 
 /** 見ている人に届いた、資料の記述との結びつき（本人の分だけ） */
 function useMyClaims() {
-  const { outcomeNotes, claims } = useMock();
+  const { outcomeNotes, claims, tasks } = useMock();
   const rows: { noteKey: string; taskId: string; status: ClaimStatus }[] = [];
   for (const n of outcomeNotes) {
     for (const l of n.links) {
+      if (!tasks.some((t) => t.id === l.taskId)) continue;
       const st = claims[claimKey(n.key, l.taskId)];
       if (st) rows.push({ noteKey: n.key, taskId: l.taskId, status: st });
     }
@@ -44,7 +44,7 @@ export function ClaimsBanner() {
 
 /** 「自分」表示の中。1件ずつ「そのとおり／違う」を選ぶ（文章入力なし）。本人の答えは本人にだけ見える */
 export function ClaimsList() {
-  const { outcomeNotes, answerClaim, viewerId } = useMock();
+  const { outcomeNotes, answerClaim, viewerId, tasks } = useMock();
   const { rows, pending } = useMyClaims();
   return (
     <div>

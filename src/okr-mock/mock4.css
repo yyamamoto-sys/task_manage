@@ -204,3 +204,9 @@
 .mk-shared { margin: 4px 0 8px; }
 .mk-proposal { margin: 6px 0 10px; }
 .is-dim { opacity: 0.16; }
+
+/* 仕事の登録なし：責めない穏やかな点線の枠（灰色系・丸み。警告色や三角は使わない） */
+.mk-noreg-box { fill: none; stroke: var(--color-text-tertiary, #8a93a6); stroke-width: 1.5; stroke-dasharray: 4 4; }
+.mk-noreg-line { padding: 8px 12px; border: 1.5px dashed var(--color-border-secondary); border-radius: 12px; }
+.mk-reachnote { margin: 0 0 4px; font-size: 12px; }
+.mk-trend { margin: 2px 0 6px; }

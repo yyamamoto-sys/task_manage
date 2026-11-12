@@ -267,23 +267,29 @@ export function buildSummaryText(args: {
   how: Record<string, string>;
   /** 本人が「そのとおり」と確かめた、成果につながった仕事 */
   outcomes?: { title: string; krLabel: string; change: string; excerpt: string }[];
+  /** 週の振り返りの答え（本人の分だけ。効き具合は選んだ言葉のまま） */
+  reflections?: { weekStart: string; krLabel: string; effect: string }[];
 }): string {
-  const { period, owner, krs, tasks, memberId, start, today, ctx, how, outcomes = [] } = args;
+  const { period, owner, krs, tasks, memberId, start, today, ctx, how, outcomes = [], reflections = [] } = args;
   const lines = [`${period} 期のまとめ（${owner}）`, `集計期間：${start}〜${today}`, ""];
   const mineDone = tasks.filter((t) => t.assigneeId === memberId && t.status === "完了" && t.updated >= start && t.updated <= today);
   for (const kr of krs) {
     const done = tasksOfKr(mineDone, kr.id, ctx);
-    lines.push(`${kr.label} ${kr.text}：${done.length}件`);
+    lines.push(done.length === 0 ? `${kr.label} ${kr.text}：この期に終えた仕事は、まだつながっていません` : `${kr.label} ${kr.text}：${done.length}件`);
     for (const t of done) {
       const h = how[howKey(t.id, kr.id)];
       lines.push(`  ・${t.title}${h ? `（${h}）` : ""}`);
     }
   }
   const all = linkedTasks(mineDone, ctx);
-  lines.push("", `合計：${all.length}件（複数のKRにつながる仕事は1件に数えています）`);
+  lines.push("", all.length === 0 ? "合計：この期に終えた仕事は、まだありません" : `合計：${all.length}件（複数のKRにつながる仕事は1件に数えています）`);
   if (outcomes.length > 0) {
     lines.push("", `成果につながった仕事：${outcomes.length}件（資料の記述と照らして、本人が確かめたもの）`);
     for (const o of outcomes) lines.push(`  ★${o.title} → ${o.krLabel} ${o.change}「${o.excerpt}」`);
+  }
+  if (reflections.length > 0) {
+    lines.push("", "週の振り返り（本人が選んだ効き具合）");
+    for (const r of reflections) lines.push(`  ・${formatMd(r.weekStart)}の週 ${r.krLabel}：${r.effect}`);
   }
   return lines.join("\n");
 }

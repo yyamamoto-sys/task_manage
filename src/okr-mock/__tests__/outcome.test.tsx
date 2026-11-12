@@ -143,7 +143,8 @@ describe("画面：結びつき", () => {
     const m2 = html({ ...outcomeView(), mode: "self" });
     expect(m2).toContain("成果につながった仕事（1件）");
     const m3 = html({ ...outcomeView(), viewerId: "m3", mode: "self" });
-    expect(m3).toContain("成果につながった仕事（0件）");
+    expect(m3).toContain("成果につながった仕事</h4>");
+    expect(m3).not.toContain("成果につながった仕事（0件）");
   });
 });
 
