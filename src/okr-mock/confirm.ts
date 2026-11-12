@@ -1,5 +1,5 @@
 // 資料の確定まわりの純粋関数（決定事項の足し合わせ・資料どうしの食い違い）
-import type { Band, Checkin, Conflict, Decision, Draft, KrRecord, Resource } from "./types";
+import type { Band, Checkin, Conflict, Decision, Draft, KrRecord, OutcomeNote, Resource } from "./types";
 
 /**
  * 決定事項と宿題の反映。同じ回の資料を複数確定しても、資料ごとに足し合わせる（他の資料の分は消さない）。
@@ -50,4 +50,30 @@ export function mergeDrafts(selected: Resource[], conflicts: Conflict[], picks: 
 
 export function unresolved(conflicts: Conflict[], picks: Record<string, number>): string[] {
   return conflicts.filter((c) => picks[c.krId] === undefined).map((c) => c.krId);
+}
+
+/**
+ * 成果の記述の足し合わせ。同じ key は1つにまとめる（出典と関連の仕事は和集合）。
+ * 先に入っている記述の原文・増減は変えない
+ */
+export function addOutcomeNotes(prev: OutcomeNote[], incoming: OutcomeNote[]): OutcomeNote[] {
+  const out = prev.map((n) => ({ ...n, sources: [...n.sources], links: [...n.links] }));
+  for (const n of incoming) {
+    const cur = out.find((x) => x.key === n.key);
+    if (!cur) {
+      out.push({ ...n, sources: [...n.sources], links: [...n.links] });
+      continue;
+    }
+    for (const s of n.sources) if (!cur.sources.some((x) => x.doc === s.doc && x.page === s.page)) cur.sources.push(s);
+    for (const l of n.links) if (!cur.links.some((x) => x.taskId === l.taskId)) cur.links.push(l);
+  }
+  return out;
+}
+
+/** 選んだ資料の成果の記述（資料をまたいだ同じ出来事は1つにまとめる） */
+export function notesOfResources(selected: Resource[]): OutcomeNote[] {
+  return addOutcomeNotes(
+    [],
+    selected.flatMap((r) => r.notes.map((n) => ({ key: n.key, krId: n.krId, change: n.change, excerpt: n.excerpt, sources: [n.source], links: n.links }))),
+  );
 }

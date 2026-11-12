@@ -67,6 +67,18 @@ export function valueText(r: KrRecord, v: number | string): string {
   return r.kind === "number" ? `${v}${r.unit}` : String(v);
 }
 
+/** 「11/3」のような月日（曜日なし） */
+export function mdOf(date: string): string {
+  const [, m, d] = date.split("-").map(Number);
+  return `${m}/${d}`;
+}
+
+/** 成果（チェックイン資料の「現状」）の1行。出どころの資料の日付を添える */
+export function outcomeLine(r: KrRecord): string {
+  const src = `（${mdOf(r.updatedAt)} の資料）`;
+  return r.kind === "number" ? `成果 ${r.value}／${r.target}${r.unit}${src}` : `成果 いま${r.value}／目標${r.target}${src}`;
+}
+
 export function signed(n: number, unit = ""): string {
   if (n === 0) return `±0${unit}`;
   return `${n > 0 ? "+" : "−"}${Math.abs(n)}${unit}`;

@@ -2,7 +2,7 @@
 // 「本人」＝いま見ている人。すべて利用者IDごとに分け、他の人の分は読まない・書かない。
 import { personalLinksInit, picksInit } from "./fixtures";
 import { answerKey, howKey } from "./logic";
-import type { KrAnswer, Task } from "./types";
+import type { ClaimStatus, KrAnswer, OutcomeNote, Task } from "./types";
 
 export interface UserState {
   /** つなぎ先を変えた仕事（仕事ID → KR ID） */
@@ -16,11 +16,13 @@ export interface UserState {
   answers: Record<string, KrAnswer>;
   /** 「今週やる」と選んだ仕事（週の月曜 → 仕事ID） */
   picks: Record<string, string[]>;
+  /** 資料の記述と自分の仕事の結びつき（claimKey → 答え）。AIが推定して届けたもの。本人の答えは本人の分だけに持つ */
+  claims: Record<string, ClaimStatus>;
 }
 
 export type UserStates = Record<string, UserState>;
 
-export const emptyUser = (): UserState => ({ overrides: {}, proposals: {}, how: {}, personalLinks: [], answers: {}, picks: {} });
+export const emptyUser = (): UserState => ({ overrides: {}, proposals: {}, how: {}, personalLinks: [], answers: {}, picks: {}, claims: {} });
 
 export function userOf(s: UserStates, id: string): UserState {
   return s[id] ?? emptyUser();
@@ -109,4 +111,52 @@ export function togglePick(s: UserStates, userId: string, weekStart: string, tas
     const cur = u.picks[weekStart] ?? [];
     return { ...u, picks: { ...u.picks, [weekStart]: cur.includes(task.id) ? cur.filter((x) => x !== task.id) : [...cur, task.id] } };
   });
+}
+
+export const claimKey = (noteKey: string, taskId: string) => `${noteKey}|${taskId}`;
+
+/**
+ * 確定した成果の記述の結びつきを、仕事の担当者本人へ「確かめてください」として届ける。
+ * すでに答えがあるものは上書きしない（同じ資料をもう一度確定しても、答えは消えない）
+ */
+export function deliverClaims(s: UserStates, notes: OutcomeNote[], tasks: Task[]): UserStates {
+  let out = s;
+  for (const n of notes) {
+    for (const l of n.links) {
+      const t = tasks.find((x) => x.id === l.taskId);
+      if (!t) continue;
+      const key = claimKey(n.key, t.id);
+      out = patch(out, t.assigneeId, (u) => (u.claims[key] ? u : { ...u, claims: { ...u.claims, [key]: "pending" } }));
+    }
+  }
+  return out;
+}
+
+/** 結びつきへの答え（そのとおり／違う）。担当者本人だけが、自分に届いたものについて答えられる */
+export function answerClaim(s: UserStates, userId: string, task: Task, noteKey: string, v: "yes" | "no"): UserStates {
+  if (task.assigneeId !== userId) return s;
+  const key = claimKey(noteKey, task.id);
+  return patch(s, userId, (u) => (!u.claims[key] || u.claims[key] === v ? u : { ...u, claims: { ...u.claims, [key]: v } }));
+}
+
+export interface ConfirmedLink {
+  note: OutcomeNote;
+  task: Task;
+}
+
+/** 「そのとおり」と答えられた結びつき（全員に見える）。未回答と「違う」は含めない */
+export function confirmedLinks(s: UserStates, notes: OutcomeNote[], tasks: Task[]): ConfirmedLink[] {
+  const out: ConfirmedLink[] = [];
+  for (const n of notes) {
+    for (const l of n.links) {
+      const t = tasks.find((x) => x.id === l.taskId);
+      if (t && userOf(s, t.assigneeId).claims[claimKey(n.key, t.id)] === "yes") out.push({ note: n, task: t });
+    }
+  }
+  return out;
+}
+
+/** 本人にまだ答えていない結びつきが何件あるか */
+export function pendingClaimCount(u: UserState): number {
+  return Object.values(u.claims).filter((v) => v === "pending").length;
 }

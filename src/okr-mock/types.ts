@@ -116,12 +116,44 @@ export interface Draft {
   source: Source;
 }
 
+/** 資料の中の「成果の記述」と、AIが推定した関連の仕事 */
+export interface OutcomeLink {
+  taskId: string;
+  /** 推定の理由（一言） */
+  reason: string;
+}
+
+/** 資料1件の中の成果の記述。同じ出来事を別の資料が書いていたら key を同じにする（足し合わせで1つにまとめる） */
+export interface ResourceNote {
+  key: string;
+  krId: string;
+  /** 増減の表記（例：＋1社、C→B） */
+  change: string;
+  excerpt: string;
+  source: Source;
+  links: OutcomeLink[];
+}
+
+/** 確定して足し合わせたあとの成果の記述 */
+export interface OutcomeNote {
+  key: string;
+  krId: string;
+  change: string;
+  excerpt: string;
+  sources: Source[];
+  links: OutcomeLink[];
+}
+
+/** 結びつきへの本人の答え。pending＝まだ答えていない */
+export type ClaimStatus = "pending" | "yes" | "no";
+
 export interface Resource {
   id: string;
   name: string;
   kind: string;
   checkinId: string;
   drafts: Draft[];
+  notes: ResourceNote[];
   decisions: Omit<Decision, "id" | "checkinId">[];
 }
 

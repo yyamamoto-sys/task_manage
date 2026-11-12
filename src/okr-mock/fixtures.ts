@@ -266,6 +266,52 @@ export const resources: Resource[] = [
       { krId: "kr1", value: 22, source: { doc: "チェックイン資料_20261110.pptx", page: "p.3" } },
       { krId: "kr3", value: "B", source: { doc: "チェックイン資料_20261110.pptx", page: "p.5" } },
     ],
+    notes: [
+      {
+        key: "kr1-hokuto",
+        krId: "kr1",
+        change: "＋1社",
+        excerpt: "北斗産業と提携の覚書を締結。パートナーが1社増えた。",
+        source: { doc: "チェックイン資料_20261110.pptx", page: "p.3" },
+        links: [
+          { taskId: taskIdByTitle("提案資料の骨子を決める"), reason: "北斗産業への提案で、この骨子を使ったとみられるため" },
+          { taskId: taskIdByTitle("お礼メールの文面を作る"), reason: "展示会後のお礼メールが最初の接点だったとみられるため" },
+        ],
+      },
+      {
+        key: "kr1-minato",
+        krId: "kr1",
+        change: "＋1社",
+        excerpt: "港南運輸が、ヒアリングの紹介をきっかけに加入した。",
+        source: { doc: "チェックイン資料_20261110.pptx", page: "p.4" },
+        links: [
+          { taskId: taskIdByTitle("1〜3社目のヒアリングを行う"), reason: "ヒアリング先の1社が紹介元だったとみられるため" },
+          { taskId: taskIdByTitle("提案の想定質問集を作る"), reason: "同社への提案で想定質問集を使ったとみられるため" },
+        ],
+      },
+      {
+        key: "kr3-report",
+        krId: "kr3",
+        change: "C→Bの要因の一つ",
+        excerpt: "月次レポートの自動化が1本分すすみ、定型作業の時間が減った。",
+        source: { doc: "チェックイン資料_20261110.pptx", page: "p.5" },
+        links: [
+          { taskId: taskIdByTitle("月次レポートを1本、自動で作る"), reason: "自動化の対象が、この月次レポートだったため" },
+          { taskId: taskIdByTitle("自動化の試作を作る"), reason: "試作がこの自動化の土台になったとみられるため" },
+        ],
+      },
+      {
+        key: "kr3-folder",
+        krId: "kr3",
+        change: "C→Bの要因の一つ",
+        excerpt: "資料の置き場のルールが決まり、探す手間が減った。",
+        source: { doc: "チェックイン資料_20261110.pptx", page: "p.6" },
+        links: [
+          { taskId: taskIdByTitle("フォルダ構成案を作る"), reason: "決まったルールのもとになった案とみられるため" },
+          { taskId: taskIdByTitle("フォルダの名前ルールを決める"), reason: "ルールの中身に当たる作業のため" },
+        ],
+      },
+    ],
     decisions: [
       { kind: "決定", text: "新規開拓の進め方を1枚にまとめ、12月に共有する", ownerId: null, source: { doc: "チェックイン資料_20261110.pptx", page: "p.8" }, krIds: ["kr1"] },
       { kind: "宿題", text: "月次レポート1本の自動化を終える", ownerId: "m2", source: { doc: "チェックイン資料_20261110.pptx", page: "p.6" }, krIds: ["kr3"] },
@@ -280,6 +326,38 @@ export const resources: Resource[] = [
     drafts: [
       { krId: "kr1", value: 21, source: { doc: "議事録_20261110.txt", page: "2段落目" } },
       { krId: "kr2", value: 73, source: { doc: "議事録_20261110.txt", page: "4段落目" } },
+    ],
+    notes: [
+      {
+        key: "kr1-hokuto",
+        krId: "kr1",
+        change: "＋1社",
+        excerpt: "北斗産業と覚書。提案の初稿が決め手だったとの話。",
+        source: { doc: "議事録_20261110.txt", page: "2段落目" },
+        links: [
+          { taskId: taskIdByTitle("提案資料の骨子を決める"), reason: "北斗産業への提案で、この骨子を使ったとみられるため" },
+          { taskId: taskIdByTitle("デザインの初稿を作る"), reason: "「提案の初稿」が、この仕事の成果物とみられるため" },
+        ],
+      },
+      {
+        key: "kr1-intro",
+        krId: "kr1",
+        change: "＋1社",
+        excerpt: "取引先の紹介でもう1社が加わった（社名は話に出ず）。",
+        source: { doc: "議事録_20261110.txt", page: "3段落目" },
+        links: [],
+      },
+      {
+        key: "kr2-reserve",
+        krId: "kr2",
+        change: "＋2%",
+        excerpt: "予約の問い合わせが減り、稼働率が2ポイント上がった。",
+        source: { doc: "議事録_20261110.txt", page: "4段落目" },
+        links: [
+          { taskId: taskIdByTitle("予約画面の用語を揃える"), reason: "問い合わせが減った理由に、用語の分かりやすさがあるとみられるため" },
+          { taskId: taskIdByTitle("予約フォームを作り直す"), reason: "予約の手間を減らす改修のため" },
+        ],
+      },
     ],
     decisions: [
       { kind: "決定", text: "説明会は12月第1週に開く", ownerId: null, source: { doc: "議事録_20261110.txt", page: "5段落目" }, krIds: ["kr2"] },

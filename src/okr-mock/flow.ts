@@ -19,8 +19,8 @@ export const WIDTH = 1000;
 /** PJが9以上のときは、件数の多い順にこの数だけ並べて、残りは「ほか◯PJ」にまとめる */
 export const MAX_PJ = 8;
 export const OTHER_PJ = "__other";
-/** 帯のKR側の端から、KRノードまでの間（「完了 5／残り 3」を書く） */
-export const LABEL_GAP = 96;
+/** 帯のKR側の端から、KRノードまでの間（「仕事 完了 5／残り 3」を書く） */
+export const LABEL_GAP = 140;
 const LABEL_STEP = 13;
 
 export type FlowScope = "team" | "self";

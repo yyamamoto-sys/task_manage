@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { detectConflicts, mergeDecisions, mergeDrafts } from "./confirm";
+import { addOutcomeNotes, detectConflicts, mergeDecisions, mergeDrafts, notesOfResources } from "./confirm";
 import {
   checkinsInit,
   CURRENT_QUARTER,
@@ -12,10 +12,11 @@ import {
   QUARTER_INFO,
   recordsInit,
   resources,
+  tasks as allTasks,
   WEEK_START,
 } from "./fixtures";
 import { applyDrafts, compareOkr, crossedMilestones, deltaText, importKintone, itemsInQuarter, type LinkCtx, type Milestone } from "./logic";
-import type { Band, Checkin, Decision, KintoneRow, KrAnswer, KrRecord, OkrItem, Task } from "./types";
+import type { Band, Checkin, ClaimStatus, Decision, KintoneRow, KrAnswer, KrRecord, OkrItem, OutcomeNote, Task } from "./types";
 import * as U from "./userState";
 
 export type ViewMode = "team" | "self";
@@ -86,6 +87,13 @@ interface MockState {
   /** 今週「やる」と選んだ仕事（仕事ID） */
   picks: string[];
   togglePick: (task: Task) => void;
+  /** 確定した成果の記述（全員分・足し合わせ済み） */
+  outcomeNotes: OutcomeNote[];
+  /** 見ている人に届いた結びつき（claimKey → 答え）。本人の分だけ */
+  claims: Record<string, ClaimStatus>;
+  answerClaim: (noteKey: string, task: Task, v: "yes" | "no") => void;
+  /** 「そのとおり」と確かめられた結びつき（全員に見える） */
+  confirmedLinks: U.ConfirmedLink[];
   toast: string | null;
   showToast: (msg: string) => void;
 }
@@ -105,6 +113,8 @@ export interface InitialView {
   drawerOpen?: boolean;
   confirmedBy?: Record<string, string>;
   changes?: Change[];
+  /** 確定済みの成果の記述と、利用者ごとの結びつきへの答え（描画の確認用） */
+  outcome?: { notes: OutcomeNote[]; claims: Record<string, Record<string, ClaimStatus>> };
 }
 
 const reducedMotion = () => typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -127,7 +137,12 @@ export function MockProvider({ children, initial }: { children: ReactNode; initi
   const [checkins, setCheckins] = useState<Checkin[]>(checkinsInit);
   const [decisions, setDecisions] = useState<Decision[]>(decisionsInit);
   const [confirmedBy, setConfirmedBy] = useState<Record<string, string>>(initial?.confirmedBy ?? {});
-  const [users, setUsers] = useState<U.UserStates>(() => U.initialUserStates(WEEK_START));
+  const [users, setUsers] = useState<U.UserStates>(() => {
+    const base = U.initialUserStates(WEEK_START);
+    for (const [uid, claims] of Object.entries(initial?.outcome?.claims ?? {})) base[uid] = { ...U.userOf(base, uid), claims };
+    return base;
+  });
+  const [outcomeNotes, setOutcomeNotes] = useState<OutcomeNote[]>(initial?.outcome?.notes ?? []);
   const [toast, setToast] = useState<string | null>(null);
   const timer = useRef<number | undefined>(undefined);
   const celebTimer = useRef<number | undefined>(undefined);
@@ -158,6 +173,7 @@ export function MockProvider({ children, initial }: { children: ReactNode; initi
 
   const me = U.userOf(users, viewerId);
   const overridesAll = useMemo(() => U.mergedOverrides(users), [users]);
+  const confirmedLinks = useMemo(() => U.confirmedLinks(users, outcomeNotes, allTasks), [users, outcomeNotes]);
   const linkCtx = useMemo<LinkCtx>(() => ({ pjs: pjsInit, items, overrides: overridesAll }), [items, overridesAll]);
 
   const value = useMemo<MockState>(
@@ -220,6 +236,9 @@ export function MockProvider({ children, initial }: { children: ReactNode; initi
         setCheckins((p) => (p.some((c) => c.id === ci.id) ? p : [...p, ci]));
         setDecisions((p) => mergeDecisions(p, selected, ci));
         setConfirmedBy((p) => ({ ...p, [ci.id]: viewerId }));
+        const notes = notesOfResources(selected);
+        setOutcomeNotes((p) => addOutcomeNotes(p, notes));
+        setUsers((p) => U.deliverClaims(p, notes, allTasks));
         setNewDecisions(selected.reduce((s, r) => s + r.decisions.length, 0));
         setDecisionsOpen(true);
         setChanges(deltas);
@@ -242,10 +261,14 @@ export function MockProvider({ children, initial }: { children: ReactNode; initi
       setAnswer: (krId, patch) => setUsers((p) => U.setAnswer(p, viewerId, WEEK_START, krId, patch)),
       picks: me.picks[WEEK_START] ?? [],
       togglePick: (task) => setUsers((p) => U.togglePick(p, viewerId, WEEK_START, task)),
+      outcomeNotes,
+      claims: me.claims,
+      answerClaim: (noteKey, task, v) => setUsers((p) => U.answerClaim(p, viewerId, task, noteKey, v)),
+      confirmedLinks,
       toast,
       showToast,
     }),
-    [viewerId, mode, sel, guideOpen, drawerOpen, modal, celebrations, changes, decisionsOpen, newDecisions, items, locked, imported, records, checkins, decisions, confirmedBy, linkCtx, me, toast, showToast],
+    [viewerId, mode, sel, guideOpen, drawerOpen, modal, celebrations, changes, decisionsOpen, newDecisions, items, locked, imported, records, checkins, decisions, confirmedBy, linkCtx, me, outcomeNotes, confirmedLinks, toast, showToast],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

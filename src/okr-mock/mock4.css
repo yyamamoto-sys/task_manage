@@ -67,8 +67,21 @@
 .mk-focus-tasks li { padding: 3px 0; }
 
 /* 流れの図 */
-.mk-flowwrap { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; align-items: start; }
-.mk-flowwrap.has-panel { grid-template-columns: minmax(0, 1fr) 360px; }
+/* 詳細の列は選択の有無にかかわらず常に確保する。列の中身は高さに寄与させず（contain: size）、地図の高さに合わせて列の中でスクロールする */
+.mk-flowwrap { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 12px; align-items: stretch; }
+.mk-panelcol { position: relative; contain: size; min-width: 0; }
+.mk-empty-lead { margin: 4px 0 10px; font-size: 14px; font-weight: 700; }
+.mk-empty-fig { width: 100%; height: auto; max-width: 300px; color: var(--color-text-primary); }
+.mk-kindnote { margin: 0 0 6px; }
+.mk-contrast { margin: 8px 0; padding: 8px 10px; border-radius: 12px; background: var(--color-bg-secondary); display: grid; gap: 6px; }
+.mk-contrast-row { display: grid; grid-template-columns: 2.4em 60px 1fr; gap: 8px; align-items: center; font-size: 12px; }
+.mk-contrast-k { font-weight: 700; }
+.mk-contrast-bar { display: block; height: 9px; border-radius: 5px; background: var(--color-border-primary); overflow: hidden; }
+.mk-contrast-bar i { display: block; height: 100%; }
+.mk-contrast-bar.is-work i { background: repeating-linear-gradient(45deg, #7c8db5 0 3px, #a9b5d1 3px 6px); }
+.mk-contrast-gap { margin: 2px 0 0; font-size: 12px; font-weight: 700; }
+.mk-claim { padding: 8px 12px; margin: 6px 0; border-radius: 12px; background: var(--color-bg-secondary); border-left: 5px solid #e08a00; }
+.mk-claim-banner { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 8px 12px; margin: 0 0 10px; border-radius: 12px; border: 1px solid #e08a00; font-size: 13px; }
 .mk-flowscroll { overflow-x: auto; }
 .mk-flowsvg { display: block; width: 100%; min-width: 760px; height: auto; color: var(--color-text-primary); }
 .mk-fnode { fill: var(--color-bg-primary); }
@@ -129,7 +142,7 @@
 }
 
 @media (max-width: 1100px) {
-  .mk-flowwrap.has-panel { grid-template-columns: minmax(0, 1fr); }
+  .mk-flowwrap { grid-template-columns: minmax(0, 1fr); }
   /* 幅が狭いときは図の下ではなく、右から出る引き出し */
   .mk-panel { position: fixed; top: 0; right: 0; bottom: 0; z-index: 45; width: min(420px, 100%); max-height: none; border-radius: 16px 0 0 16px; box-shadow: var(--shadow-lg); outline: none; pointer-events: auto; }
   .mk-band-body { grid-template-columns: minmax(0, 1fr); }

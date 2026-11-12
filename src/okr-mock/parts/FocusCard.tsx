@@ -2,6 +2,7 @@ import { aiCandidates, krStyle, PERIOD_END, PERIOD_START, tasks } from "../fixtu
 import { candidateTasksForKr, formatMd, latestCheckinDate, periodElapsed, TODAY, weeklyFocus } from "../logic";
 import { useMock } from "../state";
 import { krLabel, krText, StatusChip } from "../ui";
+import { ClaimsBanner } from "./Claims";
 
 export function FocusCard() {
   const { items, records, checkins, linkCtx, viewerId, setSel, picks, togglePick, takeProposal, showToast } = useMock();
@@ -18,6 +19,7 @@ export function FocusCard() {
         </svg>
         今週ここに力を
       </h2>
+      <ClaimsBanner />
       {list.length === 0 ? (
         <p className="mk-muted">期の経過に対して遅れているKRも、目標まで残りの多い達成度のKRもありません。いまの勢いを保ちましょう。</p>
       ) : (

@@ -102,7 +102,7 @@ function Guide() {
 }
 
 function Shell() {
-  const { toast, sel, mode, drawerOpen, modal, setModal, viewerId, setViewerId } = useMock();
+  const { toast, mode, drawerOpen, modal, setModal, viewerId, setViewerId } = useMock();
   const [dark, setDark] = useState(false);
   useEffect(() => {
     if (dark) document.documentElement.setAttribute("data-theme", "dark");
@@ -136,7 +136,7 @@ function Shell() {
         <Guide />
         <TeamBand />
         <FocusCard />
-        <div className={`mk-flowwrap${sel ? " has-panel" : ""}`}>
+        <div className="mk-flowwrap">
           <FlowDiagram />
           <DetailPanel />
         </div>

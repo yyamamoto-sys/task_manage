@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { detectConflicts, mergeDrafts, unresolved } from "../confirm";
-import { nextCheckin, resources } from "../fixtures";
+import { detectConflicts, mergeDrafts, notesOfResources, unresolved } from "../confirm";
+import { nextCheckin, resources, tasks } from "../fixtures";
 import { BANDS, formatMd } from "../logic";
 import { useMock } from "../state";
 import type { Band } from "../types";
@@ -21,6 +21,7 @@ export function DocDrawer() {
   const conflicts = useMemo(() => detectConflicts(selected, records, checkinDate), [selected, records, checkinDate]);
   const drafts = useMemo(() => mergeDrafts(selected, conflicts, picks), [selected, conflicts, picks]);
   const open = unresolved(conflicts, picks);
+  const notes = useMemo(() => notesOfResources(selected), [selected]);
   const confirmer = confirmedBy[nextCheckin.id];
 
   useEffect(() => {
@@ -172,7 +173,32 @@ export function DocDrawer() {
               </>
             )}
 
-            <h3 className="mk-h3">3. 決定事項と宿題の取り出し結果</h3>
+            <h3 className="mk-h3">3. 成果の記述と、関係しそうな仕事</h3>
+            <p className="mk-muted">資料の中の成果の記述と、AIが推定した関連の仕事です。ここでは読むだけで、確定しません。「まとめて確定」すると、推定された結びつきが各仕事の担当者本人に「確かめてください」として届きます。</p>
+            <ul className="mk-list">
+              {notes.map((n) => (
+                <li key={n.key}>
+                  <strong>{krLabel(n.krId)}</strong> {n.change} 「{n.excerpt}」{" "}
+                  <span className="mk-muted">{n.sources.map((x) => `${x.doc} ${x.page}`).join("／")}</span>
+                  {n.links.length === 0 ? (
+                    <div className="mk-small mk-muted">関係しそうな仕事は見つかりませんでした（結びつきは届きません）。</div>
+                  ) : (
+                    <ul className="mk-list mk-list-tight">
+                      {n.links.map((l) => {
+                        const t = tasks.find((x) => x.id === l.taskId);
+                        return (
+                          <li key={l.taskId}>
+                            {t?.title} <span className="mk-muted">担当：{nameOf(t?.assigneeId ?? null)}｜{l.reason}</span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </li>
+              ))}
+            </ul>
+
+            <h3 className="mk-h3">4. 決定事項と宿題の取り出し結果</h3>
             <ul className="mk-list">
               {selected.flatMap((res) =>
                 res.decisions.map((d, i) => (

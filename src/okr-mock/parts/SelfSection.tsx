@@ -4,6 +4,7 @@ import { addDays, answerKey, buildSummaryText, buildup, formatMd, krIdsOfTask, p
 import { useMock } from "../state";
 import type { Effect, Match } from "../types";
 import { krLabel, krName, nameOf, StatusChip } from "../ui";
+import { ClaimsList } from "./Claims";
 
 const EFFECTS: Effect[] = ["よく効いた", "少し", "今週は届かず"];
 const MATCHES: Match[] = ["そのとおり", "少し違う", "違う"];
@@ -115,8 +116,15 @@ function Reflect() {
   );
 }
 
+/** 本人の仕事のうち、成果につながったと本人が確かめたもの */
+function useMyOutcomes() {
+  const { confirmedLinks, viewerId } = useMock();
+  return confirmedLinks.filter((c) => c.task.assigneeId === viewerId);
+}
+
 function Buildup() {
   const { items, linkCtx, viewerId } = useMock();
+  const mine = useMyOutcomes();
   const krs = items.filter((i) => i.kind === "kr").map((k) => k.id);
   const b = buildup(tasks, viewerId, krs, PERIOD_START, TODAY, linkCtx);
   const colW = 30;
@@ -164,6 +172,18 @@ function Buildup() {
           })}
         </svg>
       </div>
+      <h4 className="mk-panel-sub">成果につながった仕事（{mine.length}件）</h4>
+      {mine.length === 0 ? (
+        <p className="mk-muted">まだありません。「成果につながったかもしれない仕事」で「そのとおり」を選ぶと、ここに積み上がります。</p>
+      ) : (
+        <ul className="mk-list mk-list-tight">
+          {mine.map((c) => (
+            <li key={`${c.note.key}|${c.task.id}`}>
+              <b aria-hidden="true">★</b> {c.task.title} <span className="mk-muted">→ {krLabel(c.note.krId)} {c.note.change}</span>
+            </li>
+          ))}
+        </ul>
+      )}
       <p className="mk-muted">週の始まり（月曜）ごとの累計です。今期（{PERIOD_START}以降）に終えた仕事だけを数えます。棒の上の数字は合計で、複数のKRにつながる仕事は、それぞれのKRに積んだうえで合計では1回に数えます。</p>
     </div>
   );
@@ -171,6 +191,7 @@ function Buildup() {
 
 function Summary() {
   const { items, linkCtx, how, showToast, viewerId } = useMock();
+  const mine = useMyOutcomes();
   const [text, setText] = useState<string | null>(null);
   const make = () =>
     setText(
@@ -184,6 +205,7 @@ function Summary() {
         today: TODAY,
         ctx: linkCtx,
         how,
+        outcomes: mine.map((c) => ({ title: c.task.title, krLabel: krLabel(c.note.krId), change: c.note.change, excerpt: c.note.excerpt })),
       }),
     );
   return (
@@ -223,6 +245,7 @@ export function SelfSection() {
       <p className="mk-muted">ここは本人だけの部分です。ほかの人にも、GMにも見えません。</p>
       <h3 className="mk-h3">今週やると選んだ仕事</h3>
       <Picks />
+      <ClaimsList />
       <h3 className="mk-h3">今週の振り返り</h3>
       <Reflect />
       <h3 className="mk-h3">効きの積み上がり</h3>

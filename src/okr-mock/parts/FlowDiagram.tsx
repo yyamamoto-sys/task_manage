@@ -3,7 +3,7 @@ import { flowCounts, layoutFlow, OTHER_PJ, ribbonPath, type Ribbon } from "../fl
 import { krStyle, PERIOD_END, PERIOD_START, personalOkrs, PERSONAL_NAME, MINE_COLOR, pjsInit, tasks } from "../fixtures";
 import { BANDS, krPace, krProgress, overallProgress, periodElapsed, PERSONAL_PJ, stepsToTarget, TODAY } from "../logic";
 import { useMock } from "../state";
-import { Burst, krLabel, krText, memberOf, PACE_INFO, PaceGlyph, SvgButton, surnameOf, trunc, wrapLines } from "../ui";
+import { Burst, krLabel, krText, memberOf, outcomeLine, PACE_INFO, PaceGlyph, SvgButton, surnameOf, trunc, wrapLines } from "../ui";
 
 const TOP = 28;
 
@@ -33,7 +33,7 @@ function RibbonShape({ r, krId, label, onActivate }: { r: Ribbon; krId: string; 
 }
 
 export function FlowDiagram() {
-  const { mode, viewerId, items, records, linkCtx, sel, setSel, personalLinks, togglePersonalLink, celebrations, changes, proposals } = useMock();
+  const { mode, viewerId, items, records, linkCtx, sel, setSel, personalLinks, togglePersonalLink, celebrations, changes, proposals, confirmedLinks } = useMock();
   const scope = mode === "self" ? "self" : "team";
   const [expanded, setExpanded] = useState<string[]>([]);
   const [armed, setArmed] = useState<string | null>(null);
@@ -113,6 +113,13 @@ export function FlowDiagram() {
 
   const personalPort = (pid: string) => layout.personal.find((p) => p.id === pid)!;
 
+  // 成果につながったと確かめられた仕事（全員に見える）。PJ→KRの帯と、PJの中の仕事に★を付ける
+  const starredTasks = new Set(confirmedLinks.map((c) => c.task.id));
+  const starsOnRibbon = (r: Ribbon): number => {
+    const pjIds = r.fromId === OTHER_PJ ? (layout.pjNodes.find((n) => n.pjId === OTHER_PJ)?.members.map((m) => m.pjId) ?? []) : [r.fromId];
+    return new Set(confirmedLinks.filter((c) => c.note.krId === r.toId && pjIds.includes(c.task.pjId)).map((c) => c.task.id)).size;
+  };
+
   return (
     <section className="mk-card mk-flow" aria-labelledby="mk-flow-h">
       <div className="mk-row">
@@ -133,8 +140,13 @@ export function FlowDiagram() {
             <i className="mk-lg mk-lg-open" />
             薄い＝残り
           </span>
+          <span>
+            <b aria-hidden="true">★</b>
+            成果につながった仕事
+          </span>
         </div>
       </div>
+      <p className="mk-muted mk-kindnote">バーと輪は成果（資料の数字）、帯は仕事（終えた・残り）。仕事を終えても、成果は資料を読ませるまで動きません</p>
       <p className="mk-muted">
         左のPJ（押すと仕事が開きます）から、中央のKR、右のO（めざす姿）へ。帯の太さは、そのKR向けの仕事のうち何割かを表します。KRを押すと詳細、仕事を押すとつなぎ先を確かめられます。
         {scope === "self" && " 個人OKRからKRへ矢印をドラッグ（または、左を押してから右を押す）でつなぎます。"}
@@ -168,7 +180,7 @@ export function FlowDiagram() {
               PJ
             </text>
             <text x={layout.cols.kr.x} y={16} fontSize={12} fontWeight={700} className="mk-svgtext-muted">
-              KR（進みのバー）
+              KR（成果＝進みのバー）
             </text>
             <text x={layout.cols.o.x} y={16} fontSize={12} fontWeight={700} className="mk-svgtext-muted">
               O（めざす姿）
@@ -207,7 +219,7 @@ export function FlowDiagram() {
                 key={r.id}
                 r={r}
                 krId={r.toId}
-                label={`${r.fromId === OTHER_PJ ? "ほかのPJ" : pjName(r.fromId)}から${krLabel(r.toId)}へ：終えた仕事${r.done}件、残り${r.open}件。押すと${krLabel(r.toId)}の詳細を開きます`}
+                label={`${r.fromId === OTHER_PJ ? "ほかのPJ" : pjName(r.fromId)}から${krLabel(r.toId)}へ：終えた仕事${r.done}件、残り${r.open}件${starsOnRibbon(r) > 0 ? `、成果につながった仕事${starsOnRibbon(r)}件` : ""}。押すと${krLabel(r.toId)}の詳細を開きます`}
                 onActivate={() => setSel({ type: "kr", id: r.toId })}
               />
             ))}
@@ -220,11 +232,15 @@ export function FlowDiagram() {
                 onActivate={() => setSel({ type: "kr", id: r.fromId })}
               />
             ))}
-            {layout.pjKr.map((r) => (
-              <text key={`n-${r.id}`} x={r.labelX} y={r.labelY} fontSize={10.5} className="mk-svgtext" pointerEvents="none">
-                完了 {r.done}／残り {r.open}
-              </text>
-            ))}
+            {layout.pjKr.map((r) => {
+              const stars = starsOnRibbon(r);
+              return (
+                <text key={`n-${r.id}`} x={r.labelX - 4} y={r.labelY} fontSize={10.5} className="mk-svgtext" pointerEvents="none">
+                  仕事 完了 {r.done}／残り {r.open}
+                  {stars > 0 ? ` ★${stars}` : ""}
+                </text>
+              );
+            })}
 
             {/* 個人OKR */}
             {layout.personal.map((p) => {
@@ -280,7 +296,7 @@ export function FlowDiagram() {
                       {trunc(name, 12)}
                     </text>
                     <text x={n.x + 36} y={n.y + 36} fontSize={10.5} className="mk-svgtext-muted">
-                      完了 {n.done}／残り {n.open}
+                      仕事 完了 {n.done}／残り {n.open}
                     </text>
                     <path d={n.expanded ? `M ${n.x + n.w - 22} ${n.y + 18} l 6 6 l 6 -6` : `M ${n.x + n.w - 20} ${n.y + 14} l 6 6 l -6 6`} stroke="currentColor" strokeWidth={2} fill="none" className="mk-svgtext-muted" strokeLinecap="round" strokeLinejoin="round" />
                   </SvgButton>
@@ -303,7 +319,7 @@ export function FlowDiagram() {
                     const m = memberOf(t.assigneeId);
                     const isSel = sel?.type === "task" && sel.id === t.id;
                     return (
-                      <SvgButton key={t.id} label={`仕事「${t.title}」担当${m?.name}、${t.status}。押すと詳細を開きます`} onActivate={() => setSel({ type: "task", id: t.id })}>
+                      <SvgButton key={t.id} label={`仕事「${t.title}」担当${m?.name}、${t.status}${starredTasks.has(t.id) ? "、成果につながった仕事" : ""}。押すと詳細を開きます`} onActivate={() => setSel({ type: "task", id: t.id })}>
                         <rect x={n.x + 10} y={row.y} width={n.w - 10} height={20} rx={8} className={`mk-trow${isSel ? " is-sel" : ""}`} />
                         {t.status === "完了" ? (
                           <circle cx={n.x + 22} cy={row.y + 10} r={5} fill="#1a9a6b" />
@@ -316,7 +332,8 @@ export function FlowDiagram() {
                           <circle cx={n.x + 22} cy={row.y + 10} r={5} fill="none" stroke="#8a93a6" strokeWidth={1.6} />
                         )}
                         <text x={n.x + 34} y={row.y + 14} fontSize={10.5} className="mk-svgtext">
-                          {trunc(t.title, 11)}
+                          {starredTasks.has(t.id) ? "★" : ""}
+                          {trunc(t.title, starredTasks.has(t.id) ? 10 : 11)}
                         </text>
                         <circle cx={n.x + n.w - 40} cy={row.y + 10} r={4} fill={m?.color} />
                         <text x={n.x + n.w - 33} y={row.y + 14} fontSize={9.5} className="mk-svgtext-muted">
@@ -345,7 +362,7 @@ export function FlowDiagram() {
               const by = n.y + 90;
               const steps = r.kind === "band" ? stepsToTarget(r) : 0;
               const valueLine = r.kind === "number" ? `${r.value}${r.unit} ／ 目標値 ${r.target}${r.unit}\u3000進み ${Math.round(p * 100)}%` : `いま ${r.value} ／ 目標の達成度 ${r.target}${steps > 0 ? `\u3000あと${steps}段` : ""}`;
-              const label = `${krLabel(n.krId)} ${krText(n.krId)}：${valueLine}${pace ? `、${PACE_INFO[pace].label}` : ""}。押すと詳細を開きます`;
+              const label = `${krLabel(n.krId)} ${krText(n.krId)}：成果 ${valueLine}（${r.updatedAt}の資料）${pace ? `、${PACE_INFO[pace].label}` : ""}。押すと詳細を開きます`;
               return (
                 <SvgButton
                   key={n.krId}
@@ -384,7 +401,7 @@ export function FlowDiagram() {
                     </text>
                   ))}
                   <text x={n.x + 20} y={n.y + 82} fontSize={11} className="mk-svgtext-muted">
-                    {valueLine}
+                    {outcomeLine(r)}
                   </text>
                   {r.kind === "number" ? (
                     <>
@@ -442,6 +459,9 @@ export function FlowDiagram() {
                       {l}
                     </text>
                   ))}
+                  <text x={cx} y={o.y + o.h - 24} textAnchor="middle" fontSize={10} className="mk-svgtext-muted">
+                    仕事
+                  </text>
                   <text x={cx} y={o.y + o.h - 10} textAnchor="middle" fontSize={10} className="mk-svgtext-muted">
                     完了 {o.done}／残り {o.open}
                   </text>

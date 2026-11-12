@@ -1,7 +1,7 @@
 import { krStyle, PERIOD_END, PERIOD_NAME, PERIOD_START } from "../fixtures";
 import { bandKrIds, BANDS, formatMd, gapPoints, isNotUpdated, krPace, krProgress, latestCheckinDate, overallProgress, paceOfProgress, periodElapsed, stepsToTarget, TODAY } from "../logic";
 import { useMock } from "../state";
-import { Burst, krLabel, krText, PaceBadge, PaceGlyph, PACE_INFO, valueText } from "../ui";
+import { Burst, krLabel, krText, mdOf, PaceBadge, PaceGlyph, PACE_INFO, valueText } from "../ui";
 import type { KrRecord } from "../types";
 
 const pct = (n: number) => `${Math.round(n * 100)}%`;
@@ -74,7 +74,7 @@ function Gauge({ krId, r, elapsed, stale }: { krId: string; r: KrRecord; elapsed
   const cel = celebrations.find((c) => c.krId === krId);
   const change = changes.find((c) => c.krId === krId);
   const active = sel?.type === "kr" && sel.id === krId;
-  const valueLine = r.kind === "number" ? `${r.value}${r.unit} / 目標値 ${r.target}${r.unit}` : `いま ${r.value} / 目標の達成度 ${r.target}`;
+  const valueLine = r.kind === "number" ? `成果 ${r.value}${r.unit} / 目標値 ${r.target}${r.unit}` : `成果 いま ${r.value} / 目標の達成度 ${r.target}`;
   return (
     <button
       type="button"
@@ -117,6 +117,7 @@ function Gauge({ krId, r, elapsed, stale }: { krId: string; r: KrRecord; elapsed
         </span>
       ) : null}
       <span className="mk-gauge-num">{valueLine}</span>
+      <span className="mk-gauge-text">（{mdOf(r.updatedAt)} の資料）</span>
       <span className="mk-sr">目標値 {valueText(r, r.target)}</span>
     </button>
   );
@@ -163,7 +164,7 @@ export function TeamBand() {
           ))}
         </div>
       </div>
-      <p className="mk-muted">輪の細い目盛りは「期の経過」の位置です。数値のKRは、輪の先がその目盛りより手前なら遅れ、越えていれば順調です。達成度のKRは期の経過と比べず、あと何段かで表します。</p>
+      <p className="mk-muted">輪は成果（資料の数字）の進みです。輪の細い目盛りは「期の経過」の位置です。数値のKRは、輪の先がその目盛りより手前なら遅れ、越えていれば順調です。達成度のKRは期の経過と比べず、あと何段かで表します。</p>
     </section>
   );
 }

@@ -13,16 +13,18 @@ import {
   periodElapsed,
   periodTasks,
   PERSONAL_PJ,
+  outcomeWorkLine,
   stepsToTarget,
   tasksDoneBetween,
   tasksOfKr,
   TODAY,
+  workDigest,
 } from "../logic";
 import { useMock } from "../state";
-import { KrDots, krLabel, krName, krText, nameOf, PaceBadge, signed, StatusChip, useFocusTrap, useNarrow, valueText } from "../ui";
+import { KrDots, krLabel, krName, krText, mdOf, nameOf, PaceBadge, signed, StatusChip, useFocusTrap, useNarrow, valueText } from "../ui";
 
 function KrPanel({ krId }: { krId: string }) {
-  const { records, checkins, decisions, linkCtx, viewerId, setSel, setModal } = useMock();
+  const { records, checkins, decisions, linkCtx, viewerId, setSel, setModal, confirmedLinks } = useMock();
   const r = records[krId];
   const color = krStyle(krId).color;
   const elapsed = periodElapsed(PERIOD_START, PERIOD_END, TODAY);
@@ -33,6 +35,11 @@ function KrPanel({ krId }: { krId: string }) {
   const krTasks = tasksOfKr(periodTasks(tasks, PERIOD_START), krId, linkCtx);
   const done = tasksDoneBetween(tasks, viewerId, krId, r.prevAt, r.updatedAt, linkCtx);
   const related = decisions.filter((d) => d.krIds.includes(krId));
+  const work = workDigest(krTasks);
+  const outcomePct = Math.round(p * 100);
+  const gapLine = outcomeWorkLine(outcomePct, work);
+  const effective = confirmedLinks.filter((c) => c.note.krId === krId);
+  const starred = new Set(effective.map((c) => c.task.id));
   return (
     <>
       <h3 className="mk-panel-h" style={{ borderLeftColor: color }}>
@@ -56,7 +63,7 @@ function KrPanel({ krId }: { krId: string }) {
             </dd>
           </>
         )}
-        <dt>現状</dt>
+        <dt>成果（現状）</dt>
         <dd>
           <strong>{valueText(r, r.value)}</strong>
           {r.kind === "number" ? (
@@ -84,9 +91,47 @@ function KrPanel({ krId }: { krId: string }) {
           )}
         </dd>
       </dl>
+      <div className="mk-contrast" role="group" aria-label="成果と仕事の対比">
+        <div className="mk-contrast-row">
+          <span className="mk-contrast-k">成果</span>
+          <span className="mk-contrast-bar" aria-hidden="true">
+            <i style={{ width: `${outcomePct}%`, background: color }} />
+          </span>
+          <span>
+            進み {outcomePct}％<span className="mk-muted">（{r.kind === "number" ? `${r.value}／${r.target}${r.unit}` : `いま${r.value}／目標${r.target}`}、{mdOf(r.updatedAt)} の資料）</span>
+          </span>
+        </div>
+        <div className="mk-contrast-row">
+          <span className="mk-contrast-k">仕事</span>
+          <span className="mk-contrast-bar is-work" aria-hidden="true">
+            <i style={{ width: `${work.pct ?? 0}%` }} />
+          </span>
+          <span>
+            {work.pct === null ? "仕事なし" : `消化 ${work.pct}％`}
+            <span className="mk-muted">（{work.done}／{work.total}件 終えた）</span>
+          </span>
+        </div>
+        {gapLine && <p className="mk-contrast-gap">{gapLine}</p>}
+      </div>
       <button type="button" className="mk-btn mk-btn-sm" onClick={() => setModal("table")}>
         表で見る（全KR）
       </button>
+
+      <h4 className="mk-panel-sub">この成果につながった仕事（全員に見えます）</h4>
+      {effective.length === 0 ? (
+        <p className="mk-muted">まだありません。資料を確定すると、AIが資料の記述と仕事を結びつけます。担当者本人が「そのとおり」と確かめたものだけが、ここに出ます。</p>
+      ) : (
+        <ul className="mk-list mk-list-tight">
+          {effective.map((c) => (
+            <li key={`${c.note.key}|${c.task.id}`}>
+              <b aria-hidden="true">★</b> <button type="button" className="mk-linkbtn" onClick={() => setSel({ type: "task", id: c.task.id })}>{c.task.title}</button> <span className="mk-muted">{nameOf(c.task.assigneeId)}</span>
+              <div className="mk-small mk-muted">
+                成果の記述：{c.note.change}「{c.note.excerpt}」
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
 
       <h4 className="mk-panel-sub">このKRにつながる仕事（全員に見えます）</h4>
       <ul className="mk-list mk-list-tight">
@@ -110,6 +155,11 @@ function KrPanel({ krId }: { krId: string }) {
         <ul className="mk-list mk-list-tight">
           {done.map((t) => (
             <li key={t.id}>
+              {starred.has(t.id) && (
+                <>
+                  <b aria-label="成果につながった仕事">★</b>{" "}
+                </>
+              )}
               {t.title} <span className="mk-muted">{formatMd(t.updated)}</span> <KrDots krIds={krIdsOfTask(t, linkCtx)} />
             </li>
           ))}
@@ -295,27 +345,62 @@ export function DetailPanel() {
     return () => el.removeEventListener("keydown", onKey);
   }, [key, setSel]);
 
-  if (!sel) return null;
-  return (
+  if (narrow && !sel) return null;
+  const panel = (
     <>
       {narrow && <button type="button" className="mk-panel-scrim print-hide" aria-label="詳細パネルを閉じる" tabIndex={-1} onClick={() => setSel(null)} />}
       <aside
         ref={ref}
         tabIndex={-1}
-        className={`mk-card mk-panel${narrow ? " is-drawer" : ""}`}
+        className={`mk-card mk-panel${narrow ? " is-drawer" : ""}${sel ? "" : " is-empty"}`}
         aria-label="詳細パネル"
         role={narrow ? "dialog" : undefined}
         aria-modal={narrow ? true : undefined}
       >
         <div className="mk-row" style={{ marginBottom: 6 }}>
-          <span className="mk-muted">{sel.type === "kr" ? "KRの詳細" : "仕事の詳細"}</span>
+          <span className="mk-muted">{!sel ? "詳細" : sel.type === "kr" ? "KRの詳細" : "仕事の詳細"}</span>
           <span className="mk-spacer" />
-          <button type="button" className="mk-btn mk-btn-sm" onClick={() => setSel(null)} aria-label="詳細パネルを閉じる">
-            閉じる
-          </button>
+          {sel && (
+            <button type="button" className="mk-btn mk-btn-sm" onClick={() => setSel(null)} aria-label="詳細パネルを閉じる">
+              閉じる
+            </button>
+          )}
         </div>
-        {sel.type === "kr" ? <KrPanel krId={sel.id} /> : <TaskPanel taskId={sel.id} />}
+        {!sel ? <EmptyPanel /> : sel.type === "kr" ? <KrPanel krId={sel.id} /> : <TaskPanel taskId={sel.id} />}
       </aside>
     </>
+  );
+  // 広い画面では列を常に確保する（選んでいなくても同じ幅）。列の高さは地図に合わせ、中身が長ければ列の中でスクロールする
+  return narrow ? panel : <div className="mk-panelcol">{panel}</div>;
+}
+
+/** 何も選んでいないときの案内。押せるものを小さな図で示す */
+function EmptyPanel() {
+  return (
+    <div className="mk-empty">
+      <p className="mk-empty-lead">KR か仕事を押すと、ここに詳しい内容が出ます</p>
+      <svg viewBox="0 0 280 110" className="mk-empty-fig" role="img" aria-label="押せるもの：地図の中のKRのカードと、PJの中の仕事の行">
+        <rect x={6} y={8} width={120} height={36} rx={9} className="mk-fnode" stroke="#3b6fd4" strokeWidth={2} />
+        <text x={14} y={30} fontSize={11} className="mk-svgtext">
+          KR のカード
+        </text>
+        <path d="M 134 26 L 160 26" stroke="currentColor" strokeWidth={1.5} className="mk-svgtext-muted" />
+        <text x={166} y={30} fontSize={11} className="mk-svgtext">
+          → KR の詳細
+        </text>
+        <rect x={6} y={62} width={120} height={22} rx={8} className="mk-trow" />
+        <circle cx={18} cy={73} r={5} fill="none" stroke="#3b6fd4" strokeWidth={1.6} />
+        <text x={30} y={77} fontSize={10.5} className="mk-svgtext">
+          PJ の中の仕事
+        </text>
+        <path d="M 134 73 L 160 73" stroke="currentColor" strokeWidth={1.5} className="mk-svgtext-muted" />
+        <text x={166} y={77} fontSize={11} className="mk-svgtext">
+          → 仕事の詳細
+        </text>
+        <text x={6} y={104} fontSize={10} className="mk-svgtext-muted">
+          帯を押しても KR の詳細が開きます
+        </text>
+      </svg>
+    </div>
   );
 }

@@ -236,8 +236,10 @@ export function buildSummaryText(args: {
   ctx: LinkCtx;
   /** 仕事×KR（howKey）→ 選んだ一言 */
   how: Record<string, string>;
+  /** 本人が「そのとおり」と確かめた、成果につながった仕事 */
+  outcomes?: { title: string; krLabel: string; change: string; excerpt: string }[];
 }): string {
-  const { period, owner, krs, tasks, memberId, start, today, ctx, how } = args;
+  const { period, owner, krs, tasks, memberId, start, today, ctx, how, outcomes = [] } = args;
   const lines = [`${period} 期のまとめ（${owner}）`, `集計期間：${start}〜${today}`, ""];
   const mineDone = tasks.filter((t) => t.assigneeId === memberId && t.status === "完了" && t.updated >= start && t.updated <= today);
   for (const kr of krs) {
@@ -250,7 +252,37 @@ export function buildSummaryText(args: {
   }
   const all = linkedTasks(mineDone, ctx);
   lines.push("", `合計：${all.length}件（複数のKRにつながる仕事は1件に数えています）`);
+  if (outcomes.length > 0) {
+    lines.push("", `成果につながった仕事：${outcomes.length}件（資料の記述と照らして、本人が確かめたもの）`);
+    for (const o of outcomes) lines.push(`  ★${o.title} → ${o.krLabel} ${o.change}「${o.excerpt}」`);
+  }
   return lines.join("\n");
+}
+
+// ---------- 成果と仕事（別の物差し） ----------
+
+/** 成果の進みと仕事の消化がこのポイント以上離れたとき、事実を1行で添える */
+export const GAP_NOTE_POINTS = 30;
+
+export interface WorkDigest {
+  done: number;
+  total: number;
+  /** 仕事の消化（％の整数）。仕事が0件のときは null */
+  pct: number | null;
+}
+
+export function workDigest(list: Task[]): WorkDigest {
+  const total = list.length;
+  const done = list.filter((t) => t.status === "完了").length;
+  return { done, total, pct: total === 0 ? null : Math.round((done / total) * 100) };
+}
+
+/** 成果の進み（％）と仕事の消化（％）が30ポイント以上離れているときだけ、事実を1行で返す。評価や助言は書かない */
+export function outcomeWorkLine(outcomePct: number, work: WorkDigest): string | null {
+  if (work.pct === null) return null;
+  if (work.pct - outcomePct >= GAP_NOTE_POINTS) return `仕事は ${work.pct}％ 終えていますが、成果は ${outcomePct}％ です`;
+  if (outcomePct - work.pct >= GAP_NOTE_POINTS) return `成果は ${outcomePct}％ 進んでいますが、仕事の消化は ${work.pct}％ です`;
+  return null;
 }
 
 /** 四半期に有効な項目だけ（Oとkrは常に有効） */
