@@ -2,8 +2,9 @@ import { useState } from "react";
 import { krStyle, PERIOD_NAME, PERIOD_START, pastWeeks, WEEK_START } from "../fixtures";
 import { addDays, answerKey, buildSummaryText, buildup, formatMd, krIdsOfTask, picksOutcome, TODAY, tasksMovedInWeek, weekKrIds, weeklyView } from "../logic";
 import { useMock } from "../state";
+import { effectiveEntries } from "../steps";
 import type { Effect, Match } from "../types";
-import { krLabel, krName, nameOf, StatusChip } from "../ui";
+import { krLabel, krName, mdOf, nameOf, StatusChip } from "../ui";
 import { ClaimsList } from "./Claims";
 
 const EFFECTS: Effect[] = ["よく効いた", "少し", "今週は届かず"];
@@ -193,7 +194,7 @@ function Buildup() {
 }
 
 function Summary() {
-  const { items, linkCtx, how, showToast, viewerId, tasks, answers } = useMock();
+  const { items, linkCtx, how, showToast, viewerId, tasks, answers, assessHist, learnings, checkins } = useMock();
   const mine = useMyOutcomes();
   const [text, setText] = useState<string | null>(null);
   const reflections = [
@@ -213,6 +214,14 @@ function Summary() {
         ctx: linkCtx,
         how,
         reflections,
+        trends: items
+          .filter((i) => i.kind === "kr")
+          .map((k) => ({ krLabel: krLabel(k.id), eff: effectiveEntries(assessHist[k.id] ?? []) }))
+          .filter((t) => t.eff.length > 0)
+          .map((t) => ({ krLabel: t.krLabel, text: t.eff.map((e) => `${mdOf(e.date)} ${e.assessment.value}`).join(" → ") })),
+        learnings: [...learnings]
+          .sort((a, b) => (checkins.find((c) => c.id === a.checkinId)?.date ?? "").localeCompare(checkins.find((c) => c.id === b.checkinId)?.date ?? ""))
+          .map((l) => ({ krLabel: krLabel(l.krId), kind: l.kind, text: l.text })),
         outcomes: mine.map((c) => ({ title: c.task.title, krLabel: krLabel(c.note.krId), change: c.note.change, excerpt: c.note.excerpt })),
       }),
     );

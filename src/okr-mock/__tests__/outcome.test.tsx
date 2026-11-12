@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import App from "../App";
 import { addOutcomeNotes, notesOfResources } from "../confirm";
 import { okrItems, pjsInit, PERIOD_START, resources, tasks } from "../fixtures";
-import { buildSummaryText, outcomeWorkLine, TODAY, type LinkCtx } from "../logic";
+import { buildSummaryText, TODAY, type LinkCtx } from "../logic";
 import type { InitialView } from "../state";
 import type { OutcomeNote } from "../types";
 import * as U from "../userState";
@@ -15,24 +15,6 @@ const deck = resources.find((r) => r.id === "deck")!;
 const minutes = resources.find((r) => r.id === "minutes")!;
 const allNotes = notesOfResources(resources);
 const noteOf = (key: string) => allNotes.find((n) => n.key === key)!;
-
-describe("成果と仕事の対比（30ポイント）", () => {
-  const w = (pct: number | null) => ({ done: 0, total: pct === null ? 0 : 100, pct });
-  it("仕事の消化が成果より30ポイント以上高いときだけ1行が出る（境界）", () => {
-    expect(outcomeWorkLine(40, w(69))).toBeNull();
-    expect(outcomeWorkLine(40, w(70))).toBe("仕事は 70％ 終えていますが、成果は 40％ です");
-    expect(outcomeWorkLine(40, w(80))).toContain("成果は 40％");
-  });
-  it("逆（成果のほうが30ポイント以上高い）も同じ境界", () => {
-    expect(outcomeWorkLine(70, w(41))).toBeNull();
-    expect(outcomeWorkLine(70, w(40))).toBe("成果は 70％ 進んでいますが、仕事の消化は 40％ です");
-  });
-  it("仕事が0件のときは出さない。評価や助言の語は含まない", () => {
-    expect(outcomeWorkLine(10, w(null))).toBeNull();
-    const line = outcomeWorkLine(0, w(100))!;
-    for (const re of [/べき/, /遅れ/, /注意/, /してください/]) expect(line).not.toMatch(re);
-  });
-});
 
 describe("資料の記述と仕事の結びつき", () => {
   it("固定データ：数値KR 3〜5記述・達成度KR 1〜2記述・関連の仕事が無い記述がある・1記述につき0〜3件", () => {
@@ -151,11 +133,11 @@ describe("画面：結びつき", () => {
 describe("画面：成果と仕事", () => {
   it("用語：成果・仕事の見出し語、凡例の1行、KRの詳細の対比", () => {
     const h = html({ sel: { type: "kr", id: "kr1" } });
-    expect(h).toContain("バーと輪は成果（資料の数字）、帯は仕事（終えた・残り）。仕事を終えても、成果は資料を読ませるまで動きません");
-    expect(h).toContain("成果 18／30社（11/3 の資料）");
+    expect(h).toContain("段の目盛りは成果（資料の記述からのAIの見立て）、帯は仕事（終えた・残り）。仕事を終えても、見立ては資料を読ませるまで動きません");
+    expect(h).toContain("手がかり 18社／30社");
     expect(h).toMatch(/仕事 完了 \d+／残り \d+/);
     expect(h).toContain('aria-label="成果と仕事の対比"');
-    expect(h).toContain("成果（現状）");
+    expect(h).toContain("いまの段（AI の見立て）");
   });
 });
 

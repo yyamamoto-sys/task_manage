@@ -1,17 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { detectConflicts, mergeDrafts, notesOfResources, unresolved } from "../confirm";
-import { nextCheckin, resources } from "../fixtures";
-import { BANDS, formatMd } from "../logic";
+import { detectConflicts, mergeAssessments, mergeDrafts, notesOfResources, unresolved } from "../confirm";
+import { krBands, nextCheckin, resources } from "../fixtures";
+import { formatMd } from "../logic";
+import { currentAssessment, moveText } from "../steps";
 import { useMock } from "../state";
-import type { Band } from "../types";
-import { krLabel, krName, nameOf, useFocusTrap, valueText } from "../ui";
+import { hintText, krLabel, krName, nameOf, useFocusTrap } from "../ui";
 
 /** 「資料を読ませる」の引き出し。資料を選ぶ（複数可）→ AIの下書き → 資料どうしの食い違いを選ぶ → まとめて確定 */
 export function DocDrawer() {
-  const { records, items, confirmImport, confirmedBy, setDrawerOpen, showToast, tasks, reach } = useMock();
+  const { records, items, assessHist, assess, confirmImport, confirmedBy, setDrawerOpen, showToast, tasks, reach } = useMock();
   const [resIds, setResIds] = useState<string[]>([]);
   const [read, setRead] = useState(false);
-  const [values, setValues] = useState<Record<string, number | Band>>({});
+  const [values, setValues] = useState<Record<string, number>>({});
   const [picks, setPicks] = useState<Record<string, number>>({});
   const ref = useRef<HTMLDivElement>(null);
   const selected = useMemo(() => resources.filter((r) => resIds.includes(r.id)), [resIds]);
@@ -22,6 +22,9 @@ export function DocDrawer() {
   const drafts = useMemo(() => mergeDrafts(selected, conflicts, picks), [selected, conflicts, picks]);
   const open = unresolved(conflicts, picks);
   const notes = useMemo(() => notesOfResources(selected), [selected]);
+  const assessedKrs = useMemo(() => [...new Set(selected.flatMap((r) => r.assessments.map((a) => a.krId)))], [selected]);
+  const merged = useMemo(() => mergeAssessments(assessHist, selected, nextCheckin, krBands), [assessHist, selected]);
+  const learnList = useMemo(() => selected.flatMap((r) => r.learnings.map((l, i) => ({ ...l, id: `${r.id}-${i}` }))), [selected]);
   // 他の人がいるときだけ出す（1人だけが使っている状態では、確定済みの案内は要らない）
   const confirmer = reach === "solo" ? undefined : confirmedBy[nextCheckin.id];
 
@@ -58,7 +61,7 @@ export function DocDrawer() {
             閉じる
           </button>
         </div>
-        <p className="mk-muted">チェックインの後に使います。資料からKRの現状・決定事項・宿題の下書きを取り出し、直したい行だけ直して、まとめて確定します。誰でも操作できます。</p>
+        <p className="mk-muted">チェックインの後に使います。資料からAIの見立て・手がかりの数字・学び・決定事項・宿題の下書きを取り出し、直したい数字だけ直して、まとめて確定します。見立ては資料の記述だけから決まり、そのまま確定されます。誰でも操作できます。</p>
         {confirmer && (
           <div className="mk-card mk-note" role="status">
             この回（{formatMd(nextCheckin.date)} {nextCheckin.title}）は{nameOf(confirmer)}さんが確定済みです。続けて別の資料を確定すると、決定事項と宿題は資料ごとに足し合わされます。
@@ -84,70 +87,107 @@ export function DocDrawer() {
         {selected.length > 0 && read && (
           <>
             <h3 className="mk-h3">2. AIが読み取った下書き</h3>
-            <p className="mk-muted">直したい行だけ、数値や達成度を直してください。直さなければ下書きのまま確定します。</p>
-            <div className="mk-table-wrap">
-              <table className="mk-table">
-                <thead>
-                  <tr>
-                    <th>KR</th>
-                    <th>前回</th>
-                    <th>現状の案</th>
-                    <th>出典の箇所</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {drafts.map((d) => {
-                    const r = records[d.krId];
-                    const cur = values[d.krId] ?? d.value;
-                    const inConflict = conflicts.some((c) => c.krId === d.krId);
-                    return (
-                      <tr key={d.krId}>
-                        <td>{krName(d.krId)}</td>
-                        <td>{valueText(r, r.value)}</td>
-                        <td>
-                          {inConflict && picks[d.krId] === undefined ? (
-                            <span className="mk-chip mk-chip-yellow">下で選んでください</span>
-                          ) : r.kind === "number" ? (
-                            <label>
-                              <span className="mk-sr">{krName(d.krId)}の現状</span>
-                              <input
-                                type="number"
-                                className="mk-input"
-                                style={{ width: 80 }}
-                                value={typeof cur === "number" ? cur : ""}
-                                onChange={(e) => {
-                                  const n = e.target.valueAsNumber;
-                                  if (!Number.isNaN(n)) setValues((p) => ({ ...p, [d.krId]: n }));
-                                }}
-                              />{" "}
-                              {r.unit}
-                            </label>
-                          ) : (
-                            <label>
-                              <span className="mk-sr">{krName(d.krId)}の達成度</span>
-                              <select className="mk-select" style={{ width: 80 }} value={String(cur)} onChange={(e) => setValues((p) => ({ ...p, [d.krId]: e.target.value as Band }))}>
-                                {BANDS.map((b) => (
-                                  <option key={b} value={b}>
-                                    {b}
-                                  </option>
-                                ))}
-                              </select>{" "}
-                              <span className="mk-chip mk-chip-yellow">達成度（仮の区分）</span>
-                            </label>
-                          )}
-                        </td>
-                        <td>
-                          {d.source.doc} {d.source.page}
-                        </td>
+            <h4 className="mk-panel-sub">AI の見立て（資料の記述だけから。60が出発点）</h4>
+            {assessedKrs.length === 0 ? (
+              <p className="mk-muted">この資料からは、見立てを取り出せませんでした。</p>
+            ) : (
+              <ul className="mk-list">
+                {assessedKrs.map((k) => {
+                  const before = assess[k];
+                  const after = currentAssessment(merged[k] ?? []);
+                  if (!after) return null;
+                  const a = after.cur.assessment;
+                  return (
+                    <li key={k}>
+                      <strong>{krName(k)}</strong>：前回 {before ? before.cur.assessment.value : "―"} → 案 <strong>{a.value}</strong>{" "}
+                      <span className="mk-muted">（AI の見立て・前回から {before ? moveText(a.value - before.cur.assessment.value) : "前回なし"}）</span>
+                      <div className="mk-small">{a.summary}</div>
+                      <ul className="mk-list mk-list-tight">
+                        {a.basis.map((b) => (
+                          <li key={b.requirement}>
+                            <span className="mk-chip">{b.status}</span> {b.requirement}
+                            <span className="mk-muted">{b.quote ? `「${b.quote}」` : "（資料に記述なし）"}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            {drafts.length > 0 && (
+              <>
+                <h4 className="mk-panel-sub">手がかりの数字（直したい行だけ直してください）</h4>
+                <div className="mk-table-wrap">
+                  <table className="mk-table">
+                    <thead>
+                      <tr>
+                        <th>KR</th>
+                        <th>前回</th>
+                        <th>現状の案</th>
+                        <th>出典の箇所</th>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-            {krs.some((k) => !drafts.some((d) => d.krId === k.id)) && (
+                    </thead>
+                    <tbody>
+                      {drafts.map((d) => {
+                        const r = records[d.krId];
+                        const h = r.hint;
+                        if (!h) return null;
+                        const cur = values[d.krId] ?? d.value;
+                        const inConflict = conflicts.some((c) => c.krId === d.krId);
+                        return (
+                          <tr key={d.krId}>
+                            <td>{krName(d.krId)}</td>
+                            <td>{hintText(h, h.value)}</td>
+                            <td>
+                              {inConflict && picks[d.krId] === undefined ? (
+                                <span className="mk-chip mk-chip-yellow">下で選んでください</span>
+                              ) : (
+                                <label>
+                                  <span className="mk-sr">{krName(d.krId)}の手がかりの数字</span>
+                                  <input
+                                    type="number"
+                                    className="mk-input"
+                                    style={{ width: 80 }}
+                                    value={cur}
+                                    onChange={(e) => {
+                                      const n = e.target.valueAsNumber;
+                                      if (!Number.isNaN(n)) setValues((p) => ({ ...p, [d.krId]: n }));
+                                    }}
+                                  />{" "}
+                                  {h.unit}
+                                </label>
+                              )}
+                            </td>
+                            <td>
+                              {d.source.doc} {d.source.page}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+            <h4 className="mk-panel-sub">学び・気づき</h4>
+            {learnList.length === 0 ? (
+              <p className="mk-muted">この資料からは、学び・気づきを取り出せませんでした。</p>
+            ) : (
+              <ul className="mk-list mk-list-tight">
+                {learnList.map((l) => (
+                  <li key={l.id}>
+                    <strong>{krLabel(l.krId)}</strong> <span className="mk-chip">{l.kind}</span> {l.text}{" "}
+                    <span className="mk-muted">
+                      {l.source.doc} {l.source.page}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {krs.some((k) => !drafts.some((d) => d.krId === k.id) && !assessedKrs.includes(k.id)) && (
               <p className="mk-muted">
-                資料に出てこなかったKR：{krs.filter((k) => !drafts.some((d) => d.krId === k.id)).map((k) => krLabel(k.id)).join("、")}（前回の値のまま、「未更新」と表示します）
+                資料に出てこなかったKR：{krs.filter((k) => !drafts.some((d) => d.krId === k.id) && !assessedKrs.includes(k.id)).map((k) => krLabel(k.id)).join("、")}（前回のまま、「未更新」と表示します）
               </p>
             )}
 
@@ -162,7 +202,7 @@ export function DocDrawer() {
                     {c.options.map((o, i) => (
                       <label key={i} className={`mk-opt${picks[c.krId] === i ? " is-on" : ""}`}>
                         <input type="radio" name={`conf-${c.krId}`} checked={picks[c.krId] === i} onChange={() => setPicks((p) => ({ ...p, [c.krId]: i }))} />{" "}
-                        <strong>{valueText(records[c.krId], o.value)}</strong>{" "}
+                        <strong>{records[c.krId].hint ? hintText(records[c.krId].hint!, o.value) : o.value}</strong>{" "}
                         <span className="mk-muted">
                           {o.existing ? "すでに確定済みの値：" : ""}
                           {o.source.doc} {o.source.page}
@@ -224,12 +264,12 @@ export function DocDrawer() {
                 onClick={() => {
                   const found = confirmImport(resIds, picks, values);
                   setDrawerOpen(false);
-                  showToast(found.length > 0 ? `地図に反映しました。${found.map((c) => `${krLabel(c.krId)}が${c.kind === "half" ? "半分を越えました" : "目標に届きました"}`).join("、")}` : "地図に反映し、決定事項と宿題の欄に加えました");
+                  showToast(found.length > 0 ? `地図に反映しました。${found.map((c) => `${krLabel(c.krId)}が${c.step} の段に届きました`).join("、")}` : "地図に反映し、決定事項と宿題の欄に加えました");
                 }}
               >
                 まとめて確定
               </button>
-              <span className="mk-muted">{open.length > 0 ? "食い違いのすべてで、採る値を選ぶと押せます。" : "確定すると、地図と帯が新しい値になります。"}</span>
+              <span className="mk-muted">{open.length > 0 ? "食い違いのすべてで、採る値を選ぶと押せます。" : "確定すると、地図と帯が新しい見立てになります。"}</span>
             </div>
           </>
         )}

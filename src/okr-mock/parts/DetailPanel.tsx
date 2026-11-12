@@ -1,22 +1,17 @@
 import { useEffect, useRef } from "react";
-import { aiCandidates, howOptions, krStyle, MINE_COLOR, PERIOD_END, PERIOD_START, pjsInit, PERSONAL_NAME } from "../fixtures";
+import { aiCandidates, howOptions, krBands, krDefs, krStyle, MINE_COLOR, PERIOD_END, PERIOD_START, pjsInit, PERSONAL_NAME } from "../fixtures";
 import {
   formatMd,
+  hintTrailsPeriod,
   howKey,
   isNotUpdated,
-  krGap,
   krIdsOfTask,
-  krMove,
-  krPace,
-  krProgress,
   latestCheckinDate,
   periodElapsed,
   periodTasks,
   PERSONAL_PJ,
-  outcomeWorkLine,
   sharedWork,
   sortKrIds,
-  stepsToTarget,
   tasksDoneBetween,
   tasksOfKr,
   TODAY,
@@ -24,19 +19,20 @@ import {
 } from "../logic";
 import { krRegistration } from "../reach";
 import { useMock } from "../state";
+import { hasStretch, learningsOfKr, moveText, nextLine, nextRequirements, stepMove, stepsOf } from "../steps";
 import { proposalKey } from "../userState";
 import { TrendChart } from "./Trend";
-import { JunctionMark, KrDot, KrDots, krLabel, krListText, krName, krText, mdOf, nameOf, PaceBadge, signed, StatusChip, useFocusTrap, useNarrow, valueText } from "../ui";
+import { hintText, JunctionMark, KrDot, KrDots, krLabel, krListText, krName, krText, nameOf, signed, StatusChip, StepScale, useFocusTrap, useNarrow } from "../ui";
 
 function KrPanel({ krId }: { krId: string }) {
-  const { records, checkins, decisions, linkCtx, viewerId, setSel, setModal, confirmedLinks, items, tasks } = useMock();
+  const { records, checkins, decisions, linkCtx, viewerId, setSel, setModal, confirmedLinks, items, tasks, assess, learnings } = useMock();
   const r = records[krId];
+  const def = krDefs[krId];
+  const bands = krBands[krId];
+  const ca = assess[krId];
   const color = krStyle(krId).color;
   const elapsed = periodElapsed(PERIOD_START, PERIOD_END, TODAY);
-  const p = krProgress(r);
-  const pace = krPace(r, elapsed);
   const stale = isNotUpdated(r, latestCheckinDate(checkins));
-  const unit = r.kind === "number" ? r.unit : "段";
   const krTasks = tasksOfKr(periodTasks(tasks, PERIOD_START), krId, linkCtx);
   const shared = sharedWork(periodTasks(tasks, PERIOD_START), krId, linkCtx, items.filter((i) => i.kind === "kr").map((i) => i.id));
   const done = tasksDoneBetween(tasks, viewerId, krId, r.prevAt, r.updatedAt, linkCtx);
@@ -46,50 +42,62 @@ function KrPanel({ krId }: { krId: string }) {
   const reg = krRegistration(krId, tasks, linkCtx, PERIOD_START);
   const partial = reg === "partial";
   const scopeNote = partial ? "（登録された分）" : "";
-  const outcomePct = Math.round(p * 100);
-  const gapLine = partial ? null : outcomeWorkLine(outcomePct, work);
   const effective = confirmedLinks.filter((c) => c.note.krId === krId);
   const starred = new Set(effective.map((c) => c.task.id));
+  const trails = hintTrailsPeriod(r.hint, elapsed);
+  const groups = learningsOfKr(learnings, krId, checkins);
+  const nr = ca ? nextRequirements(ca.cur.assessment, bands) : null;
   return (
     <>
       <h3 className="mk-panel-h" style={{ borderLeftColor: color }}>
         <span style={{ color }}>{krLabel(krId)}</span> {krText(krId)}
+        {hasStretch(bands) && <span className="mk-stretch">背伸びの目標</span>}
       </h3>
+      <p className="mk-evidence">
+        <strong>Oに近づいた証拠として見るもの</strong>：{def.evidence}
+      </p>
+      {ca && (
+        <>
+          <h4 className="mk-panel-sub">いまの段（AI の見立て）</h4>
+          <StepScale krId={krId} value={ca.cur.assessment.value} width={320} />
+          <p>
+            <strong>{ca.cur.assessment.value}</strong> <span className="mk-muted">{`AI の見立て（前回から ${moveText(stepMove(ca))}）`}</span>
+          </p>
+          <p className="mk-small">{ca.cur.assessment.summary}</p>
+          <p className="mk-small">{nextLine(ca.cur.assessment, bands)}</p>
+          {nr && nr.items.length > 0 && (
+            <ul className="mk-list mk-list-tight" aria-label={`${nr.step} の要件`}>
+              {nr.items.map((b) => (
+                <li key={b.requirement}>
+                  <span className={`mk-chip ${b.status === "確認できた" ? "mk-chip-green" : b.status === "一部" ? "mk-chip-blue" : ""}`}>{b.status}</span> {b.requirement}
+                  <div className="mk-small mk-muted">{b.quote ? `資料の記述：「${b.quote}」` : "資料に記述がありません"}</div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+      <details className="mk-bandsdoc">
+        <summary>段の基準を見る</summary>
+        <ul className="mk-list mk-list-tight">
+          {stepsOf(bands).map((st) => (
+            <li key={st}>
+              <strong>{st}</strong> {bands[st as 60]}
+            </li>
+          ))}
+        </ul>
+      </details>
       <dl className="mk-dl">
-        {r.kind === "number" ? (
+        {r.hint && (
           <>
-            <dt>期首値</dt>
+            <dt>手がかりの数字</dt>
             <dd>
-              {valueText(r, r.start)}（{r.direction === "up" ? "増やす" : "減らす"}）
-            </dd>
-            <dt>目標値</dt>
-            <dd>{valueText(r, r.target)}</dd>
-          </>
-        ) : (
-          <>
-            <dt>目標の達成度</dt>
-            <dd>
-              {r.target}（仮の区分）
+              {hintText(r.hint, r.hint.value)}／{hintText(r.hint, r.hint.target)}
+              <span className="mk-muted">（期首 {hintText(r.hint, r.hint.start)}・{r.hint.direction === "up" ? "増やす" : "減らす"}。前回から {signed(r.hint.value - r.hint.prev, r.hint.unit)}）</span>
+              {trails && <div className="mk-small mk-muted">手がかりの数字は期の経過より後ろです</div>}
             </dd>
           </>
         )}
-        <dt>成果（現状）</dt>
-        <dd>
-          <strong>{valueText(r, r.value)}</strong>
-          {r.kind === "number" ? (
-            <>
-              （進み {Math.round(p * 100)}%） {pace && <PaceBadge pace={pace} />}
-            </>
-          ) : stepsToTarget(r) > 0 ? (
-            <>（目標まであと{stepsToTarget(r)}段。期の経過とは比べません）</>
-          ) : (
-            <>（目標に届いています）</>
-          )}
-        </dd>
-        <dt>差</dt>
-        <dd>{signed(krGap(r), unit)}</dd>
-        <dt>前回からの動き</dt>
-        <dd>{signed(krMove(r), unit)}</dd>
         <dt>出典</dt>
         <dd>
           {r.updatedAt}更新 {r.source ? `${r.source.doc} ${r.source.page}` : "出典なし"}
@@ -103,33 +111,49 @@ function KrPanel({ krId }: { krId: string }) {
       </dl>
       <h4 className="mk-panel-sub">成果の推移（チェックインの回ごと）</h4>
       <TrendChart krId={krId} />
+      <h4 className="mk-panel-sub">学び・気づき（資料から。回ごと・新しい順）</h4>
+      {groups.length === 0 ? (
+        <p className="mk-muted">まだありません。</p>
+      ) : (
+        groups.map((g) => (
+          <section key={g.checkin.id} aria-label={`${g.checkin.title}の学び`}>
+            <div className="mk-small mk-muted">
+              {formatMd(g.checkin.date)} {g.checkin.title}
+            </div>
+            <ul className="mk-list mk-list-tight">
+              {g.items.map((l) => (
+                <li key={l.id}>
+                  <span className="mk-chip">{l.kind}</span> {l.text}
+                </li>
+              ))}
+            </ul>
+          </section>
+        ))
+      )}
       {reg === "none" ? (
-        <p className="mk-muted mk-noreg-line">この KR につながる仕事は、アプリに登録されていません。成果はチェックイン資料の数字です。</p>
+        <p className="mk-muted mk-noreg-line">この KR につながる仕事は、アプリに登録されていません。見立てと学びはチェックイン資料から出ています。</p>
       ) : (
         <>
           <h4 className="mk-panel-sub">成果と仕事の対比{scopeNote}</h4>
-      <div className="mk-contrast" role="group" aria-label="成果と仕事の対比">
-        <div className="mk-contrast-row">
-          <span className="mk-contrast-k">成果</span>
-          <span className="mk-contrast-bar" aria-hidden="true">
-            <i style={{ width: `${outcomePct}%`, background: color }} />
-          </span>
-          <span>
-            進み {outcomePct}％<span className="mk-muted">（{r.kind === "number" ? `${r.value}／${r.target}${r.unit}` : `いま${r.value}／目標${r.target}`}、{mdOf(r.updatedAt)} の資料）</span>
-          </span>
-        </div>
-        <div className="mk-contrast-row">
-          <span className="mk-contrast-k">仕事</span>
-          <span className="mk-contrast-bar is-work" aria-hidden="true">
-            <i style={{ width: `${work.pct ?? 0}%` }} />
-          </span>
-          <span>
-            {work.pct === null ? "仕事なし" : `消化 ${work.pct}％`}
-            <span className="mk-muted">（{work.done}／{work.total}件 終えた）</span>
-          </span>
-        </div>
-        {gapLine && <p className="mk-contrast-gap">{gapLine}</p>}
-      </div>
+          <div className="mk-contrast" role="group" aria-label="成果と仕事の対比">
+            <div className="mk-contrast-row">
+              <span className="mk-contrast-k">成果</span>
+              <span style={{ gridColumn: "2 / 4" }}>
+                {ca ? `${ca.cur.assessment.value} の段（AI の見立て）` : "見立てなし"}
+                <span className="mk-muted">（{hintTextOrNone(r)}資料は {formatMd(r.updatedAt)}）</span>
+              </span>
+            </div>
+            <div className="mk-contrast-row">
+              <span className="mk-contrast-k">仕事</span>
+              <span className="mk-contrast-bar is-work" aria-hidden="true">
+                <i style={{ width: `${work.pct ?? 0}%` }} />
+              </span>
+              <span>
+                {work.pct === null ? "仕事なし" : `消化 ${work.pct}％`}
+                <span className="mk-muted">（{work.done}／{work.total}件 終えた）</span>
+              </span>
+            </div>
+          </div>
         </>
       )}
       <button type="button" className="mk-btn mk-btn-sm" onClick={() => setModal("table")}>
@@ -242,6 +266,10 @@ function KrPanel({ krId }: { krId: string }) {
       )}
     </>
   );
+}
+
+function hintTextOrNone(r: { hint?: { value: number; target: number; unit: string } }): string {
+  return r.hint ? `手がかり ${r.hint.value}／${r.hint.target}${r.hint.unit}、` : "";
 }
 
 function TaskPanel({ taskId }: { taskId: string }) {

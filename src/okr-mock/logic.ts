@@ -1,4 +1,5 @@
-import type { Band, BandRecord, Checkin, Draft, KintoneRow, KrRecord, NumberRecord, OkrItem, Pj, Seg, Task } from "./types";
+import { hasPending, nextStep } from "./steps";
+import type { Assessment, Checkin, Draft, Hint, KintoneRow, KrBands, KrRecord, OkrItem, Pj, Seg, Task } from "./types";
 
 export const TODAY = "2026-11-10";
 const DAY_MS = 86400000;
@@ -45,32 +46,7 @@ export function weekStartOf(s: string): string {
 
 export const isOpen = (t: Task) => t.status !== "完了";
 
-// ---------- 達成度（仮の区分） ----------
-
-/** 仮の5段階。実際の区分に差し替える（ここ1か所だけ直せばよい。左ほど高い） */
-export const BANDS: Band[] = ["S", "A", "B", "C", "D"];
-
-/** 高いほど大きい数（S=5 … D=1） */
-export function bandRank(b: Band): number {
-  return BANDS.length - BANDS.indexOf(b);
-}
-
-/** 目標の達成度まであと何段か（届いていれば0） */
-export function stepsToTarget(r: BandRecord): number {
-  return Math.max(0, bandRank(r.target) - bandRank(r.value));
-}
-
 // ---------- 対照表 ----------
-
-/** 現状 − 目標値。数値は単位のまま、達成度は段数（マイナス＝目標より下） */
-export function krGap(r: KrRecord): number {
-  return r.kind === "number" ? r.value - r.target : bandRank(r.value) - bandRank(r.target);
-}
-
-/** 前回からの動き（現状 − 前回値）。数値は単位のまま、達成度は段数 */
-export function krMove(r: KrRecord): number {
-  return r.kind === "number" ? r.value - r.prev : bandRank(r.value) - bandRank(r.prev);
-}
 
 /** 直近のチェックイン日より前の更新のままなら「未更新」（資料に出てこなかったKR） */
 export function isNotUpdated(r: KrRecord, latestCheckinDate: string): boolean {
@@ -82,39 +58,32 @@ export function latestCheckinDate(checkins: Checkin[]): string {
 }
 
 /**
- * 確定：下書きに出てきたKRだけ更新し、出てこなかったKRは前回値のまま。
- * 同じ日のチェックインへの再確定では「前回」をずらさない。
+ * 確定：資料に出てきたKR（手がかりの下書き・見立てのどちらか）だけ更新し、出てこなかったKRは前回のまま。
+ * 同じ日のチェックインへの再確定では「前回」をずらさない。手がかりの数字は下書きがあるKRだけ動く
  */
-export function applyDrafts(
+export function applyConfirm(
   records: Record<string, KrRecord>,
   drafts: Draft[],
-  values: Record<string, number | Band>,
+  values: Record<string, number>,
+  assessed: { krId: string; source: { doc: string; page: string } }[],
   checkinDate: string,
 ): Record<string, KrRecord> {
   const out = { ...records };
-  for (const d of drafts) {
-    const r = records[d.krId];
+  const krIds = [...new Set([...drafts.map((d) => d.krId), ...assessed.map((a) => a.krId)])];
+  for (const krId of krIds) {
+    const r = records[krId];
     if (!r) continue;
-    const v = values[d.krId] ?? d.value;
+    const d = drafts.find((x) => x.krId === krId);
+    const a = assessed.find((x) => x.krId === krId);
     const shift = r.updatedAt !== checkinDate;
-    const base = { updatedAt: checkinDate, prevAt: shift ? r.updatedAt : r.prevAt, source: d.source };
-    if (r.kind === "number" && typeof v === "number") {
-      out[d.krId] = { ...r, ...base, value: v, prev: shift ? r.value : r.prev };
-    } else if (r.kind === "band" && typeof v === "string") {
-      out[d.krId] = { ...r, ...base, value: v, prev: shift ? r.value : r.prev };
+    const next: KrRecord = { ...r, updatedAt: checkinDate, prevAt: shift ? r.updatedAt : r.prevAt, source: d?.source ?? a?.source ?? r.source };
+    if (d && r.hint) {
+      const v = values[krId] ?? d.value;
+      next.hint = { ...r.hint, value: v, prev: shift ? r.hint.value : r.hint.prev };
     }
+    out[krId] = next;
   }
   return out;
-}
-
-/** 確定の前後の増減の札（「＋4社」「＋2段」）。動かなければ null */
-export function deltaText(before: KrRecord, after: KrRecord): string | null {
-  let n = 0;
-  if (after.kind === "number" && before.kind === "number") n = after.value - before.value;
-  else if (after.kind === "band" && before.kind === "band") n = bandRank(after.value) - bandRank(before.value);
-  if (n === 0) return null;
-  const unit = after.kind === "number" ? after.unit : "段";
-  return `${n > 0 ? "＋" : "−"}${Math.abs(n)}${unit}`;
 }
 
 // ---------- 仕事とKRのつながり ----------
@@ -269,8 +238,12 @@ export function buildSummaryText(args: {
   outcomes?: { title: string; krLabel: string; change: string; excerpt: string }[];
   /** 週の振り返りの答え（本人の分だけ。効き具合は選んだ言葉のまま） */
   reflections?: { weekStart: string; krLabel: string; effect: string }[];
+  /** KRごとのAIの見立ての推移（例：10/6 62 → 10/20 64）。資料に出た回だけ */
+  trends?: { krLabel: string; text: string }[];
+  /** 資料から拾った学び（KRごと） */
+  learnings?: { krLabel: string; kind: string; text: string }[];
 }): string {
-  const { period, owner, krs, tasks, memberId, start, today, ctx, how, outcomes = [], reflections = [] } = args;
+  const { period, owner, krs, tasks, memberId, start, today, ctx, how, outcomes = [], reflections = [], trends = [], learnings = [] } = args;
   const lines = [`${period} 期のまとめ（${owner}）`, `集計期間：${start}〜${today}`, ""];
   const mineDone = tasks.filter((t) => t.assigneeId === memberId && t.status === "完了" && t.updated >= start && t.updated <= today);
   for (const kr of krs) {
@@ -287,6 +260,14 @@ export function buildSummaryText(args: {
     lines.push("", `成果につながった仕事：${outcomes.length}件（資料の記述と照らして、本人が確かめたもの）`);
     for (const o of outcomes) lines.push(`  ★${o.title} → ${o.krLabel} ${o.change}「${o.excerpt}」`);
   }
+  if (trends.length > 0) {
+    lines.push("", "AIの見立ての推移（資料の記述から。60が出発点）");
+    for (const t of trends) lines.push(`  ・${t.krLabel}：${t.text}`);
+  }
+  if (learnings.length > 0) {
+    lines.push("", "資料から拾った学び");
+    for (const l of learnings) lines.push(`  ・${l.krLabel}（${l.kind}）${l.text}`);
+  }
   if (reflections.length > 0) {
     lines.push("", "週の振り返り（本人が選んだ効き具合）");
     for (const r of reflections) lines.push(`  ・${formatMd(r.weekStart)}の週 ${r.krLabel}：${r.effect}`);
@@ -295,9 +276,6 @@ export function buildSummaryText(args: {
 }
 
 // ---------- 成果と仕事（別の物差し） ----------
-
-/** 成果の進みと仕事の消化がこのポイント以上離れたとき、事実を1行で添える */
-export const GAP_NOTE_POINTS = 30;
 
 export interface WorkDigest {
   done: number;
@@ -312,20 +290,12 @@ export function workDigest(list: Task[]): WorkDigest {
   return { done, total, pct: total === 0 ? null : Math.round((done / total) * 100) };
 }
 
-/** 成果の進み（％）と仕事の消化（％）が30ポイント以上離れているときだけ、事実を1行で返す。評価や助言は書かない */
-export function outcomeWorkLine(outcomePct: number, work: WorkDigest): string | null {
-  if (work.pct === null) return null;
-  if (work.pct - outcomePct >= GAP_NOTE_POINTS) return `仕事は ${work.pct}％ 終えていますが、成果は ${outcomePct}％ です`;
-  if (outcomePct - work.pct >= GAP_NOTE_POINTS) return `成果は ${outcomePct}％ 進んでいますが、仕事の消化は ${work.pct}％ です`;
-  return null;
-}
-
 /** 四半期に有効な項目だけ（Oとkrは常に有効） */
 export function itemsInQuarter(items: OkrItem[], q: "3Q" | "4Q"): OkrItem[] {
   return items.filter((i) => i.kind !== "tf" || (i.quarters ?? []).includes(q));
 }
 
-// ---------- 進みと遅れ ----------
+// ---------- 手がかりの数字と期の経過（KRの詳細の中だけで使う） ----------
 
 const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
 
@@ -336,72 +306,25 @@ export function periodElapsed(start: string, end: string, today: string): number
 }
 
 /**
- * 数値KRの進み（0〜1）＝（現状−期首）÷（目標値−期首）。
+ * 手がかりの数字の位置（0〜1）＝（現状−期首）÷（目標値−期首）。主役の％としては使わない。
  * 目標値＝期首のときは割れないので、目標に届いていれば1、届いていなければ0
  */
-export function numberProgress(r: Pick<NumberRecord, "start" | "target" | "value" | "direction">): number {
-  const span = r.target - r.start;
-  if (span === 0) return (r.direction === "up" ? r.value >= r.target : r.value <= r.target) ? 1 : 0;
-  return clamp01((r.value - r.start) / span);
+export function hintProgress(h: Pick<Hint, "start" | "target" | "value" | "direction">): number {
+  const span = h.target - h.start;
+  if (span === 0) return (h.direction === "up" ? h.value >= h.target : h.value <= h.target) ? 1 : 0;
+  return clamp01((h.value - h.start) / span);
 }
 
-/** KRの進み（0〜1）。達成度は最下段（D）を0、目標の区分を1として段で測る（期の経過とは比べない） */
-export function krProgress(r: KrRecord): number {
-  if (r.kind === "number") return numberProgress(r);
-  const span = bandRank(r.target) - 1;
-  return span <= 0 ? 1 : clamp01((bandRank(r.value) - 1) / span);
-}
-
-export type Pace = "reached" | "ahead" | "behind";
-
-/** 期の経過 − 進み を整数のポイントにしたもの。画面に出す数と判定の両方がこれを使う（丸めを1か所にする） */
+/** 期の経過 − 手がかりの位置 を整数のポイントにしたもの（丸めを1か所にする） */
 export function gapPoints(progress: number, elapsed: number): number {
   return Math.round((elapsed - progress) * 100);
 }
 
-/** 目標に届いた／期の経過に対して進みが追いついている（ahead）／下回っている（behind）。判定は表示と同じポイントで行う */
-export function paceOfProgress(progress: number, elapsed: number): Pace {
-  if (progress >= 1) return "reached";
-  return gapPoints(progress, elapsed) > 0 ? "behind" : "ahead";
-}
-
-/** 数値KRだけが遅れ判定の対象。達成度のKRは期の経過と比べないので、届いたとき以外は null */
-export function krPace(r: KrRecord, elapsed: number): Pace | null {
-  if (r.kind === "band") return stepsToTarget(r) === 0 ? "reached" : null;
-  return paceOfProgress(krProgress(r), elapsed);
-}
-
-/** 期の経過割合 − 進み。正なら遅れ（その大きさ）、負なら先行（並べ替え用の生の値） */
-export function paceGap(r: KrRecord, elapsed: number): number {
-  return elapsed - krProgress(r);
-}
-
-/** 全体の進み＝数値KRの平均。達成度のKRは含めない */
-export function overallProgress(records: Record<string, KrRecord>, krIds: string[]): number {
-  const list = krIds.map((k) => records[k]).filter((r): r is NumberRecord => !!r && r.kind === "number");
-  return list.length === 0 ? 0 : list.reduce((s, r) => s + krProgress(r), 0) / list.length;
-}
-
-/** 達成度のKR（全体の進みとは別に、段で見せる） */
-export function bandKrIds(records: Record<string, KrRecord>, krIds: string[]): string[] {
-  return krIds.filter((k) => records[k]?.kind === "band");
-}
-
-/** 遅れている数値KR。遅れの大きい順に最大 max 個 */
-export function focusKrs(records: Record<string, KrRecord>, krIds: string[], elapsed: number, max = 2): string[] {
-  return krIds
-    .filter((k) => records[k] && krPace(records[k], elapsed) === "behind")
-    .sort((a, b) => paceGap(records[b], elapsed) - paceGap(records[a], elapsed))
-    .slice(0, max);
-}
-
-/** 達成度のKRのうち、目標まで残り2段以上のもの（残りの多い順） */
-export function stepKrs(records: Record<string, KrRecord>, krIds: string[]): string[] {
-  const steps = (k: string) => {
-    const r = records[k];
-    return r && r.kind === "band" ? stepsToTarget(r) : 0;
-  };
-  return krIds.filter((k) => steps(k) >= 2).sort((a, b) => steps(b) - steps(a));
+/** 手がかりの数字が期の経過より後ろにあるか（届いていれば false）。数値のないKRは false。KRの詳細の中だけで使う */
+export function hintTrailsPeriod(h: Hint | undefined, elapsed: number): boolean {
+  if (!h) return false;
+  const p = hintProgress(h);
+  return p < 1 && gapPoints(p, elapsed) > 0;
 }
 
 /** そのKRにつながる、その人の未着手・進行中の仕事。期日の近い（超過を含む）順に最大 max 件 */
@@ -418,12 +341,12 @@ export function focusTasks(tasks: Task[], memberId: string, krId: string, ctx: L
 
 export interface FocusItem {
   krId: string;
-  /** behind＝遅れている数値KR、steps＝目標まで残り2段以上の達成度KR */
-  kind: "behind" | "steps";
-  /** 遅れのポイント（kind=behind のとき） */
-  points: number;
-  /** 目標まで何段か（kind=steps のとき） */
-  steps: number;
+  /** next＝次の段の要件にまだ／一部があり、見ている人の仕事がつながるKR。most＝自分の仕事が最も多くつながるKR */
+  kind: "next" | "most";
+  /** 次の段（next のとき） */
+  step: number | null;
+  /** 次の段の要件のうち、まだ／一部の数（next のとき） */
+  pendingCount: number;
   /** 直近のチェックインで更新されていない */
   stale: boolean;
   /** そのKRにつながる未完了の仕事の件数（全員分・1件は1回） */
@@ -432,33 +355,44 @@ export interface FocusItem {
   mine: Task[];
 }
 
+/** 今週どこに力を入れるか：次の段の要件に「まだ／一部」があり、見ている人の仕事がつながるKR。無ければ自分の仕事が最も多くつながるKR */
 export function weeklyFocus(args: {
   records: Record<string, KrRecord>;
   krIds: string[];
-  elapsed: number;
+  assessOf: Record<string, Assessment | undefined>;
+  bandsOf: Record<string, KrBands>;
   tasks: Task[];
   ctx: LinkCtx;
   memberId: string;
   latest: string;
+  max?: number;
 }): FocusItem[] {
-  const { records, krIds, elapsed, tasks, ctx, memberId, latest } = args;
+  const { records, krIds, assessOf, bandsOf, tasks, ctx, memberId, latest, max = 2 } = args;
+  const open = tasks.filter(isOpen);
   const base = (krId: string) => ({
     krId,
-    stale: isNotUpdated(records[krId], latest),
-    openCount: tasksOfKr(tasks.filter(isOpen), krId, ctx).length,
+    stale: records[krId] ? isNotUpdated(records[krId], latest) : false,
+    openCount: tasksOfKr(open, krId, ctx).length,
     mine: focusTasks(tasks, memberId, krId, ctx),
   });
-  const behind: FocusItem[] = focusKrs(records, krIds, elapsed).map((k) => ({
-    ...base(k),
-    kind: "behind" as const,
-    points: gapPoints(krProgress(records[k]), elapsed),
-    steps: 0,
-  }));
-  const steps: FocusItem[] = stepKrs(records, krIds).map((k) => {
-    const r = records[k];
-    return { ...base(k), kind: "steps" as const, points: 0, steps: r.kind === "band" ? stepsToTarget(r) : 0 };
-  });
-  return [...behind, ...steps];
+  const next: FocusItem[] = krIds
+    .filter((k) => {
+      const a = assessOf[k];
+      return !!a && hasPending(a, bandsOf[k]) && focusTasks(tasks, memberId, k, ctx).length > 0;
+    })
+    .map((k) => {
+      const a = assessOf[k]!;
+      const pend = a.basis.filter((b) => b.status !== "確認できた");
+      const step = nextStep(a.value, bandsOf[k]);
+      return { ...base(k), kind: "next" as const, step, pendingCount: pend.length };
+    })
+    .sort((a, b) => b.pendingCount - a.pendingCount || b.mine.length - a.mine.length);
+  if (next.length > 0) return next.slice(0, max);
+  const most = krIds
+    .map((k) => ({ k, n: tasksOfKr(tasks.filter((t) => t.assigneeId === memberId && isOpen(t)), k, ctx).length }))
+    .filter((x) => x.n > 0)
+    .sort((a, b) => b.n - a.n);
+  return most.length > 0 ? [{ ...base(most[0].k), kind: "most" as const, step: null, pendingCount: 0 }] : [];
 }
 
 export interface TaskCandidate {
@@ -523,18 +457,6 @@ export function weeklyView(moved: Task[]): string {
   if (done.length) parts.push(`終えた仕事は${done.length}件（${done.slice(0, 2).map((t) => t.title).join("、")}）`);
   if (doing.length) parts.push(`進めている仕事は${doing.length}件`);
   return `今週のあなたは、${parts.join("、")}です。`;
-}
-
-export type Milestone = "half" | "reached";
-
-/** 確定の前後で越えた節目。半分（進み50%）を越えた／目標に届いた */
-export function crossedMilestones(before: KrRecord, after: KrRecord): Milestone[] {
-  const b = krProgress(before);
-  const a = krProgress(after);
-  const out: Milestone[] = [];
-  if (b < 0.5 && a >= 0.5 && a < 1) out.push("half");
-  if (b < 1 && a >= 1) out.push("reached");
-  return out;
 }
 
 // ---------- 文字単位の差分（Kintone取込の突き合わせ） ----------

@@ -51,43 +51,94 @@ export interface Seg {
   changed: boolean;
 }
 
-/** 達成度バンド。仮の5段階（実際の区分に差し替える。定義は logic.ts の BANDS） */
-export type Band = "S" | "A" | "B" | "C" | "D";
-
 export interface Source {
   doc: string;
   page: string;
 }
 
-interface RecordBase {
-  krId: string;
-  /** 最終更新日（その値を取り込んだチェックインの日） YYYY-MM-DD */
-  updatedAt: string;
-  /** 前回の更新日 */
-  prevAt: string;
-  source: Source | null;
+/** 段の基準文。60が出発点（最低値）。90・100 は持たないKRがある */
+export interface KrBands {
+  60: string;
+  70: string;
+  80: string;
+  90?: string;
+  100?: string;
 }
 
-export interface NumberRecord extends RecordBase {
-  kind: "number";
+/** KRごとの定義（半期の間は固定）。段の基準文と、Oに近づいた証拠として見るもの */
+export interface KrDef {
+  bands: KrBands;
+  evidence: string;
+}
+
+/** 手がかりの数字（数値で測れるKRだけが持つ）。主役ではなく、状態を観る手がかり */
+export interface Hint {
   unit: string;
-  /** 期首値。進み＝（現状−期首）÷（目標値−期首） */
+  /** 期首値 */
   start: number;
-  /** 増やす／減らす */
   direction: "up" | "down";
   target: number;
   value: number;
   prev: number;
 }
 
-export interface BandRecord extends RecordBase {
-  kind: "band";
-  target: Band;
-  value: Band;
-  prev: Band;
+export interface KrRecord {
+  krId: string;
+  /** 最終更新日（その回の資料に出た日） YYYY-MM-DD */
+  updatedAt: string;
+  /** 前回の更新日 */
+  prevAt: string;
+  source: Source | null;
+  hint?: Hint;
 }
 
-export type KrRecord = NumberRecord | BandRecord;
+export type BasisStatus = "確認できた" | "一部" | "まだ";
+
+/** 次の段の要件1つ分。quote は根拠になった資料の記述（短い引用）。「まだ」のときは空 */
+export interface BasisItem {
+  requirement: string;
+  status: BasisStatus;
+  quote: string;
+}
+
+/** AIの見立て。資料の記述だけから決まる（タスクの完了率は使わない） */
+export interface Assessment {
+  /** 60〜最上段の整数 */
+  value: number;
+  /** 次の段の要件（2〜4個） */
+  basis: BasisItem[];
+  summary: string;
+}
+
+export interface ResourceAssessment {
+  krId: string;
+  assessment: Assessment;
+  source: Source;
+}
+
+/** 回ごとの見立て。同じ回に複数の資料があれば資料ごとに持つ（resourceId）。seed は資料に紐づかない初期値 */
+export interface AssessEntry {
+  checkinId: string;
+  date: string;
+  resourceId: string;
+  assessment: Assessment;
+  source: Source | null;
+}
+
+export type LearningKind = "分かったこと" | "次に試すこと";
+
+export interface LearningDraft {
+  krId: string;
+  kind: LearningKind;
+  text: string;
+  source: Source;
+}
+
+export interface Learning extends LearningDraft {
+  id: string;
+  checkinId: string;
+  resourceId: string;
+}
 
 export interface Checkin {
   id: string;
@@ -109,10 +160,10 @@ export interface Decision {
   resourceId?: string;
 }
 
-/** AIが資料から読み取った下書き（1KR分） */
+/** AIが資料から読み取った手がかりの数字の下書き（1KR分・数値のあるKRだけ） */
 export interface Draft {
   krId: string;
-  value: number | Band;
+  value: number;
   source: Source;
 }
 
@@ -153,6 +204,8 @@ export interface Resource {
   kind: string;
   checkinId: string;
   drafts: Draft[];
+  assessments: ResourceAssessment[];
+  learnings: LearningDraft[];
   notes: ResourceNote[];
   decisions: Omit<Decision, "id" | "checkinId">[];
 }
@@ -190,7 +243,7 @@ export interface KintoneRow {
 }
 
 export interface ConflictOption {
-  value: number | Band;
+  value: number;
   source: Source;
   /** すでに確定済みの値か */
   existing: boolean;

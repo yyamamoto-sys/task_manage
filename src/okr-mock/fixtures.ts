@@ -1,12 +1,16 @@
 // 架空データのみ。実在の人物・会社・数値とは無関係。
 import { addDays, PERSONAL_PJ, TODAY } from "./logic";
 import type {
-  Band,
   AiCandidate,
+  AssessEntry,
+  Assessment,
   Checkin,
   Decision,
   KintoneRow,
+  KrBands,
+  KrDef,
   KrRecord,
+  Learning,
   Member,
   OkrItem,
   PastWeek,
@@ -49,7 +53,7 @@ export const okrItems: OkrItem[] = [
   { id: "obj", kind: "objective", parentId: null, label: "O", text: "地域と企業が一緒に動く「共創の輪」を広げる" },
   { id: "kr1", kind: "kr", parentId: "obj", label: "KR1", text: "共創パートナー企業を30社にする" },
   { id: "kr2", kind: "kr", parentId: "obj", label: "KR2", text: "地域拠点の稼働率を80%にする" },
-  { id: "kr3", kind: "kr", parentId: "obj", label: "KR3", text: "社内の定型業務を減らす（達成度で見る）" },
+  { id: "kr3", kind: "kr", parentId: "obj", label: "KR3", text: "社内の定型業務を減らす" },
   { id: "tf11", kind: "tf", parentId: "kr1", label: "TF1-1", text: "新規開拓の進め方を仕組みにする", quarters: ["3Q", "4Q"], leaderId: "m2" },
   { id: "tf12", kind: "tf", parentId: "kr1", label: "TF1-2", text: "既存のお客様との関係を深める", quarters: ["3Q", "4Q"], leaderId: "m3" },
   { id: "tf13", kind: "tf", parentId: "kr1", label: "TF1-3", text: "展示会以外の紹介ルートを試す", quarters: ["3Q"], leaderId: "m3" },
@@ -59,6 +63,43 @@ export const okrItems: OkrItem[] = [
   { id: "tf32", kind: "tf", parentId: "kr3", label: "TF3-2", text: "社内の情報共有を一本化する", quarters: ["3Q", "4Q"], leaderId: "m6" },
   { id: "tf33", kind: "tf", parentId: "kr3", label: "TF3-3", text: "AI活用の相談窓口をつくる", quarters: ["4Q"], leaderId: "m1" },
 ];
+
+/** なぜこのOか（背景・ねらい） */
+export const OBJECTIVE_WHY =
+  "拠点や企業が、それぞれ単独で取り組むだけでは届かない課題が増えています。地域と企業が一緒に動く関係を増やせば、一社では生まれない取り組みが育ちます。数字を追うことが目的ではなく、「輪」が広がっている実感を、周りの人と共有できる状態をめざします。";
+
+/** KRごとの定義（半期の間は固定）。段の基準文は定性的でよい。90・100 を持たないKRもある */
+export const krDefs: Record<string, KrDef> = {
+  kr1: {
+    bands: {
+      60: "これまでの紹介や展示会の流れでも届く水準。パートナーは少しずつ増えている",
+      70: "新しい進め方の成果として、パートナー候補との接点が継続的に生まれている",
+      80: "複数の経路から提携が続き、周りの部署や取引先から見ても成果が明らか",
+      90: "提携先が別の提携先を呼び込む動きが、これまでのやり方を超えて生まれている",
+      100: "地域の企業どうしが自発的につながる輪ができている",
+    },
+    evidence: "新しく提携した企業の数と、その経緯（紹介・提案・フォローのどれが決め手だったか）",
+  },
+  kr2: {
+    bands: {
+      60: "これまでの運営でも届く水準。予約と利用は例年どおりに動いている",
+      70: "予約や運営の工夫が、利用の増え方に表れ始めている",
+      80: "拠点の利用が増えたことを、現場や周りの人も実感している",
+      90: "利用者が次の利用者を連れてくる動きが、これまでのやり方を超えて定着している",
+    },
+    evidence: "予約の問い合わせの変化と、拠点を開けられた日の増え方、現場の声",
+  },
+  kr3: {
+    bands: {
+      60: "これまでの進め方でも届く水準。定型業務は例年どおりに行っている",
+      70: "自動化や整理の取り組みで、定型業務が減ったことが確認できる",
+      80: "減った時間が数字で示され、周りの部署から見ても成果が明らか",
+    },
+    evidence: "自動化した定型業務の本数と、減った時間・探す手間の変化",
+  },
+};
+
+export const krBands: Record<string, KrBands> = Object.fromEntries(Object.entries(krDefs).map(([k, d]) => [k, d.bands]));
 
 /** KRを色で区別するための色。KRの並びから順に割り当てる。足りなくなったら同じ色に模様（pattern）を重ねて区別する */
 export const KR_PALETTE = ["#3b6fd4", "#1a9a6b", "#e0782a", "#8a4fd0", "#b3392f", "#2a8fa8", "#7a6a1e", "#6b7b8c"];
@@ -73,8 +114,6 @@ export function krStyle(krId: string): { color: string; pattern: number } {
   return krStyleAt(Math.max(0, krOrder.indexOf(krId)));
 }
 
-/** 「遅れ」の橙。白地に置く文字・橙の上に置く文字が、どちらも対比 4.5:1 以上になる色（mock4.css の --mk-warn と同じ値） */
-export const WARN = { light: "#944d00", onLight: "#ffffff", dark: "#ffb454", onDark: "#2b1a00", lightBg: "#fbfaf7", darkBg: "#1c1a16" };
 /** 本人の分を帯の中で見せる色（KRの色とも、他の人の色とも重ならない） */
 export const MINE_COLOR = "#c2338a";
 export const PERIOD_END = "2026-12-31";
@@ -238,13 +277,13 @@ export const checkinsInit: Checkin[] = [
 export const nextCheckin: Checkin = { id: "c4", date: "2026-11-10", title: "11月第2回チェックイン" };
 
 export const recordsInit: Record<string, KrRecord> = {
-  kr1: { krId: "kr1", kind: "number", unit: "社", start: 8, direction: "up", target: 30, value: 18, prev: 15, updatedAt: "2026-11-03", prevAt: "2026-10-20", source: { doc: "チェックイン資料_20261103.pptx", page: "p.3" } },
-  kr2: { krId: "kr2", kind: "number", unit: "%", start: 65, direction: "up", target: 80, value: 71, prev: 66, updatedAt: "2026-10-20", prevAt: "2026-10-06", source: { doc: "チェックイン資料_20261020.pptx", page: "p.4" } },
-  kr3: { krId: "kr3", kind: "band", target: "A", value: "C", prev: "D", updatedAt: "2026-11-03", prevAt: "2026-10-20", source: { doc: "チェックイン資料_20261103.pptx", page: "p.5" } },
+  kr1: { krId: "kr1", hint: { unit: "社", start: 8, direction: "up", target: 30, value: 18, prev: 15 }, updatedAt: "2026-11-03", prevAt: "2026-10-20", source: { doc: "チェックイン資料_20261103.pptx", page: "p.3" } },
+  kr2: { krId: "kr2", hint: { unit: "%", start: 65, direction: "up", target: 80, value: 71, prev: 66 }, updatedAt: "2026-10-20", prevAt: "2026-10-06", source: { doc: "チェックイン資料_20261020.pptx", page: "p.4" } },
+  kr3: { krId: "kr3", updatedAt: "2026-11-03", prevAt: "2026-10-20", source: { doc: "チェックイン資料_20261103.pptx", page: "p.5" } },
 };
 
-/** チェックインの回ごとの成果の値（recordsInit の現状・前回と食い違わない）。KRの詳細の「成果の推移」の元 */
-export const historyInit: Record<string, { date: string; value: number | Band }[]> = {
+/** チェックインの回ごとの手がかりの数字（recordsInit の現状・前回と食い違わない）。KRの詳細の「成果の推移」に副次的に添える */
+export const historyInit: Record<string, { date: string; value: number }[]> = {
   kr1: [
     { date: "2026-10-06", value: 12 },
     { date: "2026-10-20", value: 15 },
@@ -254,12 +293,66 @@ export const historyInit: Record<string, { date: string; value: number | Band }[
     { date: "2026-10-06", value: 66 },
     { date: "2026-10-20", value: 71 },
   ],
+};
+
+const seedA = (value: number, summary: string, basis: Assessment["basis"]): Assessment => ({ value, summary, basis });
+
+/** 回ごとの見立ての初期値（資料に紐づかない seed）。kr2 は 11/3 の資料に出ていない（未更新） */
+export const assessInit: Record<string, AssessEntry[]> = {
+  kr1: [
+    { checkinId: "c1", date: "2026-10-06", resourceId: "seed", source: { doc: "議事録_20261006.txt", page: "2段落目" }, assessment: seedA(62, "70 の要件は、これから整理する段階です", []) },
+    { checkinId: "c2", date: "2026-10-20", resourceId: "seed", source: { doc: "議事録_20261020.txt", page: "2段落目" }, assessment: seedA(64, "70 の要件のうち、接点づくりが動き始めています", []) },
+    {
+      checkinId: "c3",
+      date: "2026-11-03",
+      resourceId: "seed",
+      source: { doc: "チェックイン資料_20261103.pptx", page: "p.3" },
+      assessment: seedA(66, "70 の要件3つのうち2つが一部で、1つがまだです", [
+        { requirement: "パートナー候補との接点が継続的に生まれていること", status: "一部", quote: "展示会のフォロー先を10社に絞った" },
+        { requirement: "新しい進め方が資料にまとまり、他の人も使えること", status: "まだ", quote: "" },
+        { requirement: "紹介をきっかけにした提携が出ていること", status: "一部", quote: "既存のお客様へのヒアリングを10社分で開始" },
+      ]),
+    },
+  ],
+  kr2: [
+    { checkinId: "c1", date: "2026-10-06", resourceId: "seed", source: { doc: "議事録_20261006.txt", page: "3段落目" }, assessment: seedA(63, "70 の要件は、これから整理する段階です", []) },
+    {
+      checkinId: "c2",
+      date: "2026-10-20",
+      resourceId: "seed",
+      source: { doc: "チェックイン資料_20261020.pptx", page: "p.4" },
+      assessment: seedA(66, "70 の要件3つのうち1つが一部で、2つがまだです", [
+        { requirement: "予約の手間の減り方が、利用の増え方に表れ始めていること", status: "一部", quote: "予約フォームの作り直しを優先する" },
+        { requirement: "ボランティアの確保が、運営の安定につながっていること", status: "まだ", quote: "" },
+        { requirement: "現場の声が、改善に反映されていること", status: "まだ", quote: "" },
+      ]),
+    },
+  ],
   kr3: [
-    { date: "2026-10-06", value: "D" },
-    { date: "2026-10-20", value: "D" },
-    { date: "2026-11-03", value: "C" },
+    { checkinId: "c1", date: "2026-10-06", resourceId: "seed", source: { doc: "議事録_20261006.txt", page: "5段落目" }, assessment: seedA(60, "70 の要件は、これから整理する段階です", []) },
+    { checkinId: "c2", date: "2026-10-20", resourceId: "seed", source: { doc: "議事録_20261020.txt", page: "5段落目" }, assessment: seedA(60, "70 の要件は、洗い出しの段階です", []) },
+    {
+      checkinId: "c3",
+      date: "2026-11-03",
+      resourceId: "seed",
+      source: { doc: "チェックイン資料_20261103.pptx", page: "p.5" },
+      assessment: seedA(63, "70 の要件3つのうち2つが一部で、1つがまだです", [
+        { requirement: "定型レポートの自動化が、実際に動いていること", status: "一部", quote: "対象レポートの洗い出しを終えた" },
+        { requirement: "資料の置き場のルールが、使われ始めていること", status: "一部", quote: "ナレッジ整理のルール案を出す" },
+        { requirement: "減った時間が数字で示されていること", status: "まだ", quote: "" },
+      ]),
+    },
   ],
 };
+
+/** 学び・気づきの初期値 */
+export const learningsInit: Learning[] = [
+  { id: "s-l0", checkinId: "c1", resourceId: "seed", krId: "kr1", kind: "分かったこと", text: "展示会で会った相手は、お礼の連絡が早いほど反応が良い", source: { doc: "議事録_20261006.txt", page: "2段落目" } },
+  { id: "s-l1", checkinId: "c2", resourceId: "seed", krId: "kr2", kind: "分かったこと", text: "予約の流れが分かりにくいと、問い合わせが増える", source: { doc: "議事録_20261020.txt", page: "3段落目" } },
+  { id: "s-l2", checkinId: "c2", resourceId: "seed", krId: "kr2", kind: "次に試すこと", text: "予約フォームの文言を現場と一緒に見直す", source: { doc: "議事録_20261020.txt", page: "3段落目" } },
+  { id: "s-l3", checkinId: "c3", resourceId: "seed", krId: "kr3", kind: "分かったこと", text: "手順を書き出すと、自動化できる部分が見えてくる", source: { doc: "チェックイン資料_20261103.pptx", page: "p.5" } },
+  { id: "s-l4", checkinId: "c3", resourceId: "seed", krId: "kr3", kind: "次に試すこと", text: "月次レポートの自動化を1本だけ先に動かす", source: { doc: "チェックイン資料_20261103.pptx", page: "p.5" } },
+];
 
 /** 利用の広がり「一部のPJだけ登録」で、仕事が登録されているPJ（確認用の切替。KR1は登録なし・KR2とKR3は一部だけ登録になる） */
 export const REACH_PJ_IDS = ["p4", "p7"];
@@ -284,9 +377,40 @@ export const resources: Resource[] = [
     name: "チェックイン資料_20261110.pptx",
     kind: "PowerPoint / PDF（チェックイン資料）",
     checkinId: "c4",
-    drafts: [
-      { krId: "kr1", value: 22, source: { doc: "チェックイン資料_20261110.pptx", page: "p.3" } },
-      { krId: "kr3", value: "B", source: { doc: "チェックイン資料_20261110.pptx", page: "p.5" } },
+    drafts: [{ krId: "kr1", value: 22, source: { doc: "チェックイン資料_20261110.pptx", page: "p.3" } }],
+    assessments: [
+      {
+        krId: "kr1",
+        source: { doc: "チェックイン資料_20261110.pptx", page: "p.3" },
+        assessment: {
+          value: 68,
+          summary: "70 の要件3つのうち2つが確認でき、1つが一部です",
+          basis: [
+            { requirement: "パートナー候補との接点が継続的に生まれていること", status: "確認できた", quote: "北斗産業と提携の覚書を締結。パートナーが1社増えた。" },
+            { requirement: "新しい進め方が資料にまとまり、他の人も使えること", status: "一部", quote: "新規開拓の進め方を1枚にまとめ、12月に共有する" },
+            { requirement: "紹介をきっかけにした提携が出ていること", status: "確認できた", quote: "港南運輸が、ヒアリングの紹介をきっかけに加入した。" },
+          ],
+        },
+      },
+      {
+        krId: "kr3",
+        source: { doc: "チェックイン資料_20261110.pptx", page: "p.5" },
+        assessment: {
+          value: 66,
+          summary: "70 の要件3つのうち1つが確認でき、1つが一部で、1つがまだです",
+          basis: [
+            { requirement: "定型レポートの自動化が、実際に動いていること", status: "一部", quote: "月次レポートの自動化が1本分すすみ、定型作業の時間が減った。" },
+            { requirement: "資料の置き場のルールが、使われ始めていること", status: "確認できた", quote: "資料の置き場のルールが決まり、探す手間が減った。" },
+            { requirement: "減った時間が数字で示されていること", status: "まだ", quote: "" },
+          ],
+        },
+      },
+    ],
+    learnings: [
+      { krId: "kr1", kind: "分かったこと", text: "ヒアリングで関係ができた先は、紹介から提携に進みやすい", source: { doc: "チェックイン資料_20261110.pptx", page: "p.4" } },
+      { krId: "kr1", kind: "次に試すこと", text: "新規開拓の進め方を1枚にまとめて共有する", source: { doc: "チェックイン資料_20261110.pptx", page: "p.8" } },
+      { krId: "kr3", kind: "分かったこと", text: "自動化は1本ずつ試すと、減った時間が見えやすい", source: { doc: "チェックイン資料_20261110.pptx", page: "p.5" } },
+      { krId: "kr3", kind: "次に試すこと", text: "月次レポートの2本目の自動化に着手する", source: { doc: "チェックイン資料_20261110.pptx", page: "p.6" } },
     ],
     notes: [
       {
@@ -348,6 +472,40 @@ export const resources: Resource[] = [
     drafts: [
       { krId: "kr1", value: 21, source: { doc: "議事録_20261110.txt", page: "2段落目" } },
       { krId: "kr2", value: 73, source: { doc: "議事録_20261110.txt", page: "4段落目" } },
+    ],
+    assessments: [
+      {
+        krId: "kr1",
+        source: { doc: "議事録_20261110.txt", page: "2段落目" },
+        assessment: {
+          value: 67,
+          summary: "70 の要件3つのうち1つが確認でき、1つが一部です",
+          basis: [
+            { requirement: "パートナー候補との接点が継続的に生まれていること", status: "確認できた", quote: "北斗産業と覚書。提案の初稿が決め手だったとの話。" },
+            { requirement: "新しい進め方が資料にまとまり、他の人も使えること", status: "まだ", quote: "" },
+            { requirement: "紹介をきっかけにした提携が出ていること", status: "一部", quote: "取引先の紹介でもう1社が加わった（社名は話に出ず）。" },
+          ],
+        },
+      },
+      {
+        krId: "kr2",
+        source: { doc: "議事録_20261110.txt", page: "4段落目" },
+        assessment: {
+          value: 70,
+          summary: "80 の要件3つのうち1つが確認でき、1つが一部です",
+          basis: [
+            { requirement: "利用の増え方が、予約の手間の減り方と結びついて説明できること", status: "確認できた", quote: "予約の問い合わせが減り、稼働率が2ポイント上がった。" },
+            { requirement: "ボランティアの確保が、運営の安定につながっていること", status: "まだ", quote: "" },
+            { requirement: "拠点の利用が、現場や周りの人にも見える形になっていること", status: "一部", quote: "説明会は12月第1週に開く" },
+          ],
+        },
+      },
+    ],
+    learnings: [
+      { krId: "kr1", kind: "分かったこと", text: "提案の初稿が、提携の決め手になることがある", source: { doc: "議事録_20261110.txt", page: "2段落目" } },
+      { krId: "kr1", kind: "次に試すこと", text: "反応の良かった先に、初稿を添えて再連絡する", source: { doc: "議事録_20261110.txt", page: "7段落目" } },
+      { krId: "kr2", kind: "分かったこと", text: "用語をそろえると、予約の問い合わせが減る", source: { doc: "議事録_20261110.txt", page: "4段落目" } },
+      { krId: "kr2", kind: "次に試すこと", text: "説明会で、ボランティアに運営の流れを見てもらう", source: { doc: "議事録_20261110.txt", page: "5段落目" } },
     ],
     notes: [
       {

@@ -4,8 +4,7 @@ import { describe, expect, it } from "vitest";
 import App from "../App";
 import { mergeDecisions } from "../confirm";
 import { checkinsInit, decisionsInit, nextCheckin, recordsInit, resources, tasks } from "../fixtures";
-import { krProgress } from "../logic";
-import type { NumberRecord } from "../types";
+import { hintProgress } from "../logic";
 
 describe("(a) 同じ回の資料を複数確定しても決定事項と宿題は足し合わされる", () => {
   it("deck と minutes を続けて確定すると、両方の決定事項が残る", () => {
@@ -34,9 +33,9 @@ describe("(b) 鈴木以外に切り替えても自分の仕事のつなぎ先を
   });
 });
 
-describe("(c) 期首値つきの進み", () => {
+describe("(c) 期首値つきの手がかりの位置", () => {
   it("期首65・現状71・目標値80 → 0.4", () => {
-    const r = { ...(recordsInit.kr2 as NumberRecord), start: 65, direction: "up" as const, value: 71, target: 80 };
-    expect(krProgress(r)).toBeCloseTo(0.4, 5);
+    const h = { ...recordsInit.kr2.hint!, start: 65, direction: "up" as const, value: 71, target: 80 };
+    expect(hintProgress(h)).toBeCloseTo(0.4, 5);
   });
 });

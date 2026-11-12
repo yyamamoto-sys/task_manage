@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
-import { krStyle, members, okrItems } from "./fixtures";
-import { trapTarget, type Pace } from "./logic";
-import type { KrRecord, Seg, Task } from "./types";
+import { krBands, krStyle, members, okrItems } from "./fixtures";
+import { trapTarget } from "./logic";
+import { stepsOf } from "./steps";
+import type { Hint, KrBands, KrRecord, Seg, Task } from "./types";
 
 export function memberOf(id: string) {
   return members.find((m) => m.id === id);
@@ -88,8 +89,9 @@ export function krListText(krIds: string[]): string {
   return ls.length === 2 ? `${ls[0]} と ${ls[1]}` : ls.join("・");
 }
 
-export function valueText(r: KrRecord, v: number | string): string {
-  return r.kind === "number" ? `${v}${r.unit}` : String(v);
+/** 手がかりの数字の値（例：18社） */
+export function hintText(h: Hint, v: number): string {
+  return `${v}${h.unit}`;
 }
 
 /** 「11/3」のような月日（曜日なし） */
@@ -98,10 +100,9 @@ export function mdOf(date: string): string {
   return `${m}/${d}`;
 }
 
-/** 成果（チェックイン資料の「現状」）の1行。出どころの資料の日付を添える */
-export function outcomeLine(r: KrRecord): string {
-  const src = `（${mdOf(r.updatedAt)} の資料）`;
-  return r.kind === "number" ? `成果 ${r.value}／${r.target}${r.unit}${src}` : `成果 いま${r.value}／目標${r.target}${src}`;
+/** 手がかりの数字の1行（例：手がかり 18社／30社）。数値のないKRは null */
+export function hintLine(r: KrRecord): string | null {
+  return r.hint ? `手がかり ${r.hint.value}${r.hint.unit}／${r.hint.target}${r.hint.unit}` : null;
 }
 
 export function signed(n: number, unit = ""): string {
@@ -109,52 +110,63 @@ export function signed(n: number, unit = ""): string {
   return `${n > 0 ? "+" : "−"}${Math.abs(n)}${unit}`;
 }
 
-// ---------- 進みの印（色だけに頼らず、形と言葉も変える） ----------
+// ---------- 段の目盛り ----------
 
-/** 「遅れ」の橙は、白地の文字にも橙の上の文字にも対比 4.5:1 以上になる色（mock4.css の --mk-warn・--mk-on-warn と同じ値） */
-export const PACE_INFO: Record<Pace, { label: string; color: string; onColor: string; hint: string }> = {
-  reached: { label: "到達", color: "#d4a017", onColor: "#fff", hint: "目標に届いています" },
-  ahead: { label: "順調", color: "#1a9a6b", onColor: "#fff", hint: "期の経過に対して進みが追いついています" },
-  behind: { label: "遅れ", color: "var(--mk-warn)", onColor: "var(--mk-on-warn)", hint: "期の経過に対して進みが下回っています" },
-};
+/** 段の目盛りの中の、今の位置（0〜steps.length-1 の小数）。段と段の間は値で比例させる */
+export function stepPos(value: number, steps: number[]): number {
+  if (value <= steps[0]) return 0;
+  for (let i = 1; i < steps.length; i++) {
+    if (value <= steps[i]) return i - 1 + (value - steps[i - 1]) / (steps[i] - steps[i - 1]);
+  }
+  return steps.length - 1;
+}
 
-const STAR = "M0 -7 L2 -2.2 L7 -2 L3.2 1.4 L4.4 6.4 L0 3.6 L-4.4 6.4 L-3.2 1.4 L-7 -2 L-2 -2.2 Z";
+export interface StepScaleGeo {
+  x: number;
+  /** 線（トラック）の y */
+  y: number;
+  w: number;
+}
 
-/** 進みの印（SVGの中に置く）。遅れ＝三角、順調＝丸にチェック、到達＝星 */
-export function PaceGlyph({ pace, x = 0, y = 0 }: { pace: Pace; x?: number; y?: number }) {
-  const c = PACE_INFO[pace].color;
-  const on = PACE_INFO[pace].onColor;
+/** 段の目盛り（SVGの中）。60・70・80（あれば90・100）の上に、今の位置の印を置く。良し悪しの色は付けず、KRの色で登る */
+export function StepScaleG({ krId, value, bands, geo, fontSize = 10 }: { krId: string; value: number; bands: KrBands; geo: StepScaleGeo; fontSize?: number }) {
+  const steps = stepsOf(bands);
+  const color = krStyle(krId).color;
+  const px = (i: number) => geo.x + (steps.length === 1 ? 0 : (i * geo.w) / (steps.length - 1));
+  const pos = stepPos(value, steps);
+  const mx = px(0) + (steps.length === 1 ? 0 : (pos * geo.w) / (steps.length - 1));
   return (
-    <g transform={`translate(${x} ${y})`} aria-hidden="true">
-      {pace === "behind" && (
-        <>
-          <path d="M0 -7 L7 6 L-7 6 Z" style={{ fill: c, stroke: c }} strokeWidth={2} strokeLinejoin="round" />
-          <path d="M0 -2 L0 2" style={{ stroke: on }} strokeWidth={1.6} strokeLinecap="round" />
-          <circle cx={0} cy={4} r={0.9} style={{ fill: on }} />
-        </>
-      )}
-      {pace === "ahead" && (
-        <>
-          <circle r={7} fill={c} />
-          <path d="M-3.2 0.2 L-0.8 2.8 L3.4 -2.6" stroke="#fff" strokeWidth={1.8} fill="none" strokeLinecap="round" strokeLinejoin="round" />
-        </>
-      )}
-      {pace === "reached" && <path d={STAR} fill={c} stroke={c} strokeWidth={1.4} strokeLinejoin="round" />}
+    <g aria-hidden="true">
+      <rect x={geo.x} y={geo.y - 3} width={geo.w} height={6} rx={3} className="mk-track" />
+      <rect x={geo.x} y={geo.y - 3} width={Math.max(6, mx - geo.x)} height={6} rx={3} fill={color} opacity={0.75} />
+      {steps.map((st, i) => (
+        <g key={st}>
+          <circle cx={px(i)} cy={geo.y} r={4} className={st <= value ? "mk-step-on" : "mk-step-off"} style={st <= value ? { fill: color } : undefined} strokeWidth={1.5} stroke={color} />
+          <text x={px(i)} y={geo.y + 17} textAnchor="middle" fontSize={fontSize} className="mk-svgtext-muted">
+            {st}
+          </text>
+        </g>
+      ))}
+      <path d={`M ${mx} ${geo.y - 5} l -5 -8 l 10 0 Z`} fill={color} stroke="var(--color-bg-primary)" strokeWidth={1} />
+      <text x={Math.min(mx, geo.x + geo.w - 8)} y={geo.y - 17} textAnchor="middle" fontSize={fontSize + 2} fontWeight={700} className="mk-svgtext">
+        {value}
+      </text>
     </g>
   );
 }
 
-export function PaceBadge({ pace }: { pace: Pace }) {
-  const info = PACE_INFO[pace];
+/** 段の目盛り（文の中に置く。幅いっぱい） */
+export function StepScale({ krId, value, width = 260, label }: { krId: string; value: number; width?: number; label?: string }) {
+  const bands = krBands[krId];
+  const text = label ?? `${krLabel(krId)} の見立て ${value}（AI の見立て）。段は ${stepsOf(bands).join("・")}`;
   return (
-    <span className="mk-pace" title={info.hint}>
-      <svg width={16} height={16} viewBox="-8 -8 16 16" aria-hidden="true">
-        <PaceGlyph pace={pace} />
-      </svg>
-      {info.label}
-    </span>
+    <svg viewBox={`0 0 ${width} 44`} width="100%" style={{ maxWidth: width }} className="mk-stepscale" role="img" aria-label={text}>
+      <StepScaleG krId={krId} value={value} bands={bands} geo={{ x: 12, y: 22, w: width - 24 }} />
+    </svg>
   );
 }
+
+const STAR = "M0 -7 L2 -2.2 L7 -2 L3.2 1.4 L4.4 6.4 L0 3.6 L-4.4 6.4 L-3.2 1.4 L-7 -2 L-2 -2.2 Z";
 
 // ---------- SVG の操作部品 ----------
 
@@ -211,8 +223,8 @@ export function wrapLines(s: string, perLine: number, lines: number): string[] {
   return out.filter((l) => l.length > 0);
 }
 
-/** 節目の小さな演出（半分・目標到達）。1回だけ短く動く。動きを減らす設定のときは CSS で出さない */
-export function Burst({ x, y, color, kind }: { x: number; y: number; color: string; kind: "half" | "reached" }) {
+/** 節目の小さな演出（段を越えた）。1回だけ短く動く。動きを減らす設定のときは CSS で出さない */
+export function Burst({ x, y, color, step }: { x: number; y: number; color: string; step: number }) {
   const dots = Array.from({ length: 10 }, (_, i) => {
     const a = (i / 10) * Math.PI * 2;
     const d = 26 + (i % 2) * 8;
@@ -227,7 +239,7 @@ export function Burst({ x, y, color, kind }: { x: number; y: number; color: stri
         </g>
       ))}
       <text className="mk-burst-label" x={0} y={-30} textAnchor="middle" fontSize={12} fontWeight={700} fill={color}>
-        {kind === "half" ? "半分を越えた" : "目標に届いた"}
+        {step} の段に届いた
       </text>
     </g>
   );

@@ -11,6 +11,7 @@ import { FlowDiagram } from "./parts/FlowDiagram";
 import { FocusCard } from "./parts/FocusCard";
 import { SelfSection } from "./parts/SelfSection";
 import { TeamBand } from "./parts/TeamBand";
+import { OBlock, RecentLearnings } from "./parts/OBlock";
 import { GoalsScreen } from "./screens/GoalsScreen";
 import { Modal } from "./ui";
 
@@ -79,13 +80,13 @@ function Guide() {
         <li>
           <span className="mk-guide-no">1</span>
           <a className="mk-linkbtn" href="#mk-flow-h">
-            地図で進みを見る
+            地図で見立てを見る
           </a>
         </li>
         <li>
           <span className="mk-guide-no">2</span>
           <a className="mk-linkbtn" href="#mk-focus-h">
-            力を入れるKRを確かめる
+            次の段への手がかりを確かめる
           </a>
         </li>
         <li>
@@ -151,7 +152,9 @@ function Shell() {
       <main className="mk-main mk-onepage">
         <Header />
         <Guide />
+        <OBlock />
         <TeamBand />
+        <RecentLearnings />
         <FocusCard />
         <div className="mk-flowwrap">
           <FlowDiagram />

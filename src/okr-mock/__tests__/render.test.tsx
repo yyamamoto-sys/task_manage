@@ -13,9 +13,9 @@ const taskOf = (title: string) => tasks.find((t) => t.title === title)!;
 const FORBIDDEN = [/タスク/, /バンド/, /立場では/, /効かせられなかった/, /流れの図/, /目標の取り込み/, /本人にしか見えません/, /アプリ側に合わせる/];
 
 describe("1枚の画面（描画の確認）", () => {
-  it("上から 帯・今週ここに力を・地図・決定事項と宿題。画面ごとのナビは無い", () => {
+  it("上から O・段の帯・今週ここに力を・地図・決定事項と宿題。画面ごとのナビは無い", () => {
     const h = html();
-    const order = ["チームはどこまで来たか", "今週ここに力を", "仕事がどこへ流れているか", "決定事項と宿題"].map((s) => h.indexOf(s));
+    const order = ["なぜこのOか", "チームはいま、どの段にいるか", "今週ここに力を", "仕事がどこへ流れているか", "決定事項と宿題"].map((s) => h.indexOf(s));
     expect(order.every((i) => i >= 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
     expect(h).toContain("日々の仕事と OKR をつなぐ地図");
@@ -24,8 +24,8 @@ describe("1枚の画面（描画の確認）", () => {
   it("3ステップ案内はメンバーの順序。資料を読ませる操作は案内に入らず、ボタンに「チェックインの後に」と添える", () => {
     const h = html();
     const nav = h.slice(h.indexOf("はじめての人向けの案内"), h.indexOf("</nav>", h.indexOf("はじめての人向けの案内")));
-    const i1 = nav.indexOf("地図で進みを見る");
-    const i2 = nav.indexOf("力を入れるKRを確かめる");
+    const i1 = nav.indexOf("地図で見立てを見る");
+    const i2 = nav.indexOf("次の段への手がかりを確かめる");
     const i3 = nav.indexOf("今週やる仕事を選ぶ");
     expect(i1).toBeGreaterThan(0);
     expect(i2).toBeGreaterThan(i1);
@@ -40,9 +40,9 @@ describe("1枚の画面（描画の確認）", () => {
     expect(sel).toBeLessThan(h.indexOf("<header"));
     expect(h.slice(h.indexOf("<header"))).not.toContain("見ている人");
   });
-  it("用語がそろっている：O（めざす姿）・目標値・地図・PJ・仕事・達成度（仮の区分）", () => {
+  it("用語がそろっている：O（めざす姿）・AI の見立て・手がかり・段", () => {
     const h = html();
-    for (const w of ["O（めざす姿）", "目標値", "達成度（仮の区分）"]) expect(h).toContain(w);
+    for (const w of ["O（めざす姿）", "AI の見立て", "手がかり", "次の段"]) expect(h).toContain(w);
     for (const re of FORBIDDEN) expect(h).not.toMatch(re);
     expect(h).not.toMatch(/>目標</);
   });
@@ -74,11 +74,11 @@ describe("1枚の画面（描画の確認）", () => {
     expect(self).toContain("つながらない仕事「AI勉強会の資料を読む」");
     expect(self).not.toContain("つながらない仕事「来月の出張の手配をする」");
   });
-  it("確定の直後は、値が動いたKRの輪と地図のKRに増減の札が出る", () => {
-    const h = html({ changes: [{ krId: "kr1", text: "＋4社" }] });
+  it("確定の直後は、見立てが動いたKRの段のカードと地図のKRに増減の札が出る", () => {
+    const h = html({ changes: [{ krId: "kr1", text: "＋2" }] });
     expect(h).toContain('class="mk-delta"');
     expect(h).toContain('class="mk-deltatag"');
-    expect(h).toContain("＋4社");
+    expect(h).toContain("＋2");
     expect(html()).not.toContain("mk-delta");
   });
 });
@@ -111,21 +111,22 @@ describe("本人＝見ている人", () => {
     const m1 = html({ mode: "self", viewerId: "m1" });
     expect(m1).toContain("まだ選んでいません");
   });
-  it("今週ここに力を：数値の遅れ・達成度の残り段・未更新の印・今週やるの印", () => {
+  it("今週ここに力を：次の段への手がかり（まだ／一部の要件）・今週やるの印。遅れは使わない", () => {
     const h = html();
-    expect(h).toMatch(/期の経過より \d+ ポイント遅れ/);
-    expect(h).toContain("目標まで2段");
-    expect(h).toContain("未更新");
-    expect(h).toContain("今週やる ✓");
-    expect(h).toContain('aria-pressed="true"');
-    expect(h).toContain("あと2段");
+    const focus = h.slice(h.indexOf('id="mk-focus-h"'), h.indexOf("仕事がどこへ流れているか"));
+    expect(focus).toContain("次の段（70）への手がかり");
+    expect(focus).toContain("新しい進め方が資料にまとまり、他の人も使えること");
+    expect(focus).toContain("今週やる ✓");
+    expect(focus).toContain('aria-pressed="true"');
+    expect(focus).not.toContain("ポイント");
   });
-  it("自分の仕事が無いKRには、つなげられそうなあなたの仕事（AIの候補）を出す", () => {
+  it("自分の仕事がつながっていないKR（鈴木さんのKR2）は、今週ここに力をに挙げない", () => {
     const h = html();
-    expect(h).toContain("この KR につなげられそうなあなたの仕事");
-    expect(h).not.toContain("このKRにはありません");
+    const focus = h.slice(h.indexOf('id="mk-focus-h"'), h.indexOf("仕事がどこへ流れているか"));
+    expect(focus).not.toContain("KR2");
+    expect(focus).not.toContain("この KR につなげられそうなあなたの仕事");
   });
-  it("輪のゲージにも未更新の印が出る", () => {
+  it("段のカードにも未更新の印が出る", () => {
     const h = html();
     const gauge = h.slice(h.indexOf('class="mk-gauge'), h.indexOf("今週ここに力を"));
     expect(gauge).toContain("未更新");
@@ -133,20 +134,26 @@ describe("本人＝見ている人", () => {
 });
 
 describe("詳細パネルと引き出し", () => {
-  it("KRの詳細パネル：期首値・目標値・出典・つながる仕事。パネルにフォーカスできる", () => {
+  it("KRの詳細パネル：Oに近づいた証拠・いまの段・手がかりの数字・出典・つながる仕事。パネルにフォーカスできる", () => {
     const h = html({ sel: { type: "kr", id: "kr2" } });
     expect(h).toContain("このKRにつながる仕事");
     expect(h).toContain("このKRに関わる決定事項と宿題");
-    expect(h).toContain("期首値");
-    expect(h).toContain("目標値");
+    expect(h).toContain("Oに近づいた証拠として見るもの");
+    expect(h).toContain("いまの段（AI の見立て）");
+    expect(h).toContain("手がかりの数字");
+    expect(h).toContain("段の基準を見る");
+    expect(h).toContain("学び・気づき");
     expect(h).toContain('aria-label="詳細パネル"');
     expect(h).toContain('tabindex="-1"');
     for (const re of FORBIDDEN) expect(h).not.toMatch(re);
   });
-  it("達成度のKRの詳細は、期の経過と比べないことを書く", () => {
-    const h = html({ sel: { type: "kr", id: "kr3" } });
-    expect(h).toContain("目標まであと2段");
-    expect(h).toContain("期の経過とは比べません");
+  it("「手がかりの数字は期の経過より後ろです」は数値のあるKRの詳細だけ。数値の無いKR3には出ない", () => {
+    expect(html({ sel: { type: "kr", id: "kr2" } })).toContain("手がかりの数字は期の経過より後ろです");
+    expect(html({ sel: { type: "kr", id: "kr1" } })).toContain("手がかりの数字は期の経過より後ろです");
+    const h3 = html({ sel: { type: "kr", id: "kr3" } });
+    expect(h3).not.toContain("期の経過より後ろ");
+    expect(h3).not.toContain("手がかりの数字</dt>");
+    expect(h3).toContain("70 まで：");
   });
   it("自分の表示でつながらない仕事を開くと、AIの提案が出る。チーム表示では出ない", () => {
     const t = taskOf("交流会の出し物を考える");

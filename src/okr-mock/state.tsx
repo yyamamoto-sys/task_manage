@@ -1,12 +1,15 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { addOutcomeNotes, detectConflicts, mergeDecisions, mergeDrafts, notesOfResources } from "./confirm";
+import { addOutcomeNotes, detectConflicts, mergeAssessments, mergeDecisions, mergeDrafts, mergeLearnings, notesOfResources } from "./confirm";
 import {
+  assessInit,
   checkinsInit,
   CURRENT_QUARTER,
   decisionsInit,
   DEFAULT_VIEWER,
   historyInit,
   kintoneRows,
+  krBands,
+  learningsInit,
   nextCheckin,
   okrItems as okrAll,
   pjsInit,
@@ -17,8 +20,9 @@ import {
   tasks as allTasks,
   WEEK_START,
 } from "./fixtures";
-import { applyDrafts, compareOkr, crossedMilestones, defaultKrIdsOfTask, deltaText, importKintone, itemsInQuarter, type LinkCtx, type Milestone } from "./logic";
-import type { Band, Checkin, ClaimStatus, Decision, KintoneRow, KrAnswer, KrRecord, OkrItem, OutcomeNote, Task } from "./types";
+import { applyConfirm, compareOkr, defaultKrIdsOfTask, importKintone, itemsInQuarter, type LinkCtx } from "./logic";
+import { crossedStep, currentAssessment, deltaText, type CurrentAssessment } from "./steps";
+import type { AssessEntry, Checkin, ClaimStatus, Decision, KintoneRow, KrAnswer, KrRecord, Learning, OkrItem, OutcomeNote, Task } from "./types";
 import { addHistory, registeredTasks, type History, type Reach } from "./reach";
 import * as U from "./userState";
 
@@ -28,9 +32,10 @@ export type ModalId = "goals" | "table" | null;
 export interface Celebration {
   id: number;
   krId: string;
-  kind: Milestone;
+  /** 越えた段（例：70） */
+  step: number;
 }
-/** 確定の直後に、値が動いたKRに出す増減の札 */
+/** 確定の直後に、見立てが動いたKRに出す増減の札（＋2 など） */
 export interface Change {
   krId: string;
   text: string;
@@ -68,12 +73,18 @@ interface MockState {
   unlockDemo: () => void;
   kintone: KintoneRow[];
   records: Record<string, KrRecord>;
+  /** KRごとの、回ごとの見立て（資料ごと） */
+  assessHist: Record<string, AssessEntry[]>;
+  /** KRごとの、いまの見立てと前回の見立て */
+  assess: Record<string, CurrentAssessment | null>;
+  /** 資料から拾った学び・気づき */
+  learnings: Learning[];
   checkins: Checkin[];
   decisions: Decision[];
   /** 回ごとに、最後に確定した人 */
   confirmedBy: Record<string, string>;
   /** 確定する（資料は複数選べる）。越えた節目を返す */
-  confirmImport: (resourceIds: string[], picks: Record<string, number>, values: Record<string, number | Band>) => Celebration[];
+  confirmImport: (resourceIds: string[], picks: Record<string, number>, values: Record<string, number>) => Celebration[];
   linkCtx: LinkCtx;
   /** 利用の広がり（モックの確認用の切替）。成果は変わらず、アプリに登録された仕事の範囲だけが変わる */
   reach: Reach;
@@ -137,6 +148,8 @@ export interface InitialView {
   overrides?: Record<string, Record<string, string[]>>;
   /** 確定済みの成果の記述と、利用者ごとの結びつきへの答え（描画の確認用） */
   outcome?: { notes: OutcomeNote[]; claims: Record<string, Record<string, ClaimStatus>> };
+  /** 学び・気づきの初期状態を差し替える（描画の確認用） */
+  learnings?: Learning[];
 }
 
 const reducedMotion = () => typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -157,6 +170,8 @@ export function MockProvider({ children, initial }: { children: ReactNode; initi
   const [imported, setImported] = useState(true);
   const [records, setRecords] = useState<Record<string, KrRecord>>(recordsInit);
   const [history, setHistory] = useState<History>(historyInit);
+  const [assessHist, setAssessHist] = useState<Record<string, AssessEntry[]>>(assessInit);
+  const [learnings, setLearnings] = useState<Learning[]>(initial?.learnings ?? learningsInit);
   const [reach, setReachState] = useState<Reach>(initial?.reach ?? "all");
   const [checkins, setCheckins] = useState<Checkin[]>(checkinsInit);
   const [decisions, setDecisions] = useState<Decision[]>(decisionsInit);
@@ -199,6 +214,7 @@ export function MockProvider({ children, initial }: { children: ReactNode; initi
     return () => window.clearTimeout(id);
   }, [hasChanges, changes]);
 
+  const assess = useMemo(() => Object.fromEntries(Object.keys(krBands).map((k) => [k, currentAssessment(assessHist[k] ?? [])])) as Record<string, CurrentAssessment | null>, [assessHist]);
   const me = U.userOf(users, viewerId);
   const overridesAll = useMemo(() => U.mergedOverrides(users), [users]);
   const regTasks = useMemo(() => registeredTasks(allTasks, reach, viewerId, REACH_PJ_IDS), [reach, viewerId]);
@@ -240,6 +256,9 @@ export function MockProvider({ children, initial }: { children: ReactNode; initi
       },
       kintone: kintoneRows,
       records,
+      assessHist,
+      assess,
+      learnings,
       checkins,
       decisions,
       confirmedBy,
@@ -250,19 +269,27 @@ export function MockProvider({ children, initial }: { children: ReactNode; initi
         if (!ci) return [];
         const conflicts = detectConflicts(selected, records, ci.date);
         const drafts = mergeDrafts(selected, conflicts, picks);
-        const next = applyDrafts(records, drafts, values, ci.date);
+        const assessed = selected.flatMap((r) => r.assessments.map((a) => ({ krId: a.krId, source: a.source })));
+        const next = applyConfirm(records, drafts, values, assessed, ci.date);
+        const nextHist = mergeAssessments(assessHist, selected, ci, krBands);
         const found: Celebration[] = [];
         const deltas: Change[] = [];
-        for (const d of drafts) {
-          for (const kind of crossedMilestones(records[d.krId], next[d.krId])) {
+        for (const krId of new Set(assessed.map((a) => a.krId))) {
+          const before = currentAssessment(assessHist[krId] ?? []);
+          const after = currentAssessment(nextHist[krId] ?? []);
+          if (!before || !after) continue;
+          const step = crossedStep(before.cur.assessment.value, after.cur.assessment.value, krBands[krId]);
+          if (step !== null) {
             celebSeq.current += 1;
-            found.push({ id: celebSeq.current, krId: d.krId, kind });
+            found.push({ id: celebSeq.current, krId, step });
           }
-          const text = deltaText(records[d.krId], next[d.krId]);
-          if (text) deltas.push({ krId: d.krId, text });
+          const text = deltaText(before.cur.assessment.value, after.cur.assessment.value);
+          if (text) deltas.push({ krId, text });
         }
         setRecords(next);
-        setHistory((p) => addHistory(p, drafts.map((d) => d.krId), Object.fromEntries(drafts.map((d) => [d.krId, next[d.krId].value])), ci.date));
+        setAssessHist(nextHist);
+        setLearnings((p) => mergeLearnings(p, selected, ci));
+        setHistory((p) => addHistory(p, drafts.map((d) => d.krId), Object.fromEntries(drafts.map((d) => [d.krId, next[d.krId].hint?.value ?? d.value])), ci.date));
         setCheckins((p) => (p.some((c) => c.id === ci.id) ? p : [...p, ci]));
         setDecisions((p) => mergeDecisions(p, selected, ci));
         setConfirmedBy((p) => ({ ...p, [ci.id]: viewerId }));
@@ -308,7 +335,7 @@ export function MockProvider({ children, initial }: { children: ReactNode; initi
       toast,
       showToast,
     }),
-    [viewerId, reach, regTasks, history, mode, sel, guideOpen, drawerOpen, modal, junctionOnly, celebrations, changes, decisionsOpen, newDecisions, items, locked, imported, records, checkins, decisions, confirmedBy, linkCtx, me, outcomeNotes, confirmedLinks, toast, showToast],
+    [viewerId, reach, regTasks, history, assessHist, assess, learnings, mode, sel, guideOpen, drawerOpen, modal, junctionOnly, celebrations, changes, decisionsOpen, newDecisions, items, locked, imported, records, checkins, decisions, confirmedBy, linkCtx, me, outcomeNotes, confirmedLinks, toast, showToast],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

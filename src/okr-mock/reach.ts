@@ -1,8 +1,8 @@
 // 利用の広がり：仕事の「登録」がどこまであるか。画面には依存しない純粋関数だけを置く。
-// 成果（KRの％・輪・バー）はチェックイン資料から取るので、誰が使っていても同じ。登録の有無で変わるのは仕事の側だけ。
+// 成果（見立ての段・手がかりの数字）はチェックイン資料から取るので、誰が使っていても同じ。登録の有無で変わるのは仕事の側だけ。
 // 登録が無いことは「仕事が無い」ではない。ここでは「登録なし」と「登録あり」を区別するための判定を持つ。
 import { inPeriod, krIdsOfTask, PERSONAL_PJ, type LinkCtx } from "./logic";
-import type { Band, Checkin, Task } from "./types";
+import type { Checkin, Task } from "./types";
 
 /** all＝全員が登録／pjs＝一部のPJだけ登録／solo＝見ている人の分だけ登録（モックの確認用の切替） */
 export type Reach = "all" | "pjs" | "solo";
@@ -81,20 +81,20 @@ export function workPhrase(done: number, open: number): string {
 
 export interface HistoryEntry {
   date: string;
-  value: number | Band;
+  value: number;
 }
 export type History = Record<string, HistoryEntry[]>;
 
 export interface TrendPoint {
   checkinId: string;
   date: string;
-  value: number | Band;
+  value: number;
   /** その回の資料で更新された値か。false＝資料に出てこず、前の値のまま（未更新） */
   updated: boolean;
 }
 
 /** 確定で更新されたKRの値を、その回の日付で記録する（同じ日の再確定は置き換える） */
-export function addHistory(history: History, krIds: string[], values: Record<string, number | Band>, date: string): History {
+export function addHistory(history: History, krIds: string[], values: Record<string, number>, date: string): History {
   const out: History = { ...history };
   for (const k of krIds) {
     const v = values[k];
@@ -107,7 +107,7 @@ export function addHistory(history: History, krIds: string[], values: Record<str
 /** チェックインの回ごとの値。資料に出てこなかった回は前の値を引き継いで updated=false。最初の値より前の回は出さない */
 export function trendOf(entries: HistoryEntry[], checkins: Checkin[]): TrendPoint[] {
   const out: TrendPoint[] = [];
-  let carry: number | Band | undefined;
+  let carry: number | undefined;
   for (const c of [...checkins].sort((a, b) => (a.date < b.date ? -1 : 1))) {
     const e = entries.find((x) => x.date === c.date);
     if (e) {

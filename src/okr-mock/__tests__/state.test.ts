@@ -1,8 +1,7 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { detectConflicts, mergeDecisions, mergeDrafts, unresolved } from "../confirm";
-import { checkinsInit, decisionsInit, KR_PALETTE, krStyle, krStyleAt, nextCheckin, okrItems, pjsInit, recordsInit, resources, tasks, WARN, WEEK_START } from "../fixtures";
-import { answerKey, applyDrafts, contrastRatio, defaultKrIdsOfTask, howKey, itemsInQuarter, krIdsOfTask, type LinkCtx, unlinkedTasks } from "../logic";
+import { checkinsInit, decisionsInit, KR_PALETTE, krStyle, krStyleAt, nextCheckin, okrItems, pjsInit, recordsInit, resources, tasks, WEEK_START } from "../fixtures";
+import { answerKey, applyConfirm, defaultKrIdsOfTask, howKey, itemsInQuarter, krIdsOfTask, type LinkCtx, unlinkedTasks } from "../logic";
 import type { Task } from "../types";
 import * as U from "../userState";
 
@@ -213,21 +212,23 @@ describe("資料の確定：決定事項は足し合わせ、食い違いは選�
     const drafts = mergeDrafts([deck, minutes], c, { kr1: idx21 });
     expect(drafts.find((d) => d.krId === "kr1")!.value).toBe(21);
     expect(drafts.find((d) => d.krId === "kr1")!.source.doc).toBe("議事録_20261110.txt");
-    expect(drafts.map((d) => d.krId).sort()).toEqual(["kr1", "kr2", "kr3"]);
-    const out = applyDrafts(recordsInit, drafts, {}, nextCheckin.date);
-    expect(out.kr1).toMatchObject({ value: 21, prev: 18 });
-    expect(out.kr2).toMatchObject({ value: 73 });
-    expect(out.kr3).toMatchObject({ value: "B" });
+    expect(drafts.map((d) => d.krId).sort()).toEqual(["kr1", "kr2"]);
+    const assessed = [deck, minutes].flatMap((r) => r.assessments.map((a) => ({ krId: a.krId, source: a.source })));
+    const out = applyConfirm(recordsInit, drafts, {}, assessed, nextCheckin.date);
+    expect(out.kr1.hint).toMatchObject({ value: 21, prev: 18 });
+    expect(out.kr2.hint).toMatchObject({ value: 73 });
+    expect(out.kr3.updatedAt).toBe(nextCheckin.date);
   });
   it("すでに確定済みの値とも突き合わせる（deck確定後に minutes を読ませると 22 が候補に出る）", () => {
-    const after = applyDrafts(recordsInit, deck.drafts, {}, nextCheckin.date);
+    const deckAssessed = deck.assessments.map((a) => ({ krId: a.krId, source: a.source }));
+    const after = applyConfirm(recordsInit, deck.drafts, {}, deckAssessed, nextCheckin.date);
     const c = detectConflicts([minutes], after, nextCheckin.date);
     expect(c.map((x) => x.krId)).toEqual(["kr1"]);
     const existing = c[0].options.find((o) => o.existing)!;
     expect(existing.value).toBe(22);
     const keep = mergeDrafts([minutes], c, { kr1: c[0].options.indexOf(existing) });
-    const out = applyDrafts(after, keep, {}, nextCheckin.date);
-    expect(out.kr1).toMatchObject({ value: 22, prev: 18 });
+    const out = applyConfirm(after, keep, {}, [], nextCheckin.date);
+    expect(out.kr1.hint).toMatchObject({ value: 22, prev: 18 });
   });
 });
 
@@ -239,24 +240,5 @@ describe("KRの色は並びから作る（決め打ちしない）", () => {
     expect(krStyleAt(KR_PALETTE.length)).toEqual({ color: KR_PALETTE[0], pattern: 1 });
     expect(krStyleAt(KR_PALETTE.length + 1).color).toBe(KR_PALETTE[1]);
     expect(krStyleAt(KR_PALETTE.length * 2).pattern).toBe(2);
-  });
-});
-
-describe("「遅れ」の橙は対比 4.5:1 以上（白地の橙文字・橙の上の白文字）", () => {
-  it("ライト：白地に橙の文字、橙の上に白の文字", () => {
-    expect(contrastRatio(WARN.light, WARN.lightBg)).toBeGreaterThanOrEqual(4.5);
-    expect(contrastRatio(WARN.light, "#ffffff")).toBeGreaterThanOrEqual(4.5);
-    expect(contrastRatio(WARN.light, WARN.onLight)).toBeGreaterThanOrEqual(4.5);
-  });
-  it("ダーク：暗い地に橙の文字、橙の上に暗い文字", () => {
-    expect(contrastRatio(WARN.dark, WARN.darkBg)).toBeGreaterThanOrEqual(4.5);
-    expect(contrastRatio(WARN.dark, WARN.onDark)).toBeGreaterThanOrEqual(4.5);
-  });
-  it("元の橙（#e08a00）は基準を満たしていなかった", () => {
-    expect(contrastRatio("#e08a00", "#ffffff")).toBeLessThan(4.5);
-  });
-  it("mock4.css の値が WARN と一致している", () => {
-    const css = readFileSync(new URL("../mock4.css", import.meta.url), "utf-8");
-    for (const v of [WARN.light, WARN.onLight, WARN.dark, WARN.onDark]) expect(css).toContain(v);
   });
 });

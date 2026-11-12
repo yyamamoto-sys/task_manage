@@ -1,39 +1,28 @@
 import { describe, expect, it } from "vitest";
-import { aiCandidates, checkinsInit, howOptions, kintoneRows, okrItems, PERIOD_END, PERIOD_START, pjsInit, recordsInit, resources, tasks, WEEK_START } from "../fixtures";
+import { aiCandidates, assessInit, checkinsInit, howOptions, kintoneRows, krBands, okrItems, PERIOD_END, PERIOD_START, pjsInit, recordsInit, resources, tasks, WEEK_START } from "../fixtures";
 import {
   addDays,
   answerKey,
-  applyDrafts,
-  bandKrIds,
-  bandRank,
-  BANDS,
+  applyConfirm,
   buildSummaryText,
   buildup,
   candidateTasksForKr,
   compareOkr,
-  deltaText,
   diffChars,
   diffCount,
-  focusKrs,
   gapPoints,
+  hintProgress,
+  hintTrailsPeriod,
   howKey,
   importKintone,
   isNotUpdated,
   itemsInQuarter,
-  krGap,
   krIdsOfTask,
-  krMove,
-  krPace,
-  krProgress,
   latestCheckinDate,
   linkedTasks,
-  numberProgress,
-  overallProgress,
-  paceOfProgress,
   periodElapsed,
   periodTasks,
   picksOutcome,
-  stepKrs,
   tasksDoneBetween,
   tasksMovedInWeek,
   tasksOfKr,
@@ -45,7 +34,8 @@ import {
   weeklyFocus,
   type LinkCtx,
 } from "../logic";
-import type { KrRecord, NumberRecord, Task } from "../types";
+import { currentAssessment } from "../steps";
+import type { Assessment, Task } from "../types";
 
 const items4Q = itemsInQuarter(okrItems, "4Q");
 const ctx: LinkCtx = { pjs: pjsInit, items: items4Q, overrides: {} };
@@ -53,132 +43,106 @@ const titled = (title: string) => tasks.find((t) => t.title === title)!;
 const M2 = "m2";
 const krIds = ["kr1", "kr2", "kr3"];
 const elapsed = periodElapsed(PERIOD_START, PERIOD_END, TODAY);
-const num = (over: Partial<NumberRecord>): NumberRecord => ({ ...(recordsInit.kr2 as NumberRecord), ...over });
+const assessOf: Record<string, Assessment | undefined> = Object.fromEntries(krIds.map((k) => [k, currentAssessment(assessInit[k])!.cur.assessment]));
 
-describe("対照表：差・動き・未更新", () => {
-  it("数値の差は 現状−目標値、動きは 現状−前回値", () => {
-    const r = recordsInit.kr1 as NumberRecord;
-    expect(krGap(r)).toBe(-12);
-    expect(krMove(r)).toBe(3);
-  });
-  it("達成度の差は段数で表す（目標より下ならマイナス）", () => {
-    const r = recordsInit.kr3;
-    expect(r.kind).toBe("band");
-    expect(krGap(r)).toBe(bandRank("C") - bandRank("A"));
-    expect(krMove(r)).toBe(1);
-  });
-  it("達成度の区分は仮の5段階で、左ほど高い", () => {
-    expect(BANDS).toEqual(["S", "A", "B", "C", "D"]);
-    expect(bandRank("S")).toBeGreaterThan(bandRank("D"));
-  });
+describe("未更新", () => {
   it("直近のチェックイン日より前の更新は未更新", () => {
     const latest = latestCheckinDate(checkinsInit);
     expect(latest).toBe("2026-11-03");
     expect(isNotUpdated(recordsInit.kr2, latest)).toBe(true);
     expect(isNotUpdated(recordsInit.kr1, latest)).toBe(false);
   });
+  it("数値のないKR（KR3）も、同じ段の見せ方の対象（手がかりを持たないだけ）", () => {
+    expect(recordsInit.kr3.hint).toBeUndefined();
+    expect(recordsInit.kr1.hint?.unit).toBe("社");
+  });
 });
 
-describe("進みの測り方（期首値と向き）", () => {
-  it("数値KRは（現状−期首）÷（目標値−期首）", () => {
-    expect(krProgress(recordsInit.kr1)).toBeCloseTo((18 - 8) / (30 - 8), 5);
-    expect(krProgress(recordsInit.kr2)).toBeCloseTo(0.4, 5);
+describe("手がかりの数字（期首値と向き）。主役の％ではなく、KRの詳細の中だけで使う", () => {
+  it("（現状−期首）÷（目標値−期首）", () => {
+    expect(hintProgress(recordsInit.kr1.hint!)).toBeCloseTo((18 - 8) / (30 - 8), 5);
+    expect(hintProgress(recordsInit.kr2.hint!)).toBeCloseTo(0.4, 5);
   });
   it("減らす向きでも同じ式で測れる（期首100・目標値60・現状80 → 0.5）", () => {
-    expect(numberProgress({ start: 100, target: 60, value: 80, direction: "down" })).toBeCloseTo(0.5, 5);
+    expect(hintProgress({ start: 100, target: 60, value: 80, direction: "down" })).toBeCloseTo(0.5, 5);
   });
   it("期首を下回る・目標値を超えるは0〜1に収める", () => {
-    expect(numberProgress({ start: 10, target: 20, value: 5, direction: "up" })).toBe(0);
-    expect(numberProgress({ start: 10, target: 20, value: 25, direction: "up" })).toBe(1);
+    expect(hintProgress({ start: 10, target: 20, value: 5, direction: "up" })).toBe(0);
+    expect(hintProgress({ start: 10, target: 20, value: 25, direction: "up" })).toBe(1);
   });
   it("目標値＝期首のときは割らず、届いていれば1・届いていなければ0", () => {
-    expect(numberProgress({ start: 80, target: 80, value: 80, direction: "up" })).toBe(1);
-    expect(numberProgress({ start: 80, target: 80, value: 79, direction: "up" })).toBe(0);
-    expect(numberProgress({ start: 80, target: 80, value: 81, direction: "down" })).toBe(0);
+    expect(hintProgress({ start: 80, target: 80, value: 80, direction: "up" })).toBe(1);
+    expect(hintProgress({ start: 80, target: 80, value: 79, direction: "up" })).toBe(0);
+    expect(hintProgress({ start: 80, target: 80, value: 81, direction: "down" })).toBe(0);
   });
-  it("達成度は最下段を0、目標の区分を1として段で測る", () => {
-    expect(krProgress(recordsInit.kr3)).toBeCloseTo(1 / 3, 5);
-  });
-  it("全体の進みは数値KRの平均。達成度のKRは含めず、別に取り出す", () => {
-    expect(overallProgress(recordsInit, krIds)).toBeCloseTo((krProgress(recordsInit.kr1) + krProgress(recordsInit.kr2)) / 2, 5);
-    expect(bandKrIds(recordsInit, krIds)).toEqual(["kr3"]);
-  });
-});
-
-describe("遅れの判定（丸めを1つに統一）", () => {
   it("期の経過割合は日付から出る（7/1〜12/31の11/10は約72%）", () => {
     expect(elapsed).toBeCloseTo(132 / 183, 5);
     expect(periodElapsed(PERIOD_START, PERIOD_END, PERIOD_START)).toBe(0);
     expect(periodElapsed(PERIOD_START, PERIOD_END, "2027-02-01")).toBe(1);
   });
-  it("進み＝経過ちょうどは遅れではない。1ポイント下回ると遅れ", () => {
-    const at = (value: number) => krPace(num({ start: 0, target: 100, value }), 0.5);
-    expect(at(50)).toBe("ahead");
-    expect(at(49)).toBe("behind");
-    expect(at(51)).toBe("ahead");
-  });
-  it("0.5ポイント未満の差は、表示も判定も0ポイント＝遅れにしない（krPace と全体の判定が同じ）", () => {
+  it("期の経過より後ろか：ちょうどは後ろでない。1ポイント下回ると後ろ。届いていれば後ろでない", () => {
+    const h = (value: number) => ({ unit: "x", start: 0, direction: "up" as const, target: 100, value, prev: 0 });
+    expect(hintTrailsPeriod(h(50), 0.5)).toBe(false);
+    expect(hintTrailsPeriod(h(49), 0.5)).toBe(true);
+    expect(hintTrailsPeriod(h(100), 1)).toBe(false);
     expect(gapPoints(0.496, 0.5)).toBe(0);
-    expect(paceOfProgress(0.496, 0.5)).toBe("ahead");
-    expect(krPace(num({ start: 0, target: 1000, value: 496 }), 0.5)).toBe(paceOfProgress(0.496, 0.5));
-    expect(paceOfProgress(0.494, 0.5)).toBe("behind");
     expect(gapPoints(0.494, 0.5)).toBe(1);
   });
-  it("目標値＝期首の数値KR：届いていれば到達、届いていなければ遅れ", () => {
-    expect(krPace(num({ start: 80, target: 80, value: 80 }), 0.5)).toBe("reached");
-    expect(krPace(num({ start: 80, target: 80, value: 70 }), 0.5)).toBe("behind");
+  it("数値のないKRは判定の対象外（常に false）", () => {
+    expect(hintTrailsPeriod(undefined, 1)).toBe(false);
+    expect(hintTrailsPeriod(recordsInit.kr3.hint, 1)).toBe(false);
   });
-  it("初期データ：KR1・KR2は遅れ。達成度のKR3は遅れ判定の対象外", () => {
-    expect(krPace(recordsInit.kr1, elapsed)).toBe("behind");
-    expect(krPace(recordsInit.kr2, elapsed)).toBe("behind");
-    expect(krPace(recordsInit.kr3, elapsed)).toBeNull();
-    expect(focusKrs(recordsInit, krIds, elapsed)).toEqual(["kr2", "kr1"]);
-  });
-  it("達成度のKRは、目標の区分に届いたときだけ到達", () => {
-    const r = { ...recordsInit.kr3, value: "A" } as KrRecord;
-    expect(krPace(r, elapsed)).toBe("reached");
-  });
-  it("達成度のKRは、いくら期が進んでも遅れ扱いにならない", () => {
-    expect(krPace(recordsInit.kr3, 1)).toBeNull();
-    expect(focusKrs(recordsInit, ["kr3"], 1)).toEqual([]);
+  it("初期データ：KR1・KR2の手がかりは期の経過より後ろ。KR3は対象外", () => {
+    expect(hintTrailsPeriod(recordsInit.kr1.hint, elapsed)).toBe(true);
+    expect(hintTrailsPeriod(recordsInit.kr2.hint, elapsed)).toBe(true);
+    expect(hintTrailsPeriod(recordsInit.kr3.hint, elapsed)).toBe(false);
   });
 });
 
-describe("今週ここに力を", () => {
+describe("今週ここに力を（次の段への手がかり）", () => {
   const latest = latestCheckinDate(checkinsInit);
-  const base = { records: recordsInit, krIds, elapsed, tasks, ctx, latest };
-  it("遅れている数値KRに加え、達成度のKRは残り2段以上のとき「目標まで◯段」として挙げる", () => {
-    expect(stepKrs(recordsInit, krIds)).toEqual(["kr3"]);
+  const base = { records: recordsInit, krIds, assessOf, bandsOf: krBands, tasks, ctx, latest };
+  it("次の段の要件に「まだ／一部」があり、自分の仕事がつながるKRを挙げる（遅れは使わない）", () => {
     const list = weeklyFocus({ ...base, memberId: M2 });
-    expect(list.map((f) => [f.krId, f.kind])).toEqual([
-      ["kr2", "behind"],
-      ["kr1", "behind"],
-      ["kr3", "steps"],
+    expect(list.map((f) => [f.krId, f.kind, f.step])).toEqual([
+      ["kr1", "next", 70],
+      ["kr3", "next", 70],
     ]);
-    expect(list[2].steps).toBe(2);
-    expect(list[0].points).toBe(gapPoints(krProgress(recordsInit.kr2), elapsed));
+    expect(list[0].pendingCount).toBe(3);
   });
-  it("達成度が残り1段になったら挙げない", () => {
-    const deck = resources.find((r) => r.id === "deck")!;
-    const after = applyDrafts(recordsInit, deck.drafts, {}, "2026-11-10");
-    expect(stepKrs(after, krIds)).toEqual([]);
-  });
-  it("未更新のKRにも印が付く（判定には含める）", () => {
+  it("要件があっても、自分の仕事がつながっていないKR（m2のKR2）は挙げない", () => {
     const list = weeklyFocus({ ...base, memberId: M2 });
-    expect(list.find((f) => f.krId === "kr2")!.stale).toBe(true);
-    expect(list.find((f) => f.krId === "kr1")!.stale).toBe(false);
+    expect(list.map((f) => f.krId)).not.toContain("kr2");
+  });
+  it("未更新のKRにも印が付く", () => {
+    const list = weeklyFocus({ ...base, memberId: "m3", max: 3 });
+    expect(list.find((f) => f.krId === "kr2")?.stale ?? true).toBe(true);
+  });
+  it("要件が出そろっているときは、自分の仕事が最も多くつながるKRを1つ挙げる", () => {
+    const done: Record<string, Assessment | undefined> = Object.fromEntries(
+      krIds.map((k) => [k, { value: 66, summary: "", basis: [{ requirement: "x", status: "確認できた" as const, quote: "q" }] }]),
+    );
+    const list = weeklyFocus({ ...base, assessOf: done, memberId: M2 });
+    expect(list).toHaveLength(1);
+    expect(list[0].kind).toBe("most");
+    expect(list[0].mine.length).toBeGreaterThan(0);
+  });
+  it("自分の仕事が1つもつながっていなければ空", () => {
+    expect(weeklyFocus({ ...base, tasks: [], memberId: M2 })).toEqual([]);
+  });
+  it("最上段にいるKRは次の段が無いので挙げない", () => {
+    const top: Record<string, Assessment | undefined> = { ...assessOf, kr1: { value: 100, summary: "", basis: [{ requirement: "x", status: "まだ", quote: "" }] } };
+    expect(weeklyFocus({ ...base, assessOf: top, memberId: M2 }).map((f) => f.krId)).not.toContain("kr1");
   });
   it("自分の仕事は誰に切り替えても、その人の未完了だけが付く", () => {
     for (const id of ["m1", "m2", "m3"]) {
-      for (const f of weeklyFocus({ ...base, memberId: id })) {
+      for (const f of weeklyFocus({ ...base, memberId: id, max: 3 })) {
         expect(f.mine.every((t) => t.assigneeId === id && t.status !== "完了")).toBe(true);
         expect(f.mine.length).toBeLessThanOrEqual(3);
       }
     }
   });
   it("そのKRに自分の仕事が無いときは、つなげられそうな自分の仕事をAI候補（固定データ）から出す", () => {
-    const f = weeklyFocus({ ...base, memberId: M2 }).find((x) => x.krId === "kr2")!;
-    expect(f.mine).toHaveLength(0);
     const c = candidateTasksForKr(tasks, M2, "kr2", ctx, aiCandidates);
     expect(c.length).toBeGreaterThan(0);
     for (const x of c) {
@@ -194,47 +158,38 @@ describe("今週ここに力を", () => {
     expect(krIdsOfTask(c.task, o)).toEqual(["kr2"]);
     expect(candidateTasksForKr(tasks, M2, "kr2", o, aiCandidates).map((x) => x.task.id)).not.toContain(c.task.id);
   });
-  it("資料を確定すると、KR1の数値は動く（遅れは残る）", () => {
-    const deck = resources.find((r) => r.id === "deck")!;
-    const after = applyDrafts(recordsInit, deck.drafts, {}, "2026-11-10");
-    expect(krProgress(after.kr1)).toBeGreaterThan(krProgress(recordsInit.kr1));
-    expect(focusKrs(after, krIds, elapsed)).toEqual(["kr2", "kr1"]);
-  });
 });
 
-describe("増減の札", () => {
-  it("数値は＋4社、達成度は＋1段。動かなければ出さない", () => {
-    const deck = resources.find((r) => r.id === "deck")!;
-    const after = applyDrafts(recordsInit, deck.drafts, {}, "2026-11-10");
-    expect(deltaText(recordsInit.kr1, after.kr1)).toBe("＋4社");
-    expect(deltaText(recordsInit.kr3, after.kr3)).toBe("＋1段");
-    expect(deltaText(recordsInit.kr2, after.kr2)).toBeNull();
-    expect(deltaText(after.kr1, recordsInit.kr1)).toBe("−4社");
-  });
-});
-
-describe("資料の確定（applyDrafts）", () => {
+describe("資料の確定（applyConfirm）", () => {
   const deck = resources.find((r) => r.id === "deck")!;
-  it("下書きに出たKRだけ更新し、前回値をずらす。出なかったKRは前回値のまま", () => {
-    const out = applyDrafts(recordsInit, deck.drafts, {}, "2026-11-10");
-    expect(out.kr1).toMatchObject({ value: 22, prev: 18, updatedAt: "2026-11-10", prevAt: "2026-11-03" });
-    expect(out.kr3).toMatchObject({ value: "B", prev: "C" });
+  const assessed = deck.assessments.map((a) => ({ krId: a.krId, source: a.source }));
+  it("資料に出たKR（下書き・見立てのどちらか）だけ更新し、手がかりの前回値をずらす。出なかったKRは前回のまま", () => {
+    const out = applyConfirm(recordsInit, deck.drafts, {}, assessed, "2026-11-10");
+    expect(out.kr1.hint).toMatchObject({ value: 22, prev: 18 });
+    expect(out.kr1).toMatchObject({ updatedAt: "2026-11-10", prevAt: "2026-11-03" });
+    expect(out.kr3).toMatchObject({ updatedAt: "2026-11-10", prevAt: "2026-11-03" });
+    expect(out.kr3.hint).toBeUndefined();
     expect(out.kr2).toEqual(recordsInit.kr2);
     expect(isNotUpdated(out.kr2, "2026-11-10")).toBe(true);
     expect(isNotUpdated(out.kr1, "2026-11-10")).toBe(false);
   });
+  it("見立てだけの資料に出たKR（手がかりの下書きが無い）は、手がかりの数字を動かさず更新日だけ進む", () => {
+    const out = applyConfirm(recordsInit, [], {}, [{ krId: "kr2", source: { doc: "d", page: "p" } }], "2026-11-10");
+    expect(out.kr2.hint).toEqual(recordsInit.kr2.hint);
+    expect(out.kr2.updatedAt).toBe("2026-11-10");
+  });
   it("直した値が下書きより優先される", () => {
-    const out = applyDrafts(recordsInit, deck.drafts, { kr1: 25, kr3: "A" }, "2026-11-10");
-    expect(out.kr1).toMatchObject({ value: 25 });
-    expect(out.kr3).toMatchObject({ value: "A" });
+    const out = applyConfirm(recordsInit, deck.drafts, { kr1: 25 }, assessed, "2026-11-10");
+    expect(out.kr1.hint).toMatchObject({ value: 25 });
   });
   it("同じ日への再確定では前回値をずらさない", () => {
-    const once = applyDrafts(recordsInit, deck.drafts, {}, "2026-11-10");
-    const twice = applyDrafts(once, deck.drafts, { kr1: 23 }, "2026-11-10");
-    expect(twice.kr1).toMatchObject({ value: 23, prev: 18, prevAt: "2026-11-03" });
+    const once = applyConfirm(recordsInit, deck.drafts, {}, assessed, "2026-11-10");
+    const twice = applyConfirm(once, deck.drafts, { kr1: 23 }, assessed, "2026-11-10");
+    expect(twice.kr1.hint).toMatchObject({ value: 23, prev: 18 });
+    expect(twice.kr1.prevAt).toBe("2026-11-03");
   });
   it("元の記録は書き換えない", () => {
-    applyDrafts(recordsInit, deck.drafts, {}, "2026-11-10");
+    applyConfirm(recordsInit, deck.drafts, {}, assessed, "2026-11-10");
     expect(recordsInit.kr1.updatedAt).toBe("2026-11-03");
   });
 });

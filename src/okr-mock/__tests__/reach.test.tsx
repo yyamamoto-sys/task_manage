@@ -3,8 +3,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import App from "../App";
 import { detectConflicts, mergeDrafts, notesOfResources } from "../confirm";
-import { checkinsInit, historyInit, nextCheckin, okrItems, PERIOD_START, pjsInit, REACH_PJ_IDS, recordsInit, resources, tasks } from "../fixtures";
-import { applyDrafts, buildSummaryText, itemsInQuarter, type LinkCtx } from "../logic";
+import { assessInit, checkinsInit, historyInit, nextCheckin, okrItems, PERIOD_START, pjsInit, REACH_PJ_IDS, recordsInit, resources, tasks } from "../fixtures";
+import { applyConfirm, buildSummaryText, itemsInQuarter, type LinkCtx } from "../logic";
+import { effectiveEntries } from "../steps";
 import { addHistory, krRegistration, pjHasRegistration, reachCounts, reachNote, registeredPjIds, registeredTasks, tfRegistration, trendOf, workPhrase, type Reach } from "../reach";
 import type { InitialView } from "../state";
 import * as U from "../userState";
@@ -90,9 +91,18 @@ describe("登録あり／なしの判定", () => {
 describe("成果の推移", () => {
   it("初期の履歴は、KRの現状・前回と食い違わない", () => {
     for (const [k, r] of Object.entries(recordsInit)) {
+      if (!r.hint) {
+        expect(historyInit[k]).toBeUndefined();
+        continue;
+      }
       const h = historyInit[k];
-      expect(h[h.length - 1]).toEqual({ date: r.updatedAt, value: r.value });
-      expect(h.find((e) => e.date === r.prevAt)?.value).toBe(r.prev);
+      expect(h[h.length - 1]).toEqual({ date: r.updatedAt, value: r.hint.value });
+      expect(h.find((e) => e.date === r.prevAt)?.value).toBe(r.hint.prev);
+    }
+    for (const [k, r] of Object.entries(recordsInit)) {
+      const eff = effectiveEntries(assessInit[k]);
+      expect(eff.length).toBeGreaterThan(0);
+      expect(eff[eff.length - 1].date).toBe(k === "kr2" ? "2026-10-20" : r.updatedAt);
     }
   });
   it("回ごとの値が並ぶ。資料に出てこなかった回は前の値のまま「未更新」", () => {
@@ -107,36 +117,46 @@ describe("成果の推移", () => {
       [71, false],
     ]);
   });
-  it("達成度は段のまま並ぶ。最初の値より前の回は出さない", () => {
-    expect(trendOf(historyInit.kr3, checkinsInit).map((p) => p.value)).toEqual(["D", "D", "C"]);
+  it("見立ては60から。同じ値が続いても並ぶ。最初の値より前の回は出さない", () => {
+    const pts = (k: string) => trendOf(effectiveEntries(assessInit[k]).map((e) => ({ date: e.date, value: e.assessment.value })), checkinsInit);
+    expect(pts("kr3").map((p) => p.value)).toEqual([60, 60, 63]);
+    expect(pts("kr2").map((p) => [p.value, p.updated])).toEqual([
+      [63, true],
+      [66, true],
+      [66, false],
+    ]);
     expect(trendOf([{ date: "2026-10-20", value: 15 }], checkinsInit).map((p) => p.date)).toEqual(["2026-10-20", "2026-11-03"]);
   });
   it("確定で、その回の値が足される。同じ日の再確定は置き換える", () => {
-    const h1 = addHistory(historyInit, ["kr1", "kr3"], { kr1: 22, kr3: "B" }, nextCheckin.date);
+    const h1 = addHistory(historyInit, ["kr1"], { kr1: 22 }, nextCheckin.date);
     const cks = [...checkinsInit, nextCheckin];
     expect(trendOf(h1.kr1, cks).map((p) => p.value)).toEqual([12, 15, 18, 22]);
-    expect(trendOf(h1.kr3, cks).slice(-1)[0]).toMatchObject({ value: "B", updated: true });
     expect(trendOf(h1.kr2, cks).slice(-1)[0]).toMatchObject({ value: 71, updated: false });
     const h2 = addHistory(h1, ["kr1"], { kr1: 21 }, nextCheckin.date);
     expect(h2.kr1.filter((e) => e.date === nextCheckin.date)).toEqual([{ date: nextCheckin.date, value: 21 }]);
     expect(historyInit.kr1).toHaveLength(3);
   });
-  it("KRの詳細に「成果の推移」が出る（3つの広がりで同じ）。値と日付・未更新の印がある", () => {
+  it("KRの詳細に「成果の推移」が出る（3つの広がりで同じ）。見立て（下端は60）が主、手がかりの数字は副。未更新の印がある", () => {
     const hs = REACHES.map((reach) => html({ reach, sel: { type: "kr", id: "kr2" } }));
     for (const h of hs) {
       expect(h).toContain("成果の推移（チェックインの回ごと）");
-      expect(h).toContain("10/6 66% → 10/20 71% → 11/3 71%（未更新）");
+      expect(h).toContain("見立ての推移（下端は60）：10/6 63 → 10/20 66 → 11/3 66（未更新）");
+      expect(h).toContain("手がかりの数字：10/6 66% → 10/20 71% → 11/3 71%（未更新）");
     }
-    expect(html({ sel: { type: "kr", id: "kr1" } })).toContain("10/6 12社 → 10/20 15社 → 11/3 18社");
-    expect(html({ sel: { type: "kr", id: "kr3" } })).toContain("10/6 D → 10/20 D → 11/3 C");
+    expect(html({ sel: { type: "kr", id: "kr1" } })).toContain("手がかりの数字：10/6 12社 → 10/20 15社 → 11/3 18社");
+    expect(html({ sel: { type: "kr", id: "kr1" } })).toContain("見立ての推移（下端は60）：10/6 62 → 10/20 64 → 11/3 66");
+    const h3 = html({ sel: { type: "kr", id: "kr3" } });
+    expect(h3).toContain("見立ての推移（下端は60）：10/6 60 → 10/20 60 → 11/3 63");
+    expect(h3).not.toContain("手がかりの数字：");
   });
 });
 
 describe("決定事項と宿題は回ごとに見返せる", () => {
   it("KRの詳細で、チェックインの回の見出しの下に新しい回から並ぶ", () => {
     const h = html({ sel: { type: "kr", id: "kr1" } });
-    const i3 = h.indexOf("11/3(火) 11月第1回チェックイン");
-    const i1 = h.indexOf("10/6(火) 10月第1回チェックイン");
+    const from = h.indexOf("このKRに関わる決定事項と宿題");
+    const i3 = h.indexOf("11/3(火) 11月第1回チェックイン", from);
+    const i1 = h.indexOf("10/6(火) 10月第1回チェックイン", from);
     expect(i3).toBeGreaterThan(0);
     expect(i1).toBeGreaterThan(i3);
     expect(h.slice(i1)).toContain("展示会のフォロー先を10社に絞る");
@@ -145,12 +165,12 @@ describe("決定事項と宿題は回ごとに見返せる", () => {
 });
 
 describe("3つの利用の広がり：地図と詳細", () => {
-  it("成果の表示は3状態で同じ（帯・輪・バー・成果の行）", () => {
+  it("成果の表示は3状態で同じ（段のカード・地図の段の目盛り・手がかりの行）", () => {
     const hs = REACHES.map((reach) => html({ reach }));
     const band = (h: string) => h.match(/<section class="mk-card mk-band"[\s\S]*?<\/section>/)![0];
     expect(band(hs[1])).toBe(band(hs[0]));
     expect(band(hs[2])).toBe(band(hs[0]));
-    for (const h of hs) for (const s of ["成果 18／30社（11/3 の資料）", "成果 71／80%（10/20 の資料）", "成果 いまC／目標A（11/3 の資料）"]) expect(h).toContain(s);
+    for (const h of hs) for (const s of ["手がかり 18社／30社", "手がかり 71%／80%", "KR3 社内の定型業務を減らす：AI の見立て 63"]) expect(h).toContain(s);
   });
   it("全員が登録：注記も「仕事の登録なし」も出ない", () => {
     const h = html({ reach: "all" });
@@ -167,23 +187,26 @@ describe("3つの利用の広がり：地図と詳細", () => {
     expect((h.match(/仕事の登録なし/g) ?? []).length).toBe(2); // 地図の枠＋読み上げ用の一文
     expect(h).toContain('class="mk-noreg-box"');
     expect((h.match(/仕事はアプリに登録された分です（7PJ中2PJ）/g) ?? []).length).toBe(1);
-    expect(h).toContain("成果 18／30社（11/3 の資料）");
+    expect(h).toContain("手がかり 18社／30社");
+    expect(h).toContain("KR1 共創パートナー企業を30社にする：AI の見立て 66");
     expect(h).toContain("KR1：仕事の登録なし");
   });
   it("注記は地図の凡例の近く（見出しの下・凡例の1行の前）。利用状況を大きな数字やゲージでは出さない", () => {
     const h = html({ reach: "pjs" });
     expect(h.indexOf("仕事はアプリに登録された分です")).toBeGreaterThan(h.indexOf("mk-legend"));
-    expect(h.indexOf("仕事はアプリに登録された分です")).toBeLessThan(h.indexOf("バーと輪は成果"));
+    expect(h.indexOf("仕事はアプリに登録された分です")).toBeLessThan(h.indexOf("段の目盛りは成果"));
     expect(h).not.toMatch(/利用率|利用状況/);
   });
   it("登録なしのKRの詳細：対比・仕事の一覧・重なる仕事を出さず、1行だけ", () => {
     const h = html({ reach: "pjs", sel: { type: "kr", id: "kr1" } });
-    expect(h).toContain("この KR につながる仕事は、アプリに登録されていません。成果はチェックイン資料の数字です。");
+    expect(h).toContain("この KR につながる仕事は、アプリに登録されていません。見立てと学びはチェックイン資料から出ています。");
+    expect(h).toContain("いまの段（AI の見立て）");
+    expect(h).toContain("展示会で会った相手は、お礼の連絡が早いほど反応が良い");
+    expect(h).toContain("mk-stepscale");
     expect(h).not.toContain('aria-label="成果と仕事の対比"');
     expect(h).not.toContain("このKRにつながる仕事");
     expect(h).not.toContain("ほかのKRとも重なる仕事");
     expect(h).not.toContain("この動きの間にあなたが終えた仕事");
-    expect(h).toContain("成果（現状）");
   });
   it("一部だけ登録のKRの詳細：仕事の一覧と対比の見出しに「登録された分」。対比の1行は出さない", () => {
     for (const k of ["kr2", "kr3"]) {
@@ -191,7 +214,6 @@ describe("3つの利用の広がり：地図と詳細", () => {
       expect(h).toContain("成果と仕事の対比（登録された分）");
       expect(h).toContain("このKRにつながる仕事（登録された分）");
       expect(h).toContain('aria-label="成果と仕事の対比"');
-      expect(h).not.toMatch(/終えていますが、成果は|進んでいますが、仕事の消化は/);
     }
     const full = html({ reach: "all", sel: { type: "kr", id: "kr2" } });
     expect(full).toContain("成果と仕事の対比</h4>");
@@ -225,7 +247,8 @@ describe("1人だけが使っている状態", () => {
     expect(h).toContain("からKR1へ：");
     expect(h).toContain("PJ「パートナー向け提案資料の刷新」");
     expect(h).not.toContain("PJ「拠点の予約サイト改修」");
-    expect(h).toContain("成果 71／80%（10/20 の資料）");
+    expect(h).toContain("手がかり 71%／80%");
+    expect(h).toContain("KR2 地域拠点の稼働率を80%にする：AI の見立て 66");
   });
   it("他の人の名前・「全員で」の件数が、地図・今週ここに力を・自分の振り返り・KRの詳細（決定事項の前まで）に出ない", () => {
     for (const k of ["kr1", "kr2", "kr3"]) {
@@ -271,9 +294,9 @@ describe("1人だけが使っている状態", () => {
     const conflicts = detectConflicts(resources, recordsInit, nextCheckin.date);
     expect(conflicts.map((c) => c.krId)).toEqual(["kr1"]);
     const drafts = mergeDrafts(resources, conflicts, { kr1: 0 });
-    const next = applyDrafts(recordsInit, drafts, {}, nextCheckin.date);
-    expect(next.kr1.kind === "number" && next.kr1.value).toBe(22);
-    const hist = addHistory(historyInit, drafts.map((d) => d.krId), Object.fromEntries(drafts.map((d) => [d.krId, next[d.krId].value])), nextCheckin.date);
+    const next = applyConfirm(recordsInit, drafts, {}, [], nextCheckin.date);
+    expect(next.kr1.hint?.value).toBe(22);
+    const hist = addHistory(historyInit, drafts.map((d) => d.krId), Object.fromEntries(drafts.map((d) => [d.krId, next[d.krId].hint!.value])), nextCheckin.date);
     expect(trendOf(hist.kr1, [...checkinsInit, nextCheckin]).slice(-1)[0]).toMatchObject({ value: 22, updated: true });
     const notes = notesOfResources(resources);
     const delivered = U.deliverClaims({}, notes, tasks);

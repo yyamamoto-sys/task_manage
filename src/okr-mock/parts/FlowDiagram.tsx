@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { flowCounts, junctionIdsOf, layoutFlow, OTHER_PJ, ribbonPath, type Ribbon } from "../flow";
 import { proposalKey } from "../userState";
-import { aiCandidates, krStyle, PERIOD_END, PERIOD_START, personalOkrs, PERSONAL_NAME, MINE_COLOR, pjsInit } from "../fixtures";
-import { BANDS, krIdsOfTask, krPace, krProgress, overallProgress, periodElapsed, PERSONAL_PJ, stepsToTarget, TODAY } from "../logic";
+import { aiCandidates, krBands, krStyle, PERIOD_START, personalOkrs, PERSONAL_NAME, MINE_COLOR, pjsInit } from "../fixtures";
+import { krIdsOfTask, PERSONAL_PJ } from "../logic";
+import { hasStretch } from "../steps";
 import { krRegistration, reachCounts, reachNote, workPhrase } from "../reach";
 import { useMock } from "../state";
-import { Burst, JunctionGlyph, JunctionMark, krLabel, krListText, krText, memberOf, outcomeLine, PACE_INFO, PaceGlyph, SvgButton, surnameOf, trunc, wrapLines } from "../ui";
+import { Burst, hintLine, JunctionGlyph, JunctionMark, krLabel, krListText, krText, memberOf, StepScaleG, SvgButton, surnameOf, trunc, wrapLines } from "../ui";
 
 const TOP = 28;
 
@@ -35,7 +36,7 @@ function RibbonShape({ r, krId, label, onActivate, dim }: { r: Ribbon; krId: str
 }
 
 export function FlowDiagram() {
-  const { mode, viewerId, tasks, items, records, linkCtx, sel, setSel, personalLinks, togglePersonalLink, celebrations, changes, proposals, confirmedLinks, junctionOnly, setJunctionOnly } = useMock();
+  const { mode, viewerId, tasks, items, records, assess, linkCtx, sel, setSel, personalLinks, togglePersonalLink, celebrations, changes, proposals, confirmedLinks, junctionOnly, setJunctionOnly } = useMock();
   const scope = mode === "self" ? "self" : "team";
   const [expanded, setExpanded] = useState<string[]>([]);
   const [armed, setArmed] = useState<string | null>(null);
@@ -46,7 +47,6 @@ export function FlowDiagram() {
   const suppressClick = useRef(false);
 
   const krIds = useMemo(() => items.filter((i) => i.kind === "kr").map((k) => k.id), [items]);
-  const elapsed = periodElapsed(PERIOD_START, PERIOD_END, TODAY);
   const myPersonal = useMemo(() => personalOkrs.filter((p) => p.ownerId === viewerId), [viewerId]);
 
   const counts = useMemo(() => flowCounts({ tasks, ctx: linkCtx, ownerId: viewerId, scope, periodStart: PERIOD_START }), [tasks, linkCtx, viewerId, scope]);
@@ -105,7 +105,6 @@ export function FlowDiagram() {
   const krReg = useMemo(() => Object.fromEntries(krIds.map((k) => [k, krRegistration(k, tasks, linkCtx, PERIOD_START)])), [krIds, tasks, linkCtx]);
   const note = reachNote(reachCounts(tasks, linkCtx, PERIOD_START));
   const objText = items.find((i) => i.kind === "objective")?.text ?? "";
-  const overall = overallProgress(records, krIds);
   const H = layout.height + TOP;
   const taskOf = (id: string) => tasks.find((t) => t.id === id)!;
   const krNode = (krId: string) => layout.krNodes.find((k) => k.krId === krId)!;
@@ -178,7 +177,7 @@ export function FlowDiagram() {
           {note}
         </p>
       )}
-      <p className="mk-muted mk-kindnote">バーと輪は成果（資料の数字）、帯は仕事（終えた・残り）。仕事を終えても、成果は資料を読ませるまで動きません</p>
+      <p className="mk-muted mk-kindnote">段の目盛りは成果（資料の記述からのAIの見立て）、帯は仕事（終えた・残り）。仕事を終えても、見立ては資料を読ませるまで動きません</p>
       <p className="mk-muted">
         左のPJ（押すと仕事が開きます）から、中央のKR、右のO（めざす姿）へ。帯の太さは、そのKR向けの仕事のうち何割かを表します。KRを押すと詳細、仕事を押すとつなぎ先を確かめられます。
         {scope === "self" && " 個人OKRからKRへ矢印をドラッグ（または、左を押してから右を押す）でつなぎます。"}
@@ -212,7 +211,7 @@ export function FlowDiagram() {
               PJ
             </text>
             <text x={layout.cols.kr.x} y={16} fontSize={12} fontWeight={700} className="mk-svgtext-muted">
-              KR（成果＝進みのバー）
+              KR（Oに近づいた証拠＝段の目盛り）
             </text>
             <text x={layout.cols.o.x} y={16} fontSize={12} fontWeight={700} className="mk-svgtext-muted">
               O（めざす姿）
@@ -408,20 +407,17 @@ export function FlowDiagram() {
             {/* KR */}
             {layout.krNodes.map((n) => {
               const r = records[n.krId];
-              const p = krProgress(r);
-              const pace = krPace(r, elapsed);
+              const ca = assess[n.krId];
+              const value = ca?.cur.assessment.value ?? 60;
               const st = krStyle(n.krId);
               const color = st.color;
               const lines = wrapLines(krText(n.krId), 16, 2);
               const isSel = sel?.type === "kr" && sel.id === n.krId;
               const cel = celebrations.find((c) => c.krId === n.krId);
               const change = changes.find((c) => c.krId === n.krId);
-              const bx = n.x + 14;
-              const bw = n.w - 28;
-              const by = n.y + 90;
-              const steps = r.kind === "band" ? stepsToTarget(r) : 0;
-              const valueLine = r.kind === "number" ? `${r.value}${r.unit} ／ 目標値 ${r.target}${r.unit}\u3000進み ${Math.round(p * 100)}%` : `いま ${r.value} ／ 目標の達成度 ${r.target}${steps > 0 ? `\u3000あと${steps}段` : ""}`;
-              const label = `${krLabel(n.krId)} ${krText(n.krId)}：成果 ${valueLine}（${r.updatedAt}の資料）${pace ? `、${PACE_INFO[pace].label}` : ""}。押すと詳細を開きます`;
+              const stretch = hasStretch(krBands[n.krId]);
+              const hl = hintLine(r);
+              const label = `${krLabel(n.krId)} ${krText(n.krId)}：AI の見立て ${value}${hl ? `、${hl}` : ""}（${r.updatedAt}の資料）${stretch ? "、背伸びの目標" : ""}。押すと詳細を開きます`;
               return (
                 <SvgButton
                   key={n.krId}
@@ -443,48 +439,25 @@ export function FlowDiagram() {
                   <text x={n.x + 20} y={n.y + 22} fontSize={13} fontWeight={700} fill={color}>
                     {krLabel(n.krId)}
                   </text>
-                  {pace ? (
-                    <>
-                      <PaceGlyph pace={pace} x={n.x + n.w - 62} y={n.y + 18} />
-                      <text x={n.x + n.w - 50} y={n.y + 22} fontSize={11} fontWeight={700} className="mk-svgtext">
-                        {PACE_INFO[pace].label}
-                      </text>
-                    </>
-                  ) : (
-                    <text x={n.x + n.w - 14} y={n.y + 22} fontSize={11} fontWeight={700} textAnchor="end" className="mk-svgtext">
-                      達成度（仮の区分）
+                  <text x={n.x + n.w - 14} y={n.y + 22} fontSize={11} fontWeight={700} textAnchor="end" className="mk-svgtext">
+                    AI の見立て
+                  </text>
+                  {stretch && (
+                    <text x={n.x + n.w - 90} y={n.y + 22} fontSize={10} textAnchor="end" className="mk-svgtext-muted">
+                      背伸びの目標
                     </text>
                   )}
                   {lines.map((l, i) => (
-                    <text key={i} x={n.x + 20} y={n.y + 42 + i * 15} fontSize={12} className="mk-svgtext">
+                    <text key={i} x={n.x + 20} y={n.y + 40 + i * 14} fontSize={12} className="mk-svgtext">
                       {l}
                     </text>
                   ))}
-                  <text x={n.x + 20} y={n.y + 82} fontSize={11} className="mk-svgtext-muted">
-                    {outcomeLine(r)}
-                  </text>
-                  {r.kind === "number" ? (
-                    <>
-                      <rect x={bx + 6} y={by} width={bw - 6} height={13} rx={6.5} className="mk-track" />
-                      <rect x={bx + 6} y={by} width={Math.max(13, p * (bw - 6))} height={13} rx={6.5} fill={color} />
-                      <line x1={bx + 6 + elapsed * (bw - 6)} x2={bx + 6 + elapsed * (bw - 6)} y1={by - 6} y2={by + 19} className="mk-elapsed-tick" />
-                    </>
-                  ) : (
-                    BANDS.slice()
-                      .reverse()
-                      .map((b, i, arr) => {
-                        const w = (bw - 6 - (arr.length - 1) * 3) / arr.length;
-                        const on = BANDS.indexOf(b) >= BANDS.indexOf(r.value);
-                        return (
-                          <g key={b}>
-                            <rect x={bx + 6 + i * (w + 3)} y={by - 1} width={w} height={15} rx={5} className={on ? "" : "mk-track"} fill={on ? color : undefined} stroke={b === r.target ? "currentColor" : "none"} strokeWidth={2} strokeDasharray={b === r.target ? "3 2" : undefined} />
-                            <text x={bx + 6 + i * (w + 3) + w / 2} y={by + 10.5} fontSize={9.5} fontWeight={700} textAnchor="middle" fill={on ? "#fff" : "currentColor"} className={on ? "" : "mk-svgtext-muted"}>
-                              {b}
-                            </text>
-                          </g>
-                        );
-                      })
+                  {hl && (
+                    <text x={n.x + 20} y={n.y + 70} fontSize={10.5} className="mk-svgtext-muted">
+                      {hl}
+                    </text>
                   )}
+                  <StepScaleG krId={n.krId} value={value} bands={krBands[n.krId]} geo={{ x: n.x + 28, y: n.y + 100, w: n.w - 56 }} fontSize={9.5} />
                   {krReg[n.krId] === "none" && (
                     <g className="mk-noreg" aria-hidden="true">
                       <rect x={n.x - 128} y={n.y + n.h / 2 - 17} width={116} height={34} rx={17} className="mk-noreg-box" />
@@ -493,7 +466,7 @@ export function FlowDiagram() {
                       </text>
                     </g>
                   )}
-                  {cel && <Burst key={cel.id} x={n.x + n.w - 24} y={n.y + 14} color={color} kind={cel.kind} />}
+                  {cel && <Burst key={cel.id} x={n.x + n.w - 24} y={n.y + 14} color={color} step={cel.step} />}
                   {change && (
                     <g className="mk-deltatag" aria-hidden="true">
                       <rect x={n.x + n.w - 64} y={n.y - 11} width={60} height={20} rx={10} fill={color} />
@@ -510,20 +483,12 @@ export function FlowDiagram() {
             {(() => {
               const o = layout.o;
               const cx = o.x + o.w / 2;
-              const cy = o.y + 52;
-              const R = 26;
-              const C = 2 * Math.PI * R;
-              const lines = wrapLines(objText, 7, 4);
+              const lines = wrapLines(objText, 7, 6);
               return (
-                <g role="img" aria-label={`O（めざす姿）「${objText}」：全体の進み${Math.round(overall * 100)}パーセント（数値のKRの平均）${o.done + o.open > 0 ? `、${workPhrase(o.done, o.open)}（重複は1回に数えています）` : ""}`}>
+                <g role="img" aria-label={`O（めざす姿）「${objText}」${o.done + o.open > 0 ? `。${workPhrase(o.done, o.open)}（重複は1回に数えています）` : ""}`}>
                   <rect x={o.x} y={o.y} width={o.w} height={o.h} rx={20} className="mk-fnode" stroke="#4a5a8a" strokeWidth={2.5} />
-                  <circle cx={cx} cy={cy} r={R} fill="none" strokeWidth={10} className="mk-track-ring" />
-                  <circle cx={cx} cy={cy} r={R} fill="none" stroke="#4a5a8a" strokeWidth={10} strokeLinecap="round" strokeDasharray={`${overall * C} ${C}`} transform={`rotate(-90 ${cx} ${cy})`} />
-                  <text x={cx} y={cy + 5} textAnchor="middle" fontSize={13} fontWeight={700} className="mk-svgtext">
-                    {Math.round(overall * 100)}%
-                  </text>
                   {lines.map((l, i) => (
-                    <text key={i} x={cx} y={o.y + 98 + i * 14} textAnchor="middle" fontSize={11} className="mk-svgtext">
+                    <text key={i} x={cx} y={o.y + 44 + i * 19} textAnchor="middle" fontSize={12} fontWeight={700} className="mk-svgtext">
                       {l}
                     </text>
                   ))}

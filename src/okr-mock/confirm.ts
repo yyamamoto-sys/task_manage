@@ -1,5 +1,6 @@
 // 資料の確定まわりの純粋関数（決定事項の足し合わせ・資料どうしの食い違い）
-import type { Band, Checkin, Conflict, Decision, Draft, KrRecord, OutcomeNote, Resource } from "./types";
+import { clampAssessment } from "./steps";
+import type { AssessEntry, Checkin, Conflict, Decision, Draft, KrBands, KrRecord, Learning, OutcomeNote, Resource } from "./types";
 
 /**
  * 決定事項と宿題の反映。同じ回の資料を複数確定しても、資料ごとに足し合わせる（他の資料の分は消さない）。
@@ -23,8 +24,8 @@ export function detectConflicts(selected: Resource[], records: Record<string, Kr
   for (const [krId, drafts] of byKr) {
     const options = drafts.map((d) => ({ value: d.value, source: d.source, existing: false }));
     const r = records[krId];
-    if (r && r.updatedAt === checkinDate && r.source && !drafts.some((d) => d.source.doc === r.source!.doc)) {
-      options.push({ value: r.value as number | Band, source: r.source, existing: true });
+    if (r && r.hint && r.updatedAt === checkinDate && r.source && !drafts.some((d) => d.source.doc === r.source!.doc)) {
+      options.push({ value: r.hint.value, source: r.source, existing: true });
     }
     const distinct = new Set(options.map((o) => o.value));
     if (distinct.size >= 2) out.push({ krId, options });
@@ -76,4 +77,42 @@ export function notesOfResources(selected: Resource[]): OutcomeNote[] {
     [],
     selected.flatMap((r) => r.notes.map((n) => ({ key: n.key, krId: n.krId, change: n.change, excerpt: n.excerpt, sources: [n.source], links: n.links }))),
   );
+}
+
+/**
+ * 見立ての反映。同じ回の資料を複数確定しても、資料ごとに足し合わせる（他の資料の分は消さない）。
+ * 同じ資料を確定し直したときだけ、その資料の分を入れ替える。値は 60〜最上段にそろえる
+ */
+export function mergeAssessments(
+  prev: Record<string, AssessEntry[]>,
+  selected: Resource[],
+  ci: Checkin,
+  bandsOf: Record<string, KrBands>,
+): Record<string, AssessEntry[]> {
+  const ids = new Set(selected.map((r) => r.id));
+  const out: Record<string, AssessEntry[]> = {};
+  for (const [k, list] of Object.entries(prev)) out[k] = list.filter((e) => !(e.checkinId === ci.id && ids.has(e.resourceId)));
+  for (const res of selected) {
+    for (const a of res.assessments) {
+      const bands = bandsOf[a.krId];
+      if (!bands) continue;
+      const entry: AssessEntry = {
+        checkinId: ci.id,
+        date: ci.date,
+        resourceId: res.id,
+        assessment: { ...a.assessment, value: clampAssessment(a.assessment.value, bands) },
+        source: a.source,
+      };
+      out[a.krId] = [...(out[a.krId] ?? []), entry];
+    }
+  }
+  return out;
+}
+
+/** 学び・気づきの反映。決定事項と同じく、資料ごとに足し合わせ、同じ資料の確定し直しだけ入れ替える */
+export function mergeLearnings(prev: Learning[], selected: Resource[], ci: Checkin): Learning[] {
+  const ids = new Set(selected.map((r) => r.id));
+  const kept = prev.filter((l) => !(l.checkinId === ci.id && ids.has(l.resourceId)));
+  const added = selected.flatMap((res) => res.learnings.map((l, i) => ({ ...l, id: `${res.id}-l${i}`, checkinId: ci.id, resourceId: res.id })));
+  return [...kept, ...added];
 }

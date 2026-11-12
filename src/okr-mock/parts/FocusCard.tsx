@@ -1,15 +1,15 @@
-import { aiCandidates, krStyle, PERIOD_END, PERIOD_START } from "../fixtures";
-import { candidateTasksForKr, formatMd, krIdsOfTask, latestCheckinDate, periodElapsed, TODAY, weeklyFocus } from "../logic";
+import { aiCandidates, krBands, krStyle, PERIOD_START } from "../fixtures";
+import { candidateTasksForKr, formatMd, krIdsOfTask, latestCheckinDate, weeklyFocus } from "../logic";
 import { krRegistration } from "../reach";
 import { useMock } from "../state";
 import { krLabel, krText, StatusChip } from "../ui";
 import { ClaimsBanner } from "./Claims";
 
 export function FocusCard() {
-  const { tasks, items, records, checkins, linkCtx, viewerId, setSel, picks, togglePick, takeProposal, showToast } = useMock();
-  const elapsed = periodElapsed(PERIOD_START, PERIOD_END, TODAY);
+  const { tasks, items, records, assess, checkins, linkCtx, viewerId, setSel, picks, togglePick, takeProposal, showToast } = useMock();
   const krIds = items.filter((i) => i.kind === "kr").map((k) => k.id);
-  const list = weeklyFocus({ records, krIds, elapsed, tasks, ctx: linkCtx, memberId: viewerId, latest: latestCheckinDate(checkins) });
+  const assessOf = Object.fromEntries(krIds.map((k) => [k, assess[k]?.cur.assessment]));
+  const list = weeklyFocus({ records, krIds, assessOf, bandsOf: krBands, tasks, ctx: linkCtx, memberId: viewerId, latest: latestCheckinDate(checkins) });
 
   return (
     <section className="mk-card mk-focus" aria-labelledby="mk-focus-h">
@@ -22,7 +22,7 @@ export function FocusCard() {
       </h2>
       <ClaimsBanner />
       {list.length === 0 ? (
-        <p className="mk-muted">期の経過に対して遅れているKRも、目標まで残りの多い達成度のKRもありません。いまの勢いを保ちましょう。</p>
+        <p className="mk-muted">いま、あなたの仕事がつながっていて、次の段への手がかりが見えるKRはありません。仕事をKRにつなぐと、ここに出ます。</p>
       ) : (
         <>
           <p className="mk-muted">自分の仕事の「今週やる」を押すと、今週やる仕事として印が付きます（あなたにだけ見えます）。</p>
@@ -38,7 +38,7 @@ export function FocusCard() {
                     {f.stale && <span className="mk-chip mk-chip-yellow">未更新</span>}
                   </div>
                   <div className="mk-small mk-muted" style={{ margin: "2px 0 6px" }}>
-                    {f.kind === "behind" ? `期の経過より ${f.points} ポイント遅れ` : `目標まで${f.steps}段`}
+                    {f.kind === "next" ? `次の段（${f.step}）への手がかり` : "あなたの仕事が最も多くつながるKRです"}
                     {reg !== "none" && f.openCount > 0 && (
                       <>
                         {" ／ "}このKRにつながる未完了の仕事は{reg === "partial" ? "登録された分で" : "全員で"} {f.openCount} 件
@@ -48,6 +48,17 @@ export function FocusCard() {
                       詳細を開く
                     </button>
                   </div>
+                  {f.kind === "next" && assess[f.krId] && (
+                    <ul className="mk-list mk-list-tight">
+                      {assess[f.krId]!.cur.assessment.basis
+                        .filter((b) => b.status !== "確認できた")
+                        .map((b) => (
+                          <li key={b.requirement}>
+                            <span className="mk-chip">{b.status}</span> {b.requirement}
+                          </li>
+                        ))}
+                    </ul>
+                  )}
                   {f.mine.length > 0 ? (
                     <ol className="mk-focus-tasks">
                       {f.mine.map((t) => {
