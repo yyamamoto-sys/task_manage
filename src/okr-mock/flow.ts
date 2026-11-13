@@ -1,4 +1,5 @@
-// 地図（PJ → KR → O）の集計と配置。画面には依存しない純粋関数だけを置く。
+// 地図（PJ → TF → KR → O）の集計と配置。画面には依存しない純粋関数だけを置く。
+// PJは必ずTFを通ってKRへ届く（PJとKRを直接つなぐ帯は作らない）。
 // 帯の太さは「件数」ではなく「割合」。KRとOの高さは固定なので、仕事が何百件になっても図の大きさは変わらない。
 import { inPeriod, isOpen, krIdsOfTask, PERSONAL_PJ, type LinkCtx } from "./logic";
 import type { Task } from "./types";
@@ -19,7 +20,7 @@ export const WIDTH = 1000;
 /** PJが9以上のときは、件数の多い順にこの数だけ並べて、残りは「ほか◯PJ」にまとめる */
 export const MAX_PJ = 8;
 export const OTHER_PJ = "__other";
-/** 帯のKR側の端から、KRノードまでの間（「仕事 完了 5／残り 3」を書く） */
+/** TFの枠の右端からKRの枠の左端までに、最低限あけておく幅。帯はKRの枠の左端まで届き、その終わりの上に「仕事 完了 5／残り 3」を重ねる */
 export const LABEL_GAP = 140;
 const LABEL_STEP = 13;
 
@@ -175,7 +176,7 @@ export interface Ribbon {
   /** 「全て」のときだけ：この帯のうち、見ている人の仕事の件数と、その区切り */
   mine?: number;
   mineSegs?: MineSeg[];
-  /** 帯のKR側の端に書く「完了 5／残り 3」の位置 */
+  /** TF→KRの帯だけ：帯の終わり（KRの枠の手前）に重ねる「完了 5／残り 3」の位置。labelX は文字の右端 */
   labelX: number;
   labelY: number;
 }
@@ -246,7 +247,7 @@ export interface TfGeo {
   y: number;
   w: number;
   h: number;
-  /** このTFに流れ込む仕事の件数（TFは1つのKRにだけつながるので、仕事は1回ずつ） */
+  /** このTFに流れ込む仕事の件数。PJが同じKRの下に複数のTFを持つときは、そのPJの仕事は各TFに1回ずつ数える */
   done: number;
   open: number;
   /** 登録された仕事が無い（点線の枠で「仕事の登録なし」と出す） */
@@ -263,11 +264,9 @@ export interface FlowLayout {
   tfNodes: TfGeo[];
   krNodes: KrGeo[];
   o: OGeo;
-  /** PJ→KR：TFを通らない帯（TFを置かないKRへ、または主たるKR以外へ直接つながる帯） */
-  pjKr: Ribbon[];
   /** PJ→TF */
   pjTf: Ribbon[];
-  /** TF→KR（labelX/labelY は帯のKR側の端の文字の位置） */
+  /** TF→KR（labelX/labelY は帯の終わりに重ねる文字の位置） */
   tfKr: Ribbon[];
   krO: Ribbon[];
   loose: LooseGeo[];
@@ -282,17 +281,38 @@ interface NodeEdge {
   done: number;
   open: number;
   mine: number;
-  /** この帯がTFを通るときのTF。通らない（直接KRへ）ときは null */
-  tfId: string | null;
+  /** この帯が通るTF（PJ→TF→KR）。PJとKRを直接つなぐ帯は無い */
+  tfId: string;
   /** PJから出るときの太さ */
   w: number;
 }
 
-/** TFの列の入力。pjTfId は PJ が置かれるTF（主たるKRのTF）。showEmpty は仕事の無いTFも枠を出すか */
+/** TFの列の入力。pjTfIds はPJごとのTF（OkrItem の tf の id）。showEmpty は仕事の無いTFも枠を出すか */
 export interface TfInput {
   tfs: { id: string; krId: string }[];
-  pjTfId: Record<string, string | undefined>;
+  pjTfIds: Record<string, string[]>;
   showEmpty: boolean;
+}
+
+/**
+ * PJの仕事がKRへ流れるときに通るTF：そのPJがそのKRの下に持つTF（複数なら全部）。
+ * 持っていないとき（本人が別のKRを選んだ仕事・終わった四半期のTFだけを持つPJ）は、そのKRの先頭のTFを仮の経由にする。
+ * KRにTFが1つも無いときは空（PJとKRは直接つながないので、帯を作らない）
+ */
+export function routeTfIds(pjId: string, krId: string, tfs: { id: string; krId: string }[], pjTfIds: Record<string, string[]>): string[] {
+  const own = (pjTfIds[pjId] ?? []).filter((id) => tfs.some((t) => t.id === id && t.krId === krId));
+  if (own.length > 0) return own;
+  const first = tfs.find((t) => t.krId === krId);
+  return first ? [first.id] : [];
+}
+
+/** 地図のTFの入力を、取り込み側のTF（OkrItem の kind=tf）とPJの紐づけから作る。TFのデータはこの1系統だけ */
+export function tfInputOf(ctx: LinkCtx, showEmpty: boolean): TfInput {
+  return {
+    tfs: ctx.items.filter((i) => i.kind === "tf" && i.parentId).map((i) => ({ id: i.id, krId: i.parentId as string })),
+    pjTfIds: Object.fromEntries(ctx.pjs.map((p) => [p.id, p.tfIds])),
+    showEmpty,
+  };
 }
 
 export function layoutFlow(args: {
@@ -306,28 +326,20 @@ export function layoutFlow(args: {
   maxPj?: number;
   /** 渡すと「全て」の描き分け用に、帯ごとの「見ている人の仕事の件数」を数える（仕事ID） */
   mineIds?: Set<string>;
-  /** 渡すと、PJとKRの間にTFの列ができる（TFを置かないKRのPJは、列を素通りして直接KRへつながる） */
-  tf?: TfInput;
+  /** PJとKRの間のTFの列。PJは必ずここを通ってKRへ届く */
+  tf: TfInput;
 }): FlowLayout {
   const { counts, krIds, personalIds, expanded, showLoose, mineIds } = args;
   const maxPj = args.maxPj ?? MAX_PJ;
   const withPersonal = personalIds.length > 0;
   const krIndex = (k: string) => krIds.indexOf(k);
   // TFの定義はKRの並び順にそろえる（KR内の並びは渡された順）
-  const tfDefs = (args.tf?.tfs ?? []).filter((t) => krIndex(t.krId) >= 0).sort((a, b) => krIndex(a.krId) - krIndex(b.krId));
-  const hasTfCol = tfDefs.length > 0;
-  // 列が1つ増えても全体の幅（WIDTH）は変えない。TFの列の分だけ各列を詰める
-  const cols = hasTfCol
-    ? withPersonal
-      ? { personal: { x: 0, w: 120 }, pj: { x: 140, w: 150 }, tf: { x: 330, w: 115 }, kr: { x: 630, w: 240 }, o: { x: 900, w: 100 } }
-      : { personal: { x: 0, w: 120 }, pj: { x: 0, w: 190 }, tf: { x: 235, w: 125 }, kr: { x: 620, w: 250 }, o: { x: 900, w: 100 } }
-    : {
-        personal: { x: 0, w: 150 },
-        pj: withPersonal ? { x: 190, w: 200 } : { x: 0, w: 240 },
-        tf: { x: 0, w: 0 },
-        kr: { x: 610, w: 250 },
-        o: { x: 900, w: 100 },
-      };
+  const tfDefs = args.tf.tfs.filter((t) => krIndex(t.krId) >= 0).sort((a, b) => krIndex(a.krId) - krIndex(b.krId));
+  const tfIndex = (id: string) => tfDefs.findIndex((t) => t.id === id);
+  // 全体の幅（WIDTH）は変えず、TFの列の分だけ各列を詰める
+  const cols = withPersonal
+    ? { personal: { x: 0, w: 120 }, pj: { x: 140, w: 150 }, tf: { x: 330, w: 115 }, kr: { x: 630, w: 240 }, o: { x: 900, w: 100 } }
+    : { personal: { x: 0, w: 120 }, pj: { x: 0, w: 190 }, tf: { x: 235, w: 125 }, kr: { x: 620, w: 250 }, o: { x: 900, w: 100 } };
 
   // PJ：件数の多い順に maxPj 個まで。9以上のときは残りを「ほか◯PJ」にまとめる
   const total = (pjId: string) => (counts.linkedByPj[pjId] ?? []).length;
@@ -338,38 +350,43 @@ export function layoutFlow(args: {
   const hidden = overflow ? ranked.slice(maxPj) : [];
   const membersOf = (nodeId: string) => (nodeId === OTHER_PJ ? hidden : [nodeId]);
 
+  const tfsOfPjAt = (pjId: string, k: string) => routeTfIds(pjId, k, tfDefs, args.tf.pjTfIds);
+
   const nodeEdges: NodeEdge[] = [];
   const nodeIds = [...shown, ...(hidden.length ? [OTHER_PJ] : [])];
   for (const nodeId of nodeIds) {
     for (const k of krIds) {
-      const es = counts.edges.filter((e) => e.krId === k && membersOf(nodeId).includes(e.pjId));
-      if (es.length) {
-        const mine = mineIds ? es.reduce((s, e) => s + e.taskIds.filter((id) => mineIds.has(id)).length, 0) : 0;
-        // 帯がTFを通るのは、PJの置き先のTFが、この帯のKRのTFのとき。「ほか◯PJ」は直接つなぐ
-        const pjTf = nodeId === OTHER_PJ ? undefined : args.tf?.pjTfId[nodeId];
-        const tfId = pjTf && tfDefs.some((t) => t.id === pjTf && t.krId === k) ? pjTf : null;
-        nodeEdges.push({ nodeId, krId: k, done: es.reduce((s, e) => s + e.done, 0), open: es.reduce((s, e) => s + e.open, 0), mine, tfId, w: 0 });
+      const byTf = new Map<string, NodeEdge>();
+      for (const e of counts.edges.filter((x) => x.krId === k && membersOf(nodeId).includes(x.pjId))) {
+        const mine = mineIds ? e.taskIds.filter((id) => mineIds.has(id)).length : 0;
+        for (const tfId of tfsOfPjAt(e.pjId, k)) {
+          const ne = byTf.get(tfId) ?? { nodeId, krId: k, done: 0, open: 0, mine: 0, tfId, w: 0 };
+          ne.done += e.done;
+          ne.open += e.open;
+          ne.mine += mine;
+          byTf.set(tfId, ne);
+        }
       }
+      nodeEdges.push(...byTf.values());
     }
   }
-  // PJの並び：つなぎ先の並び（KR→TF→直接）の早いものから。TFを使わないときは従来どおりKRの並び
-  const rankOf = (e: NodeEdge) => krIndex(e.krId) * 100 + (e.tfId ? tfDefs.findIndex((t) => t.id === e.tfId) : 50);
-  const primary = (nodeId: string) => Math.min(...nodeEdges.filter((e) => e.nodeId === nodeId).map(rankOf));
+  // PJの並び：つなぎ先のTFの並び（KR→TF）の早いものから
+  const primary = (nodeId: string) => Math.min(...nodeEdges.filter((e) => e.nodeId === nodeId).map((e) => tfIndex(e.tfId)));
   nodeIds.sort((a, b) => (a === OTHER_PJ ? 1 : b === OTHER_PJ ? -1 : primary(a) - primary(b)));
 
-  // 帯の太さ：各KRに流れ込む帯（TFを通る帯はTFごとにまとめて1本）を、そのKR向けの仕事件数の割合で分ける。
-  // TFの中では、TFに入る帯の太さをPJの件数の割合でさらに分ける（TFを挟んでもKRに入る量は変わらない）
-  const srcKey = (e: NodeEdge) => e.tfId ?? e.nodeId;
+  // 帯の太さ：各KRに流れ込む帯（TFごとに1本）を、そのKR向けの仕事件数の割合で分ける。
+  // TFの中では、TFに入る帯の太さをPJの件数の割合でさらに分ける（TFを挟んでもKRに入る量は変わらない）。
+  // PJが同じKRの下に複数のTFを持つときは、その仕事は各TFに1回ずつ数える（共有PJの仕事が複数のKRに1回ずつ数えられるのと同じ）
   const srcWidth = new Map<string, number>();
   for (const k of krIds) {
     const inc = nodeEdges.filter((e) => e.krId === k);
-    const keys = [...new Set(inc.map(srcKey))];
-    const countOf = (key: string) => inc.filter((e) => srcKey(e) === key).reduce((s, e) => s + e.done + e.open, 0);
+    const keys = [...new Set(inc.map((e) => e.tfId))];
+    const countOf = (key: string) => inc.filter((e) => e.tfId === key).reduce((s, e) => s + e.done + e.open, 0);
     const ws = proportionalWidths(keys.map(countOf), KR_BAND, MIN_BAND);
     keys.forEach((key, i) => {
       srcWidth.set(`${key}>${k}`, ws[i]);
-      const members = inc.filter((e) => srcKey(e) === key);
-      const mw = members[0].tfId ? proportionalWidths(members.map((e) => e.done + e.open), ws[i], MIN_BAND) : [ws[i]];
+      const members = inc.filter((e) => e.tfId === key);
+      const mw = proportionalWidths(members.map((e) => e.done + e.open), ws[i], MIN_BAND);
       members.forEach((e, j) => (e.w = mw[j]));
     });
   }
@@ -416,7 +433,7 @@ export function layoutFlow(args: {
 
   // TFノード：KRの並び順に積む。高さはPJと同じく、流れ出る帯の太さ（仕事が無いTFは最小の高さ）。PJの列の縦の中央に寄せる
   const tfEdges = (id: string) => nodeEdges.filter((e) => e.tfId === id);
-  const tfShown = tfDefs.filter((t) => tfEdges(t.id).length > 0 || args.tf?.showEmpty);
+  const tfShown = tfDefs.filter((t) => tfEdges(t.id).length > 0 || args.tf.showEmpty);
   const tfW = (t: { id: string; krId: string }) => srcWidth.get(`${t.id}>${t.krId}`) ?? 0;
   const tfHeights = tfShown.map((t) => Math.max(PJ_MIN, tfW(t)));
   const tfColH = tfShown.length ? tfHeights.reduce((s, h) => s + h, 0) + (tfShown.length - 1) * NODE_GAP : 0;
@@ -446,7 +463,8 @@ export function layoutFlow(args: {
   const krColH = krIds.length ? krIds.length * KR_H + (krIds.length - 1) * KR_GAP : 0;
   const krOff = Math.max(0, (Math.max(pjBottom, tfBottom) - krColH) / 2);
   const krNodes: KrGeo[] = krIds.map((k, i) => {
-    const es = nodeEdges.filter((e) => e.krId === k);
+    // KRの件数は、TFを通る帯の重ね数えではなく、PJごとの件数（共有PJの仕事は各KRに1回）から数える
+    const es = counts.edges.filter((e) => e.krId === k && tfDefs.some((t) => t.krId === k));
     return {
       krId: k,
       x: cols.kr.x,
@@ -465,16 +483,14 @@ export function layoutFlow(args: {
   const uniq = [...new Map(Object.values(counts.linkedByPj).flat().map((t) => [t.id, t])).values()];
   const o: OGeo = { x: cols.o.x, y: oY, w: cols.o.w, h: O_H, done: uniq.filter((t) => t.status === "完了").length, open: uniq.filter(isOpen).length };
 
-  // KRの手前の並び：KRに入る帯は、出どころ（TFを通る帯はTF、直接の帯はPJ）の縦の位置の順に並べる
-  const pjKr: Ribbon[] = [];
+  // KRの手前の並び：KRに入る帯は、出どころのTFの縦の位置の順に並べる
   const pjTf: Ribbon[] = [];
   const tfKr: Ribbon[] = [];
-  const srcY = (e: NodeEdge) => (e.tfId ? tfOf(e.tfId).y : pjOf(e.nodeId).y);
   const landing = new Map<string, { ty: number; ly: number }>();
   for (const k of krIds) {
     const kn = krNodes[krIndex(k)];
     const keys = new Map<string, { y: number; w: number }>();
-    for (const e of nodeEdges.filter((x) => x.krId === k)) keys.set(srcKey(e), { y: srcY(e), w: srcWidth.get(`${srcKey(e)}>${k}`) ?? 0 });
+    for (const e of nodeEdges.filter((x) => x.krId === k)) keys.set(e.tfId, { y: tfOf(e.tfId).y, w: srcWidth.get(`${e.tfId}>${k}`) ?? 0 });
     const inc = [...keys.entries()].sort((a, b) => a[1].y - b[1].y);
     const inSum = inc.reduce((s, [, v]) => s + v.w, 0);
     let before = 0;
@@ -499,50 +515,27 @@ export function layoutFlow(args: {
     }
   }
   for (const pn of pjNodes) {
-    const out = nodeEdges.filter((e) => e.nodeId === pn.pjId).sort((a, b) => krIndex(a.krId) - krIndex(b.krId));
+    const out = nodeEdges.filter((e) => e.nodeId === pn.pjId).sort((a, b) => tfIndex(a.tfId) - tfIndex(b.tfId));
     const outSum = out.reduce((s, e) => s + wOf(e), 0);
     let sy = pn.y + (pn.h - outSum) / 2;
     for (const e of out) {
       const w = wOf(e);
-      const extra = mineIds ? { mine: e.mine, mineSegs: mineSegments(e.mine, e.done + e.open, w) } : {};
-      if (e.tfId) {
-        pjTf.push({
-          id: `${pn.pjId}>${e.tfId}`,
-          fromId: pn.pjId,
-          toId: e.tfId,
-          sx: pn.x + pn.w,
-          sy,
-          tx: tfOf(e.tfId).x,
-          ty: tfLanding.get(`${e.nodeId}>${e.tfId}`) ?? 0,
-          width: w,
-          done: e.done,
-          open: e.open,
-          segments: bandSegments(e, w),
-          ...extra,
-          labelX: 0,
-          labelY: 0,
-        });
-      } else {
-        const kn = krNodes[krIndex(e.krId)];
-        const land = landing.get(`${e.nodeId}>${e.krId}`);
-        const tx = kn.x - LABEL_GAP;
-        pjKr.push({
-          id: `${pn.pjId}>${e.krId}`,
-          fromId: pn.pjId,
-          toId: e.krId,
-          sx: pn.x + pn.w,
-          sy,
-          tx,
-          ty: land?.ty ?? 0,
-          width: w,
-          done: e.done,
-          open: e.open,
-          segments: bandSegments(e, w),
-          ...extra,
-          labelX: tx + 8,
-          labelY: land?.ly ?? 0,
-        });
-      }
+      pjTf.push({
+        id: `${pn.pjId}>${e.tfId}`,
+        fromId: pn.pjId,
+        toId: e.tfId,
+        sx: pn.x + pn.w,
+        sy,
+        tx: tfOf(e.tfId).x,
+        ty: tfLanding.get(`${e.nodeId}>${e.tfId}`) ?? 0,
+        width: w,
+        done: e.done,
+        open: e.open,
+        segments: bandSegments(e, w),
+        ...(mineIds ? { mine: e.mine, mineSegs: mineSegments(e.mine, e.done + e.open, w) } : {}),
+        labelX: 0,
+        labelY: 0,
+      });
       sy += w;
     }
   }
@@ -552,7 +545,6 @@ export function layoutFlow(args: {
     const kn = krNodes[krIndex(tn.krId)];
     const w = srcWidth.get(`${tn.tfId}>${tn.krId}`) ?? 0;
     const land = landing.get(`${tn.tfId}>${tn.krId}`);
-    const tx = kn.x - LABEL_GAP;
     const mine = es.reduce((s, e) => s + e.mine, 0);
     tfKr.push({
       id: `${tn.tfId}>${tn.krId}`,
@@ -560,14 +552,14 @@ export function layoutFlow(args: {
       toId: tn.krId,
       sx: tn.x + tn.w,
       sy: tn.y + (tn.h - w) / 2,
-      tx,
+      tx: kn.x,
       ty: land?.ty ?? 0,
       width: w,
       done: tn.done,
       open: tn.open,
       segments: bandSegments(tn, w),
       ...(mineIds ? { mine, mineSegs: mineSegments(mine, tn.done + tn.open, w) } : {}),
-      labelX: tx + 8,
+      labelX: kn.x - 8,
       labelY: land?.ly ?? 0,
     });
   }
@@ -580,7 +572,7 @@ export function layoutFlow(args: {
     O_BAND,
     MIN_BAND,
   );
-  const mineOfKr = (k: string) => nodeEdges.filter((e) => e.krId === k).reduce((s, e) => s + e.mine, 0);
+  const mineOfKr = (k: string) => (mineIds ? counts.edges.filter((e) => e.krId === k).reduce((s, e) => s + e.taskIds.filter((id) => mineIds.has(id)).length, 0) : 0);
   const oSum = oWs.reduce((s, v) => s + v, 0);
   let ty = o.y + (o.h - oSum) / 2;
   active.forEach((kn, i) => {
@@ -614,7 +606,7 @@ export function layoutFlow(args: {
   const loose: LooseGeo[] = showLoose ? counts.loose.map((t, i) => ({ taskId: t.id, x: 0, y: looseTop + 26 + i * (ROW_H + 4), w: cols.pj.x + cols.pj.w, h: ROW_H })) : [];
   const height = (loose.length ? loose[loose.length - 1].y + ROW_H : counts.loose.length > 0 ? looseTop + 22 : mainBottom) + 16;
 
-  return { width: WIDTH, height, cols, pjNodes, tfNodes, krNodes, o, pjKr, pjTf, tfKr, krO, loose, looseCount: counts.loose.length, looseTop, personal };
+  return { width: WIDTH, height, cols, pjNodes, tfNodes, krNodes, o, pjTf, tfKr, krO, loose, looseCount: counts.loose.length, looseTop, personal };
 }
 
 /** 帯を描くパス（左→右のなだらかな曲線で囲んだ帯）。thickness 分だけ下にずらした側も含む */

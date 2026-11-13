@@ -2,7 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import App from "../App";
-import { flowCounts, junctionIdsOf, KR_BAND, layoutFlow } from "../flow";
+import { flowCounts, junctionIdsOf, KR_BAND, layoutFlow, tfInputOf } from "../flow";
 import { okrItems, overridesInit, PERIOD_START, pjsInit, tasks, WEEK_START } from "../fixtures";
 import { buildSummaryText, buildup, howKey, itemsInQuarter, junctionTasks, krIdsOfTask, sharedWork, TODAY, tasksDoneBetween, tasksOfKr, type LinkCtx } from "../logic";
 import type { InitialView } from "../state";
@@ -76,8 +76,8 @@ describe("件数の数え方：複数KRの仕事は各KRに1回ずつ、合計�
     expect(e2.taskIds).toContain(A.id);
     expect(after.linkedByPj.p3.filter((t) => t.id === A.id)).toHaveLength(1);
     expect(after.linkedByPj.p3).toHaveLength(before.linkedByPj.p3.length);
-    const lay = layoutFlow({ counts: after, krIds, personalIds: [], expanded: [], showLoose: false });
-    const lay0 = layoutFlow({ counts: before, krIds, personalIds: [], expanded: [], showLoose: false });
+    const lay = layoutFlow({ counts: after, krIds, personalIds: [], expanded: [], showLoose: false, tf: tfInputOf(noOv, true) });
+    const lay0 = layoutFlow({ counts: before, krIds, personalIds: [], expanded: [], showLoose: false, tf: tfInputOf(noOv, true) });
     expect(lay.o.done + lay.o.open).toBe(lay0.o.done + lay0.o.open);
     const sumKr = lay.krNodes.reduce((s, k) => s + k.done + k.open, 0);
     const sumKr0 = lay0.krNodes.reduce((s, k) => s + k.done + k.open, 0);
@@ -88,9 +88,9 @@ describe("件数の数え方：複数KRの仕事は各KRに1回ずつ、合計�
   });
   it("帯の割合の合計が保たれる（各KRに流れ込む帯の太さの合計は決まった太さのまま）", () => {
     const c = flowCounts({ tasks, ctx: seeded, ownerId: "m2", scope: "team", periodStart: PERIOD_START });
-    const lay = layoutFlow({ counts: c, krIds, personalIds: [], expanded: [], showLoose: false });
+    const lay = layoutFlow({ counts: c, krIds, personalIds: [], expanded: [], showLoose: false, tf: tfInputOf(noOv, true) });
     for (const k of krIds) {
-      const sum = lay.pjKr.filter((r) => r.toId === k).reduce((s, r) => s + r.width, 0);
+      const sum = lay.tfKr.filter((r) => r.toId === k).reduce((s, r) => s + r.width, 0);
       expect(sum).toBeCloseTo(KR_BAND, 5);
     }
     expect(junctionIdsOf(c, seeded).size).toBe(junctionTasks(c.linkedByPj ? Object.values(c.linkedByPj).flat() : [], seeded).length);
@@ -226,7 +226,7 @@ describe("結節点の描画", () => {
     }
   });
   it("つながらない仕事の提案：候補ごとに採る／見送るが出る", () => {
-    const loose = titled("交流会の出し物を考える");
+    const loose = titled("名刺の整理を終える");
     const all = html({ mode: "self", sel: { type: "task", id: loose.id } });
     const h = all.slice(all.indexOf(">AIの提案<"));
     expect((h.match(/>採る</g) ?? []).length).toBe(2);

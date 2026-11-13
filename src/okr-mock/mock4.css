@@ -41,6 +41,8 @@ button.mk-seg-item:focus-visible { outline: 3px solid var(--color-brand); outlin
 /* チームはどこまで来たか：KRのカードを幅いっぱいに並べる */
 .mk-svgtext { fill: var(--color-text-primary); }
 .mk-svgtext-muted { fill: var(--color-text-secondary); }
+/* 帯の上に重ねる文字。帯の色に埋もれないよう、背景色の縁取りを付ける */
+.mk-halo { paint-order: stroke; stroke: var(--color-bg-primary); stroke-width: 4px; stroke-linejoin: round; }
 .mk-track { fill: var(--color-bg-tertiary); }
 .mk-track-ring { stroke: var(--color-bg-tertiary); }
 .mk-tick { stroke: var(--color-text-tertiary); stroke-width: 1; }

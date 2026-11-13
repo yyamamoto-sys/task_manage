@@ -97,7 +97,7 @@ describe("1枚の画面（描画の確認）", () => {
     expect(team).not.toContain("つながらない仕事「");
     expect(team).not.toContain("押すとAIの提案が出ます");
     const self = html({ mode: "self" });
-    expect(self).toContain("つながらない仕事「交流会の出し物を考える」");
+    expect(self).toContain("つながらない仕事「名刺の整理を終える」");
     expect(self).toContain("つながらない仕事「AI勉強会の資料を読む」");
     expect(self).not.toContain("つながらない仕事「来月の出張の手配をする」");
   });
@@ -183,7 +183,7 @@ describe("詳細パネルと引き出し", () => {
     expect(h3).toContain("70 まで：");
   });
   it("自分の表示でつながらない仕事を開くと、AIの提案が出る。チーム表示では出ない", () => {
-    const t = taskOf("交流会の出し物を考える");
+    const t = taskOf("名刺の整理を終える");
     expect(html({ mode: "self", sel: { type: "task", id: t.id } })).toContain(">AIの提案<");
     expect(html({ sel: { type: "task", id: t.id } })).not.toContain(">AIの提案<");
   });

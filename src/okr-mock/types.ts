@@ -29,19 +29,8 @@ export interface OkrItem {
 export interface Pj {
   id: string;
   name: string;
-  /** 四半期ごとに確定する取り組み（OkrItem の tf）。仕事とKRのつながりの元になる */
+  /** 四半期ごとに確定する取り組み（OkrItem の tf）。必ず1つ以上。仕事とKRのつながりの元になる（PJとKRは直接つながない） */
   tfIds: string[];
-  /** 地図のTFの列に置く先（任意）。主たるKRのTFを指す。TFを置かないKRのPJは持たない */
-  tfId?: string;
-}
-
-/** 地図のTF（タスクフォース）。KRの下にあり、PJはTF単位で動くことが多い。AIの見立て（60〜）はKRだけのもので、TFには値を付けない */
-export interface Tf {
-  id: string;
-  krId: string;
-  name: string;
-  /** 地図の枠に出す短い呼び名（TF1 など） */
-  short: string;
 }
 
 export interface Task {

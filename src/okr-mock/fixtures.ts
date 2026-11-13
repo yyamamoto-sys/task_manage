@@ -20,7 +20,6 @@ import type {
   Resource,
   Task,
   TaskStatus,
-  Tf,
 } from "./types";
 
 // 暦年ベースの仮の定義：下期＝7〜12月、3Q＝7〜9月（終了）、4Q＝10〜12月（今期）
@@ -134,27 +133,19 @@ kintoneRows.push({ id: "tf23", label: "TF2-3", text: "拠点の清掃体制を�
 export const okrItems3Q: OkrItem[] = okrItems.filter((i) => i.kind !== "tf" || (i.quarters ?? []).includes("3Q"));
 
 /**
- * 地図のTF。KR1に3つ、KR2に2つ。KR3はTFを置かないチームの例で、PJはKRへ直接つながる。
- * 名前は架空の一般的な内容
+ * PJは必ず1つ以上のTF（上の okrItems の kind=tf）につながる。PJとKRは直接つながない。
+ * TFのデータは okrItems の1系統だけ（地図もこれを使う）。p2・p6 は同じKRの下に2つのTFを持つ例、p7 は2つのKRにまたがる例
  */
-export const tfsInit: Tf[] = [
-  { id: "ft1", krId: "kr1", name: "新規パートナーの開拓", short: "TF1" },
-  { id: "ft2", krId: "kr1", name: "既存パートナーとの関係づくり", short: "TF2" },
-  { id: "ft3", krId: "kr1", name: "紹介ルートの整備", short: "TF3" },
-  { id: "ft4", krId: "kr2", name: "予約と利用の導線づくり", short: "TF4" },
-  { id: "ft5", krId: "kr2", name: "運営体制の確保", short: "TF5" },
-];
-
 export const pjsInit: Pj[] = [
-  { id: "p1", name: "パートナー向け提案資料の刷新", tfIds: ["tf11"], tfId: "ft1" },
-  { id: "p2", name: "展示会のお礼とフォロー", tfIds: ["tf11", "tf12"], tfId: "ft2" },
-  { id: "p3", name: "既存のお客様ヒアリング", tfIds: ["tf12"], tfId: "ft2" },
-  { id: "p4", name: "拠点の予約サイト改修", tfIds: ["tf21"], tfId: "ft4" },
-  { id: "p5", name: "ボランティア募集キャンペーン", tfIds: ["tf22"], tfId: "ft5" },
-  { id: "p6", name: "月次レポートの自動化", tfIds: ["tf31"] },
-  { id: "p7", name: "社内ナレッジの整理", tfIds: ["tf32", "tf22"], tfId: "ft5" },
-  { id: "p8", name: "社内交流イベントの運営", tfIds: [] },
-  { id: "p9", name: "紹介ルートの試行（3Qのみ）", tfIds: ["tf13"], tfId: "ft3" },
+  { id: "p1", name: "パートナー向け提案資料の刷新", tfIds: ["tf11"] },
+  { id: "p2", name: "展示会のお礼とフォロー", tfIds: ["tf11", "tf12"] },
+  { id: "p3", name: "既存のお客様ヒアリング", tfIds: ["tf12"] },
+  { id: "p4", name: "拠点の予約サイト改修", tfIds: ["tf21"] },
+  { id: "p5", name: "ボランティア募集キャンペーン", tfIds: ["tf22"] },
+  { id: "p6", name: "月次レポートの自動化", tfIds: ["tf31", "tf33"] },
+  { id: "p7", name: "社内ナレッジの整理", tfIds: ["tf32", "tf22"] },
+  { id: "p8", name: "社内交流イベントの運営", tfIds: ["tf32"] },
+  { id: "p9", name: "紹介ルートの試行（3Qのみ）", tfIds: ["tf13"] },
 ];
 
 /** 図に出すPJの名前（PJに属さない個人の仕事は1つのまとまりにする） */
@@ -650,7 +641,6 @@ export const overridesInit: Record<string, Record<string, string[]>> = {
     [taskIdByTitle("社内レビューを受ける")]: ["kr1", "kr2"],
   },
 };
-
 /** 「今週やる」の最初の選択（人ごと。その人だけに見える） */
 export const picksInit: Record<string, string[]> = {
   m2: [taskIdByTitle("デザインの初稿を作る"), taskIdByTitle("月次レポートを1本、自動で作る")],

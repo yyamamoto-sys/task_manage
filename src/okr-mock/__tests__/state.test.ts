@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { detectConflicts, mergeDecisions, mergeDrafts, unresolved } from "../confirm";
 import { checkinsInit, decisionsInit, KR_PALETTE, krStyle, krStyleAt, nextCheckin, okrItems, pjsInit, recordsInit, resources, tasks, WEEK_START } from "../fixtures";
-import { answerKey, applyConfirm, defaultKrIdsOfTask, howKey, itemsInQuarter, krIdsOfTask, type LinkCtx, unlinkedTasks } from "../logic";
+import { answerKey, applyConfirm, defaultKrIdsOfTask, howKey, itemsInQuarter, krIdsOfTask, type LinkCtx, PERSONAL_PJ, unlinkedTasks } from "../logic";
 import type { Task } from "../types";
 import * as U from "../userState";
 
@@ -96,7 +96,7 @@ describe("「どう役立つか」は仕事×KR。つなぎ先を変えたら消
     expect(unlinkedTasks([t2], ctx)).toHaveLength(1);
   });
   it("つなぎを「もとに戻す」と、採った提案の記録も戻る（見送りの記録は残る）", () => {
-    const loose = tasks.find((t) => t.assigneeId === "m2" && t.pjId === "p8")!;
+    const loose = tasks.find((t) => t.assigneeId === "m2" && t.pjId === PERSONAL_PJ)!;
     let s = U.takeProposal(fresh(), "m2", loose, "kr1", [], dk(loose));
     expect(s.m2.proposals[U.proposalKey(loose.id, "kr1")]).toBe("taken");
     expect(s.m2.overrides[loose.id]).toEqual(["kr1"]);
@@ -107,7 +107,7 @@ describe("「どう役立つか」は仕事×KR。つなぎ先を変えたら消
     expect(s.m2.proposals[U.proposalKey(loose.id, "kr3")]).toBe("skipped");
   });
   it("提案は候補ごとに複数採れる（置き換えず足す）。1件ずつ見送れる", () => {
-    const loose = tasks.find((t) => t.assigneeId === "m2" && t.pjId === "p8")!;
+    const loose = tasks.find((t) => t.assigneeId === "m2" && t.pjId === PERSONAL_PJ)!;
     let s = U.takeProposal(fresh(), "m2", loose, "kr1", [], dk(loose));
     s = U.takeProposal(s, "m2", loose, "kr3", s.m2.overrides[loose.id], dk(loose));
     expect(s.m2.overrides[loose.id]).toEqual(["kr1", "kr3"]);

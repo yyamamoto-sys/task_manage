@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { flowCounts, junctionIdsOf, layoutFlow, OTHER_PJ, ribbonPath, type Ribbon } from "../flow";
+import { flowCounts, junctionIdsOf, layoutFlow, OTHER_PJ, ribbonPath, tfInputOf, type Ribbon } from "../flow";
 import { mineTaskIds } from "../allPage";
 import { flowViewOf, selectionAfterFlowSwitch, visibleTaskIds, type FlowView } from "../nav";
 import { MineLine } from "./MineLine";
 import { proposalKey } from "../userState";
-import { aiCandidates, krBands, krStyle, PERIOD_START, personalOkrs, PERSONAL_NAME, MINE_COLOR, pjsInit, tfsInit } from "../fixtures";
+import { aiCandidates, krBands, krStyle, PERIOD_START, personalOkrs, PERSONAL_NAME, MINE_COLOR, pjsInit } from "../fixtures";
 import { krIdsOfTask, PERSONAL_PJ } from "../logic";
 import { hasStretch } from "../steps";
 import { krRegistration, reachCounts, reachNote, workPhrase } from "../reach";
@@ -18,8 +18,6 @@ function pjName(id: string): string {
   return pjsInit.find((p) => p.id === id)?.name ?? id;
 }
 
-const tfOf = (id: string) => tfsInit.find((t) => t.id === id)!;
-const PJ_TF_ID = Object.fromEntries(pjsInit.map((p) => [p.id, p.tfId]));
 
 function RibbonShape({ r, krId, label, onActivate, dim, all }: { r: Ribbon; krId: string; label: string; onActivate: () => void; dim?: boolean; all?: boolean }) {
   const st = krStyle(krId);
@@ -88,7 +86,7 @@ export function FlowDiagram() {
         showLoose: v === "self",
         mineIds: v === "all" ? mineTaskIds(c, viewerId) : undefined,
         // 「わたし」の図は、本人の仕事がつながるTFだけ。チーム・全体は、仕事の無いTFも枠を出す
-        tf: { tfs: tfsInit, pjTfId: PJ_TF_ID, showEmpty: v !== "self" },
+        tf: tfInputOf(linkCtx, v !== "self"),
       });
       return { c, l };
     };
@@ -163,6 +161,7 @@ export function FlowDiagram() {
   const H = Math.max(layout.height, otherLayout.height) + TOP;
   const taskOf = (id: string) => tasks.find((t) => t.id === id)!;
   const krNode = (krId: string) => layout.krNodes.find((k) => k.krId === krId)!;
+  const tfOf = (id: string) => items.find((t) => t.id === id)!;
 
   const curve = (ax: number, ay: number, bx: number, by: number) => {
     const dx = Math.max(40, Math.abs(bx - ax) / 2);
@@ -182,10 +181,10 @@ export function FlowDiagram() {
   // 成果につながったと確かめられた仕事（全員に見える）。PJ→KRの帯と、PJの中の仕事に★を付ける
   const starredTasks = new Set(confirmedLinks.map((c) => c.task.id));
   const starsFor = (krId: string, pjIds: string[]): number => new Set(confirmedLinks.filter((c) => c.note.krId === krId && pjIds.includes(c.task.pjId)).map((c) => c.task.id)).size;
-  const starsOnRibbon = (r: Ribbon): number => starsFor(r.toId, pjMembers(r.fromId));
-  const tfPjIds = (tfId: string) => layout.tfNodes.find((n) => n.tfId === tfId)?.pjIds ?? [];
-  const hasTfCol = layout.cols.tf.w > 0;
-  const narrowPj = hasTfCol && layout.cols.pj.w < 190;
+  const tfOfKr = (tfId: string) => tfOf(tfId).parentId as string;
+  const starsOnRibbon = (r: Ribbon): number => starsFor(tfOfKr(r.toId), pjMembers(r.fromId));
+  const tfPjIds = (tfId: string) => (layout.tfNodes.find((n) => n.tfId === tfId)?.pjIds ?? []).flatMap(pjMembers);
+  const narrowPj = layout.cols.pj.w < 190;
 
   return (
     <section className="mk-card mk-flow" aria-labelledby="mk-flow-h">
@@ -265,7 +264,7 @@ export function FlowDiagram() {
           ? "左のあなたの個人OKRとチームのPJから、中央のKR、右のO（めざす姿）へ。濃い部分が、あなたの仕事の分です。"
           : "左のPJ（押すと仕事が開きます）から、中央のKR、右のO（めざす姿）へ。帯の太さは、そのKRにつながる仕事のうち、そのPJの仕事が占める割合を表します。KRを押すと詳細、仕事を押すとつなぎ先を確かめられます。"}
         {isAll && " KRを押すと詳細、仕事を押すとつなぎ先を確かめられます。"}
-        {hasTfCol && " PJとKRの間のTFは、PJが動く単位です。TFを置かないKRには、PJの帯がそのまま届きます。TFを押すと詳細が開きます。"}
+        {" PJは必ずTFを通ってKRへ届きます。TFは、PJが動く単位です。TFを押すと詳細が開きます。"}
         {withPersonal && " 個人OKRからKRへ矢印をドラッグ（または、左を押してから右を押す）でつなぎます。"}
       </p>
       {armed && (
@@ -296,11 +295,9 @@ export function FlowDiagram() {
             <text x={layout.cols.pj.x} y={16} fontSize={12} fontWeight={700} className="mk-svgtext-muted">
               PJ
             </text>
-            {hasTfCol && (
-              <text x={layout.cols.tf.x} y={16} fontSize={12} fontWeight={700} className="mk-svgtext-muted">
-                TF
-              </text>
-            )}
+            <text x={layout.cols.tf.x} y={16} fontSize={12} fontWeight={700} className="mk-svgtext-muted">
+              TF
+            </text>
             <text x={layout.cols.kr.x} y={16} fontSize={12} fontWeight={700} className="mk-svgtext-muted">
               KR（Oに近づいた証拠＝段の目盛り）
             </text>
@@ -336,28 +333,18 @@ export function FlowDiagram() {
               <path d={curve(personalPort(drag.pid).x + personalPort(drag.pid).w, personalPort(drag.pid).y + personalPort(drag.pid).h / 2, drag.x, drag.y)} stroke="#888" strokeWidth={2} strokeDasharray="5 4" fill="none" />
             )}
 
-            {layout.pjKr.map((r) => (
-              <RibbonShape
-                key={r.id}
-                r={r}
-                all={isAll}
-                krId={r.toId}
-                label={`${r.fromId === OTHER_PJ ? "ほかのPJ" : pjName(r.fromId)}から${krLabel(r.toId)}へ：${workPhrase(r.done, r.open)}${isAll && r.mine ? `、うちあなたの仕事 ${r.mine}件` : ""}${starsOnRibbon(r) > 0 ? `、成果につながった仕事${starsOnRibbon(r)}件` : ""}。押すと${krLabel(r.toId)}の詳細を開きます`}
-                onActivate={() => setSel({ type: "kr", id: r.toId })}
-                dim={jOn && !edgeHasJunction(r.toId, pjMembers(r.fromId))}
-              />
-            ))}
             {layout.pjTf.map((r) => {
               const tf = tfOf(r.toId);
+              const tfKrId = tf.parentId as string;
               return (
                 <RibbonShape
                   key={r.id}
                   r={r}
                   all={isAll}
-                  krId={tf.krId}
-                  label={`${pjName(r.fromId)}から${tf.short}へ：${workPhrase(r.done, r.open)}${isAll && r.mine ? `、うちあなたの仕事 ${r.mine}件` : ""}。押すと${tf.short}の詳細を開きます`}
+                  krId={tfKrId}
+                  label={`${r.fromId === OTHER_PJ ? "ほかのPJ" : pjName(r.fromId)}から${tf.label}へ：${workPhrase(r.done, r.open)}${isAll && r.mine ? `、うちあなたの仕事 ${r.mine}件` : ""}${starsOnRibbon(r) > 0 ? `、成果につながった仕事${starsOnRibbon(r)}件` : ""}。押すと${tf.label}の詳細を開きます`}
                   onActivate={() => setSel({ type: "tf", id: tf.id })}
-                  dim={jOn && !edgeHasJunction(tf.krId, [r.fromId])}
+                  dim={jOn && !edgeHasJunction(tfKrId, pjMembers(r.fromId))}
                 />
               );
             })}
@@ -370,7 +357,7 @@ export function FlowDiagram() {
                   r={r}
                   all={isAll}
                   krId={r.toId}
-                  label={`${tf.short}から${krLabel(r.toId)}へ：${workPhrase(r.done, r.open)}${isAll && r.mine ? `、うちあなたの仕事 ${r.mine}件` : ""}${stars > 0 ? `、成果につながった仕事${stars}件` : ""}。押すと${krLabel(r.toId)}の詳細を開きます`}
+                  label={`${tf.label}から${krLabel(r.toId)}へ：${workPhrase(r.done, r.open)}${isAll && r.mine ? `、うちあなたの仕事 ${r.mine}件` : ""}${stars > 0 ? `、成果につながった仕事${stars}件` : ""}。押すと${krLabel(r.toId)}の詳細を開きます`}
                   onActivate={() => setSel({ type: "kr", id: r.toId })}
                   dim={jOn && !edgeHasJunction(r.toId, tfPjIds(tf.id))}
                 />
@@ -387,11 +374,10 @@ export function FlowDiagram() {
                 onActivate={() => setSel({ type: "kr", id: r.fromId })}
               />
             ))}
-            {[...layout.pjKr, ...layout.tfKr].map((r) => {
-              const viaTf = layout.tfKr.includes(r);
-              const stars = viaTf ? starsFor(r.toId, tfPjIds(r.fromId)) : starsOnRibbon(r);
+            {layout.tfKr.map((r) => {
+              const stars = starsFor(r.toId, tfPjIds(r.fromId));
               return (
-                <text key={`n-${r.id}`} x={r.labelX - 4} y={r.labelY} fontSize={10.5} className={`mk-svgtext${dimIf(!edgeHasJunction(r.toId, viaTf ? tfPjIds(r.fromId) : pjMembers(r.fromId)))}`} pointerEvents="none">
+                <text key={`n-${r.id}`} x={r.labelX} y={r.labelY} textAnchor="end" fontSize={10.5} className={`mk-svgtext mk-halo${dimIf(!edgeHasJunction(r.toId, tfPjIds(r.fromId)))}`} pointerEvents="none">
                   仕事 完了 {r.done}／残り {r.open}
                   {stars > 0 ? ` ★${stars}` : ""}
                 </text>
@@ -402,7 +388,7 @@ export function FlowDiagram() {
             {layout.personal.map((p) => {
               const po = myPersonal.find((x) => x.id === p.id);
               if (!po) return null;
-              const lines = wrapLines(po.text, hasTfCol ? 8 : 9, 2);
+              const lines = wrapLines(po.text, 8, 2);
               const isArmed = armed === p.id;
               const linked = personalLinks.filter((l) => l.personalId === p.id).map((l) => krLabel(l.krId));
               return (
@@ -552,16 +538,16 @@ export function FlowDiagram() {
                 <SvgButton
                   key={n.tfId}
                   className={dimIf(!edgeHasJunction(n.krId, tfPjIds(n.tfId))).trim() || undefined}
-                  label={`${tf.short} ${tf.name}（${krLabel(n.krId)}）：${n.empty ? "仕事の登録なし" : workPhrase(n.done, n.open)}。押すと詳細を開きます`}
+                  label={`${tf.label} ${tf.text}（${krLabel(n.krId)}）：${n.empty ? "仕事の登録なし" : workPhrase(n.done, n.open)}。押すと詳細を開きます`}
                   onActivate={() => setSel({ type: "tf", id: n.tfId })}
                 >
-                  <title>{`${tf.short} ${tf.name}`}</title>
+                  <title>{`${tf.label} ${tf.text}`}</title>
                   <rect x={n.x} y={n.y} width={n.w} height={n.h} rx={10} className={`mk-fnode${n.empty ? " mk-tf-empty" : ""}${isSel ? " is-sel" : ""}`} stroke={color} strokeWidth={isSel ? 3.5 : 2} />
                   <rect x={n.x} y={n.y} width={5} height={n.h} rx={2.5} fill={color} />
                   <text x={n.x + 12} y={n.y + 18} fontSize={12} fontWeight={700} className="mk-svgtext">
-                    {tf.short}
+                    {tf.label}
                     <tspan fontSize={10.5} fontWeight={400} dx={4} className="mk-svgtext-muted">
-                      {trunc(tf.name, 5)}
+                      {trunc(tf.text, narrowPj ? 3 : 4)}
                     </tspan>
                   </text>
                   <text x={n.x + 12} y={n.y + 33} fontSize={10.5} className="mk-svgtext-muted">

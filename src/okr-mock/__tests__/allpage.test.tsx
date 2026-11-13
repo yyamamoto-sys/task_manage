@@ -4,8 +4,8 @@ import { describe, expect, it } from "vitest";
 import App from "../App";
 import { mineLine, mineLineText, mineTaskIds } from "../allPage";
 import { flowAllInit, flowViewOf, selectionAfterFlowSwitch, setFlowAllFor, switchPage, visibleTaskIds } from "../nav";
-import { flowCounts, layoutFlow, mineSegments } from "../flow";
-import { okrItems, PERIOD_START, personalOkrs, pjsInit, REACH_PJ_IDS, tasks, tfsInit, WEEK_START } from "../fixtures";
+import { flowCounts, layoutFlow, mineSegments, tfInputOf } from "../flow";
+import { okrItems, PERIOD_START, personalOkrs, pjsInit, REACH_PJ_IDS, tasks, WEEK_START } from "../fixtures";
 import { itemsInQuarter, type LinkCtx } from "../logic";
 import { registeredTasks } from "../reach";
 import type { InitialView } from "../state";
@@ -21,7 +21,7 @@ const allHtml = (initial: InitialView = {}) => html(allView(initial));
 const layoutFor = (viewerId: string, reach: "all" | "pjs" | "solo" = "all") => {
   const ts = registeredTasks(tasks, reach, viewerId, REACH_PJ_IDS);
   const counts = flowCounts({ tasks: ts, ctx, ownerId: viewerId, scope: "team", periodStart: PERIOD_START });
-  const layout = layoutFlow({ counts, krIds, personalIds: [], expanded: [], showLoose: false, mineIds: mineTaskIds(counts, viewerId), tf: { tfs: tfsInit, pjTfId: Object.fromEntries(pjsInit.map((p) => [p.id, p.tfId])), showEmpty: true } });
+  const layout = layoutFlow({ counts, krIds, personalIds: [], expanded: [], showLoose: false, mineIds: mineTaskIds(counts, viewerId), tf: tfInputOf(ctx, true) });
   return { counts, layout };
 };
 
@@ -146,32 +146,32 @@ describe("帯をあなたの分とほかの人の分に分ける計算", () => {
   });
   it("全ての帯で、区切りの太さの合計が帯の太さと等しく、あなたの件数は全体を超えない", () => {
     const { layout } = layoutFor("m2");
-    for (const r of [...layout.pjKr, ...layout.pjTf, ...layout.tfKr, ...layout.krO]) {
+    for (const r of [...layout.pjTf, ...layout.tfKr, ...layout.krO]) {
       expect(r.mineSegs).toBeDefined();
       expect(r.mineSegs!.reduce((s, x) => s + x.thickness, 0)).toBeCloseTo(r.width);
       expect(r.mine!).toBeLessThanOrEqual(r.done + r.open);
     }
   });
   it("見ている人を切り替えると、濃い部分が変わる（鈴木と高橋で計算結果が違う）", () => {
-    const sig = (id: string) => layoutFor(id).layout.pjKr.map((r) => `${r.id}:${r.mine}`).join(",");
+    const sig = (id: string) => layoutFor(id).layout.pjTf.map((r) => `${r.id}:${r.mine}`).join(",");
     expect(sig("m2")).not.toBe(sig("m3"));
-    expect(layoutFor("m2").layout.pjKr.some((r) => (r.mine ?? 0) > 0)).toBe(true);
-    expect(layoutFor("m3").layout.pjKr.some((r) => (r.mine ?? 0) > 0)).toBe(true);
+    expect(layoutFor("m2").layout.pjTf.some((r) => (r.mine ?? 0) > 0)).toBe(true);
+    expect(layoutFor("m3").layout.pjTf.some((r) => (r.mine ?? 0) > 0)).toBe(true);
     const a = allHtml({ viewerId: "m2" }).match(/うちあなたの仕事 \d+件/g);
     const b = allHtml({ viewerId: "m3" }).match(/うちあなたの仕事 \d+件/g);
     expect(a).not.toEqual(b);
   });
   it("利用の広がり＝1人だけ のときは、全部の帯があなたの分（全体が濃い）", () => {
     const { layout } = layoutFor("m3", "solo");
-    expect(layout.pjKr.length).toBeGreaterThan(0);
-    for (const r of [...layout.pjKr, ...layout.pjTf, ...layout.tfKr, ...layout.krO]) {
+    expect(layout.pjTf.length).toBeGreaterThan(0);
+    for (const r of [...layout.pjTf, ...layout.tfKr, ...layout.krO]) {
       expect(r.mine).toBe(r.done + r.open);
       expect(r.mineSegs!.map((s) => s.kind)).toEqual(["mine"]);
     }
   });
   it("帯の aria-label には、あなたの分があるときだけ「うちあなたの仕事 ◯件」が付く", () => {
     const { layout } = layoutFor("m2");
-    const withMine = [...layout.pjKr, ...layout.pjTf, ...layout.tfKr, ...layout.krO].filter((r) => (r.mine ?? 0) > 0).length;
+    const withMine = [...layout.pjTf, ...layout.tfKr, ...layout.krO].filter((r) => (r.mine ?? 0) > 0).length;
     const h = allHtml({ viewerId: "m2" });
     expect(h.match(/aria-label="[^"]*うちあなたの仕事 \d+件/g)?.length).toBe(withMine);
     expect(html({ mode: "team" })).not.toContain("うちあなたの仕事");

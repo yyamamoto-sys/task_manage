@@ -210,8 +210,9 @@ describe("仕事とKRのつながり", () => {
     const p7 = titled("資料の置き場所を決める");
     expect(krIdsOfTask(p7, { ...ctx, overrides: { [p7.id]: ["kr1"] } })).toEqual(["kr1"]);
   });
-  it("PJにTFが無い仕事・PJに属さない個人の仕事はつながりなし。AIの提案を採る（上書き）とつながる", () => {
-    for (const title of ["交流会の出し物を考える", "AI勉強会の資料を読む"]) {
+  it("PJに属さない個人の仕事はつながりなし（PJの仕事は必ずTF経由でKRへつながる）。AIの提案を採る（上書き）とつながる", () => {
+    expect(krIdsOfTask(titled("交流会の出し物を考える"), ctx)).toEqual(["kr3"]);
+    for (const title of ["名刺の整理を終える", "AI勉強会の資料を読む"]) {
       const t = titled(title);
       expect(unlinkedTasks([t], ctx)).toHaveLength(1);
       const c = aiCandidates[t.pjId][0];

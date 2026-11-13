@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
-import { aiCandidates, howOptions, krBands, krDefs, krStyle, MINE_COLOR, PERIOD_END, PERIOD_START, pjsInit, PERSONAL_NAME, tfsInit } from "../fixtures";
+import { aiCandidates, howOptions, krBands, krDefs, krStyle, MINE_COLOR, PERIOD_END, PERIOD_START, pjsInit, PERSONAL_NAME } from "../fixtures";
+import { routeTfIds } from "../flow";
 import {
   formatMd,
   hintTrailsPeriod,
@@ -48,7 +49,7 @@ function KrPanel({ krId }: { krId: string }) {
   const trails = hintTrailsPeriod(r.hint, elapsed);
   const groups = learningsOfKr(learnings, krId, checkins);
   const nr = ca ? nextRequirements(ca.cur.assessment, bands) : null;
-  const krTfs = tfsInit.filter((t) => t.krId === krId);
+  const krTfs = items.filter((i) => i.kind === "tf" && i.parentId === krId);
   return (
     <>
       <h3 className="mk-panel-h" style={{ borderLeftColor: color }}>
@@ -169,7 +170,7 @@ function KrPanel({ krId }: { krId: string }) {
             {krTfs.map((tf) => (
               <li key={tf.id}>
                 <button type="button" className="mk-linkbtn" onClick={() => setSel({ type: "tf", id: tf.id })}>
-                  {tf.short} {tf.name}
+                  {tf.label} {tf.text}
                 </button>
               </li>
             ))}
@@ -432,25 +433,26 @@ function TaskPanel({ taskId }: { taskId: string }) {
 
 /** TFの詳細。AIの見立て（60〜の値）はKRだけのもので、TFには値を付けない */
 function TfPanel({ tfId }: { tfId: string }) {
-  const { tasks, linkCtx, setSel } = useMock();
-  const tf = tfsInit.find((t) => t.id === tfId);
-  if (!tf) return null;
-  const color = krStyle(tf.krId).color;
-  const pjs = pjsInit.filter((p) => p.tfId === tf.id);
-  const tfTasks = tasksOfKr(periodTasks(tasks, PERIOD_START), tf.krId, linkCtx).filter((t) => pjs.some((p) => p.id === t.pjId));
+  const { tasks, linkCtx, setSel, items } = useMock();
+  const tf = items.find((t) => t.id === tfId && t.kind === "tf");
+  if (!tf || !tf.parentId) return null;
+  const krId = tf.parentId;
+  const color = krStyle(krId).color;
+  const pjs = pjsInit.filter((p) => p.tfIds.includes(tf.id));
+  const tfTasks = tasksOfKr(periodTasks(tasks, PERIOD_START), krId, linkCtx).filter((t) => pjs.some((p) => p.id === t.pjId));
   const done = tfTasks.filter((t) => t.status === "完了").length;
   const open = tfTasks.length - done;
   const people = [...new Set(tfTasks.map((t) => t.assigneeId))];
   return (
     <>
       <h3 className="mk-panel-h" style={{ borderLeftColor: color }}>
-        <span style={{ color }}>{tf.short}</span> {tf.name}
+        <span style={{ color }}>{tf.label}</span> {tf.text}
       </h3>
       <dl className="mk-dl">
         <dt>属するKR</dt>
         <dd>
-          <button type="button" className="mk-linkbtn" onClick={() => setSel({ type: "kr", id: tf.krId })}>
-            {krName(tf.krId)}
+          <button type="button" className="mk-linkbtn" onClick={() => setSel({ type: "kr", id: krId })}>
+            {krName(krId)}
           </button>
         </dd>
         <dt>つながるPJ</dt>
@@ -485,29 +487,35 @@ function TfPanel({ tfId }: { tfId: string }) {
 
 /** PJの詳細（TFの詳細から開く）。仕事の一覧と、つなぎ先のTF・KR */
 function PjPanel({ pjId }: { pjId: string }) {
-  const { tasks, linkCtx, setSel } = useMock();
+  const { tasks, linkCtx, setSel, items } = useMock();
   const pj = pjsInit.find((p) => p.id === pjId);
   if (!pj) return null;
   const pjTasks = periodTasks(tasks, PERIOD_START).filter((t) => t.pjId === pj.id);
-  const tf = tfsInit.find((t) => t.id === pj.tfId);
+  const tfItems = items.filter((i) => i.kind === "tf" && i.parentId).map((i) => ({ id: i.id, krId: i.parentId as string }));
+  const tfPairs = pj.tfIds.map((id) => items.find((i) => i.id === id && i.kind === "tf")).filter((t): t is NonNullable<typeof t> => !!t);
+  const pjTfIds = Object.fromEntries(pjsInit.map((p) => [p.id, p.tfIds]));
   const krs = [...new Set(pjTasks.flatMap((t) => krIdsOfTask(t, linkCtx)))];
+  // つなぎ先は、地図と同じ経由（PJがそのKRの下に持つTF）で書く。KRを直接は並べない
+  const routes = krs.flatMap((k) => routeTfIds(pj.id, k, tfItems, pjTfIds).map((id) => ({ kr: k, tf: items.find((i) => i.id === id)! })));
   const done = pjTasks.filter((t) => t.status === "完了").length;
   return (
     <>
       <h3 className="mk-panel-h">{pj.name}</h3>
       <dl className="mk-dl">
-        {tf && (
-          <>
-            <dt>TF</dt>
-            <dd>
-              <button type="button" className="mk-linkbtn" onClick={() => setSel({ type: "tf", id: tf.id })}>
-                {tf.short} {tf.name}
-              </button>
-            </dd>
-          </>
-        )}
+        <dt>TF</dt>
+        <dd>
+          <ul className="mk-list mk-list-tight" aria-label="つながるTF">
+            {tfPairs.map((tf) => (
+              <li key={tf.id}>
+                <button type="button" className="mk-linkbtn" onClick={() => setSel({ type: "tf", id: tf.id })}>
+                  {tf.label} {tf.text}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </dd>
         <dt>つなぎ先</dt>
-        <dd>{krs.length === 0 ? "つながっていません" : krs.map((k) => krName(k)).join("、")}</dd>
+        <dd>{routes.length === 0 ? "つながっていません" : routes.map((r) => `${r.tf.label}→${krName(r.kr)}`).join("、")}</dd>
         {pjTasks.length > 0 && (
           <>
             <dt>仕事</dt>

@@ -71,15 +71,15 @@ describe("登録あり／なしの判定", () => {
     expect(tfRegistration("tf21", tasks, noOv, PERIOD_START)).toBe("full");
     expect(tfRegistration("tf11", tasks.filter((t) => t.pjId === "p1"), noOv, PERIOD_START)).toBe("partial");
     expect(tfRegistration("tf11", tasks.filter((t) => t.pjId === "p4"), noOv, PERIOD_START)).toBe("none");
-    expect(tfRegistration("tf33", tasks, noOv, PERIOD_START)).toBe("none");
+    expect(tfRegistration("tf33", tasks, { ...noOv, pjs: [] }, PERIOD_START)).toBe("none");
   });
   it("範囲の注記：分母は今期のTFにつながるPJ、分子は登録のあるPJ。全部に登録があるときは出ない", () => {
     const c = (r: Reach, v = "m2") => reachCounts(regOf(r, v).reg, noOv, PERIOD_START);
-    expect(c("all")).toEqual({ registered: 7, total: 7 });
+    expect(c("all")).toEqual({ registered: 8, total: 8 });
     expect(reachNote(c("all"))).toBeNull();
-    expect(c("pjs")).toEqual({ registered: 2, total: 7 });
-    expect(reachNote(c("pjs"))).toBe("仕事はアプリに登録された分です（7PJ中2PJ）");
-    expect(reachNote(c("solo", "m3"))).toBe("仕事はアプリに登録された分です（7PJ中3PJ）");
+    expect(c("pjs")).toEqual({ registered: 2, total: 8 });
+    expect(reachNote(c("pjs"))).toBe("仕事はアプリに登録された分です（8PJ中2PJ）");
+    expect(reachNote(c("solo", "m3"))).toBe("仕事はアプリに登録された分です（8PJ中4PJ）");
   });
   it("件数の言い方：0件とは書かない", () => {
     expect(workPhrase(3, 2)).toBe("終えた仕事3件、残り2件");
@@ -186,8 +186,8 @@ describe("3つの利用の広がり：地図と詳細", () => {
     expect(h).toContain("からKR3へ：");
     expect((h.match(/class="mk-noreg-box"/g) ?? []).length).toBe(1); // KR1の枠（TFの枠は別の印）
     expect((h.match(/KR1：仕事の登録なし/g) ?? []).length).toBe(1); // 読み上げ用の一文
-    expect((h.match(/mk-tf-empty/g) ?? []).length).toBe(3); // 仕事の無いTF（TF1〜TF3）は点線の枠
-    expect((h.match(/仕事はアプリに登録された分です（7PJ中2PJ）/g) ?? []).length).toBe(1);
+    expect((h.match(/mk-tf-empty/g) ?? []).length).toBe(4); // 仕事の無いTF（TF1-1・TF1-2・TF3-1・TF3-3）は点線の枠
+    expect((h.match(/仕事はアプリに登録された分です（8PJ中2PJ）/g) ?? []).length).toBe(1);
     expect(h).toContain("手がかり 18社／30社");
     expect(h).toContain("KR1 共創パートナー企業を30社にする：AIの見立て 66");
     expect(h).toContain("KR1：仕事の登録なし");
