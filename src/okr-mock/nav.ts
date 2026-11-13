@@ -1,5 +1,6 @@
 import type { OkrItem } from "./types";
 import { krStyle } from "./fixtures";
+import type { FlowCounts } from "./flow";
 import { moveText, type CurrentAssessment } from "./steps";
 import type { Selection, ViewMode } from "./state";
 
@@ -20,6 +21,33 @@ export const panelNarrowPx = (collapsed: boolean) => sidebarWidth(collapsed) + M
 /** ページを切り替える。開いていた詳細は閉じる。同じページを押しても何も変えない */
 export function switchPage(view: { mode: ViewMode; sel: Selection }, to: ViewMode): { mode: ViewMode; sel: Selection } {
   return view.mode === to ? view : { mode: to, sel: null };
+}
+
+/** ページごとの「流れの図を全体表示にしているか」。ページ間で互いに影響しない */
+export type FlowAll = Record<ViewMode, boolean>;
+/** 図に出す範囲。page＝そのページの図、all＝チーム全員＋本人の個人OKR */
+export type FlowView = ViewMode | "all";
+
+export const flowAllInit = (init?: Partial<FlowAll>): FlowAll => ({ team: false, self: false, ...init });
+
+export function setFlowAllFor(flow: FlowAll, page: ViewMode, on: boolean): FlowAll {
+  return flow[page] === on ? flow : { ...flow, [page]: on };
+}
+
+export const flowViewOf = (page: ViewMode, flow: FlowAll): FlowView => (flow[page] ? "all" : page);
+
+/** 図を切り替えたときの選択。KRはどの図にもある。仕事は切り替え先の図に出ているときだけ残す */
+export function selectionAfterFlowSwitch(sel: Selection, visibleTaskIds: ReadonlySet<string>): Selection {
+  if (sel?.type === "task" && !visibleTaskIds.has(sel.id)) return null;
+  return sel;
+}
+
+/** その図で押して選べる仕事のID。つながらない仕事は、名前つきで並ぶ「わたし」の図（withLoose）のときだけ選べる */
+export function visibleTaskIds(counts: FlowCounts, withLoose: boolean): Set<string> {
+  const ids = new Set<string>();
+  for (const list of Object.values(counts.linkedByPj)) for (const t of list) ids.add(t.id);
+  if (withLoose) for (const t of counts.loose) ids.add(t.id);
+  return ids;
 }
 
 export interface SidebarKr {

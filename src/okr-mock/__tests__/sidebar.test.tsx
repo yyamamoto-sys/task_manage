@@ -48,7 +48,7 @@ describe("サイドバー：メニューとページの切替", () => {
   });
   it("下段はアバターと版だけ", () => {
     const s = sidebarOf(html());
-    expect(s).toContain("mock v12");
+    expect(s).toContain("mock v13");
     expect(s).toContain("見ている人：鈴木");
   });
 });
@@ -83,7 +83,7 @@ describe("サイドバー：KR 行", () => {
     expect(s).toContain('title="KR1 共創パートナー企業を30社にする"');
   });
   it("KR を開いているとき、その行が強調される（開いていない行は強調されない）。詳細パネルにもそのKRが出る", () => {
-    for (const mode of ["all", "team", "self"] as const) {
+    for (const mode of ["team", "self"] as const) {
       const h = html({ mode, sel: { type: "kr", id: "kr2" } });
       const s = sidebarOf(h);
       expect(s.match(/mk-sb-btn mk-sb-kr is-active/g)?.length).toBe(1);
@@ -104,7 +104,7 @@ describe("サイドバー：KR 行", () => {
 
 describe("サイドバー：資料と折りたたみ", () => {
   it("「資料を読ませる」で引き出しが開く：どちらのページでもボタンがあり、開いた状態では DocDrawer が出る", () => {
-    for (const mode of ["all", "team", "self"] as const) {
+    for (const mode of ["team", "self"] as const) {
       expect(sidebarOf(html({ mode }))).toContain("📄");
       expect(html({ mode })).not.toContain("読ませる資料");
       expect(html({ mode, drawerOpen: true })).toContain("読ませる資料");
@@ -121,7 +121,7 @@ describe("サイドバー：資料と折りたたみ", () => {
     expect(s).toContain("👥");
     expect(s).toContain("👤");
     expect(s).not.toContain("mk-sb-label");
-    expect(s).not.toContain("mock v12");
+    expect(s).not.toContain("mock v13");
     expect(s).toMatch(/title="KR1：AIの見立て \d+/);
     expect(html({ collapsed: true })).toContain("mk-app is-sb-collapsed");
     expect(sidebarOf(html())).toContain('aria-label="メニューを閉じる"');

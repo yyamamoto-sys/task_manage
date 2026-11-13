@@ -252,7 +252,7 @@ describe("1人だけが使っている状態", () => {
   });
   it("他の人の名前・「全員で」の件数が、地図・今週ここに力を・自分の振り返り・KRの詳細（決定事項の前まで）に出ない", () => {
     for (const k of ["kr1", "kr2", "kr3"]) {
-      for (const mode of ["all", "team", "self"] as const) {
+      for (const mode of ["team", "self"] as const) {
         const h = solo({ mode, sel: { type: "kr", id: k } });
         const main = h.slice(h.indexOf("<main"));
         const body = main.slice(0, main.indexOf("このKRに関わる決定事項と宿題")) + main.slice(main.indexOf("</aside>"), main.indexOf('aria-labelledby="mk-dec-h"'));
@@ -320,20 +320,22 @@ describe("どの状態でも、寂しい・責める表示が出ない", () => {
     let n = 0;
     for (const reach of REACHES) {
       for (const viewerId of ["m2", "m3", "m1"]) {
-        for (const mode of ["all", "team", "self"] as const) {
+        for (const mode of ["team", "self"] as const) {
           for (const sel of [null, { type: "kr" as const, id: "kr1" }, { type: "kr" as const, id: "kr2" }, { type: "kr" as const, id: "kr3" }]) {
-            const h = html({ reach, viewerId, mode, sel });
+            for (const all of [false, true]) {
+            const h = html({ reach, viewerId, mode, sel, flowAll: { [mode]: all } });
             const text = plain(h);
             for (const re of FORBIDDEN) {
               const m = re.exec(text);
-              expect(m, `${reach}/${viewerId}/${mode}/${sel?.id ?? "-"}: ${re} ${m ? text.slice(Math.max(0, m.index - 30), m.index + 30) : ""}`).toBeNull();
+              expect(m, `${reach}/${viewerId}/${mode}/${all ? "all" : "page"}/${sel?.id ?? "-"}: ${re} ${m ? text.slice(Math.max(0, m.index - 30), m.index + 30) : ""}`).toBeNull();
             }
             n++;
+            }
           }
         }
       }
     }
-    expect(n).toBe(108);
+    expect(n).toBe(144);
   });
   it("使っていない人・PJの名前を「未利用」として挙げない（注記は数だけ）", () => {
     for (const reach of ["pjs", "solo"] as const) {

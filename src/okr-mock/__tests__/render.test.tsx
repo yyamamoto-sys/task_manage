@@ -47,7 +47,7 @@ describe("1枚の画面（描画の確認）", () => {
   it("案内はサイドバーに合わせた言い方（3〜4項目）。資料を読ませる操作は案内に入らず、サイドバーのボタンに「チェックインの後に」と添える。用語に「地図」がある", () => {
     const h = html();
     const nav = h.slice(h.indexOf("はじめての人向けの案内"), h.indexOf("</nav>", h.indexOf("はじめての人向けの案内")));
-    const i1 = nav.indexOf("左の「全て」でチームと自分を一緒に、「チーム」で全体、「わたし」で自分の仕事を見ます");
+    const i1 = nav.indexOf("左の「チーム」で全体、「わたし」で自分の仕事を見ます");
     const i2 = nav.indexOf("左の KR を押すと詳細が開きます");
     const i3 = nav.indexOf("地図で見立てを見る");
     expect(i1).toBeGreaterThan(0);

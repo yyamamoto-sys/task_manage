@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from "react";
-import { SIDEBAR_AUTO_COLLAPSE_PX, switchPage } from "./nav";
+import { flowAllInit, setFlowAllFor, SIDEBAR_AUTO_COLLAPSE_PX, switchPage, type FlowAll } from "./nav";
 import { addOutcomeNotes, detectConflicts, mergeAssessments, mergeDecisions, mergeDrafts, mergeLearnings, notesOfResources } from "./confirm";
 import {
   assessInit,
@@ -27,7 +27,7 @@ import type { AssessEntry, Checkin, ClaimStatus, Decision, KintoneRow, KrAnswer,
 import { addHistory, registeredTasks, type History, type Reach } from "./reach";
 import * as U from "./userState";
 
-export type ViewMode = "all" | "team" | "self";
+export type ViewMode = "team" | "self";
 export type Selection = { type: "kr"; id: string } | { type: "task"; id: string } | null;
 export type ModalId = "goals" | "table" | null;
 export interface Celebration {
@@ -48,8 +48,11 @@ interface MockState {
   /** 見ている人。「本人」＝この人（個人OKR・つなぎ先の変更・どう役立つか・振り返り・今週やる・提案の採否の持ち主） */
   viewerId: string;
   setViewerId: (id: string) => void;
-  /** 開いているページ。all＝全て、team＝チーム、self＝わたし（サイドバーのメニューで切り替える） */
+  /** 開いているページ。team＝チーム、self＝わたし（サイドバーのメニューで切り替える） */
   mode: ViewMode;
+  /** 流れの図を全体表示にしているか（ページごとに覚える） */
+  flowAll: FlowAll;
+  setFlowAll: (page: ViewMode, on: boolean) => void;
   /** ページを切り替える。詳細パネルは閉じる。anchor を渡すと、切替後にその場所へ移る（無ければ先頭へ） */
   setMode: (m: ViewMode, anchor?: string) => void;
   pageAnchor: MutableRefObject<string | null>;
@@ -142,6 +145,7 @@ export function useMock(): MockState {
 export interface InitialView {
   viewerId?: string;
   mode?: ViewMode;
+  flowAll?: Partial<FlowAll>;
   sel?: Selection;
   drawerOpen?: boolean;
   /** サイドバーを折りたたんだ状態で始める（描画の確認用。既定は画面幅 900px 以下のときだけ折りたたむ） */
@@ -164,7 +168,9 @@ const reducedMotion = () => typeof window !== "undefined" && typeof window.match
 
 export function MockProvider({ children, initial }: { children: ReactNode; initial?: InitialView }) {
   const [viewerId, setViewerId] = useState(initial?.viewerId ?? DEFAULT_VIEWER);
-  const [mode, setModeState] = useState<ViewMode>(initial?.mode ?? "all");
+  const [mode, setModeState] = useState<ViewMode>(initial?.mode ?? "team");
+  const [flowAll, setFlowAllState] = useState<FlowAll>(() => flowAllInit(initial?.flowAll));
+  const setFlowAll = useCallback((page: ViewMode, on: boolean) => setFlowAllState((f) => setFlowAllFor(f, page, on)), []);
   const [sel, setSel] = useState<Selection>(initial?.sel ?? null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     () => initial?.collapsed ?? (typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia(`(max-width: ${SIDEBAR_AUTO_COLLAPSE_PX}px)`).matches),
@@ -248,6 +254,8 @@ export function MockProvider({ children, initial }: { children: ReactNode; initi
       setViewerId,
       mode,
       setMode,
+      flowAll,
+      setFlowAll,
       pageAnchor,
       sidebarCollapsed,
       setSidebarCollapsed,
@@ -359,7 +367,7 @@ export function MockProvider({ children, initial }: { children: ReactNode; initi
       toast,
       showToast,
     }),
-    [viewerId, reach, regTasks, history, assessHist, assess, learnings, mode, setMode, sidebarCollapsed, sel, guideOpen, drawerOpen, modal, junctionOnly, celebrations, changes, decisionsOpen, newDecisions, items, locked, imported, records, checkins, decisions, confirmedBy, linkCtx, me, outcomeNotes, confirmedLinks, toast, showToast],
+    [viewerId, reach, regTasks, history, assessHist, assess, learnings, mode, setMode, flowAll, setFlowAll, sidebarCollapsed, sel, guideOpen, drawerOpen, modal, junctionOnly, celebrations, changes, decisionsOpen, newDecisions, items, locked, imported, records, checkins, decisions, confirmedBy, linkCtx, me, outcomeNotes, confirmedLinks, toast, showToast],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

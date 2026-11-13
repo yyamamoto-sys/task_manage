@@ -1,4 +1,4 @@
-// 「全て」のページの、画面に依存しない計算。
+// 流れの図を「全体」にしたときの、画面に依存しない計算。
 import type { FlowCounts } from "./flow";
 import { krIdsOfTask, type LinkCtx } from "./logic";
 
@@ -29,21 +29,4 @@ export function mineLineText(line: MineLine, krLabelOf: (id: string) => string):
   if (line.mine === 0) return "あなたの仕事はまだ登録されていません。";
   const head = `チームの仕事 ${line.total}件のうち、あなたの仕事は ${line.mine}件です。`;
   return line.krs.length > 0 ? `${head}${line.krs.map(krLabelOf).join("・")} につながっています。` : head;
-}
-
-export interface SummaryCard {
-  key: "picks" | "claims" | "reflect";
-  label: string;
-  value: string;
-  /** 押すと「わたし」のページのどこへ移るか */
-  anchor: string;
-}
-
-/** わたしの要約のカード。件数が無い項目は出さない（3つとも無ければ空） */
-export function summaryCards(a: { picks: number; pending: number; reflectKrs: number; reflectDone: number }): SummaryCard[] {
-  const out: SummaryCard[] = [];
-  if (a.picks > 0) out.push({ key: "picks", label: "今週やる仕事", value: `${a.picks}件`, anchor: "mk-picks-h" });
-  if (a.pending > 0) out.push({ key: "claims", label: "確かめる", value: `${a.pending}件`, anchor: "mk-claims-h" });
-  if (a.reflectKrs > 0) out.push({ key: "reflect", label: "今週の振り返り", value: a.reflectDone >= a.reflectKrs ? "済み" : "まだ", anchor: "mk-reflect-h" });
-  return out;
 }

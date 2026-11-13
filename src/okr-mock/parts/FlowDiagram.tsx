@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { flowCounts, junctionIdsOf, layoutFlow, OTHER_PJ, ribbonPath, type Ribbon } from "../flow";
 import { mineTaskIds } from "../allPage";
+import { flowViewOf, selectionAfterFlowSwitch, visibleTaskIds, type FlowView } from "../nav";
+import { MineLine } from "./MineLine";
 import { proposalKey } from "../userState";
 import { aiCandidates, krBands, krStyle, PERIOD_START, personalOkrs, PERSONAL_NAME, MINE_COLOR, pjsInit } from "../fixtures";
 import { krIdsOfTask, PERSONAL_PJ } from "../logic";
@@ -55,10 +57,11 @@ function RibbonShape({ r, krId, label, onActivate, dim, all }: { r: Ribbon; krId
 }
 
 export function FlowDiagram() {
-  const { mode, viewerId, tasks, items, records, assess, linkCtx, sel, setSel, personalLinks, togglePersonalLink, celebrations, changes, proposals, confirmedLinks, junctionOnly, setJunctionOnly } = useMock();
-  const scope = mode;
+  const { mode, flowAll, setFlowAll, viewerId, tasks, items, records, assess, linkCtx, sel, setSel, personalLinks, togglePersonalLink, celebrations, changes, proposals, confirmedLinks, junctionOnly, setJunctionOnly } = useMock();
+  const scope = flowViewOf(mode, flowAll);
   const isAll = scope === "all";
   const withPersonal = scope !== "team";
+  const otherScope: FlowView = isAll ? mode : "all";
   const [expanded, setExpanded] = useState<string[]>([]);
   const [armed, setArmed] = useState<string | null>(null);
   const [drag, setDrag] = useState<{ pid: string; x: number; y: number } | null>(null);
@@ -70,12 +73,30 @@ export function FlowDiagram() {
   const krIds = useMemo(() => items.filter((i) => i.kind === "kr").map((k) => k.id), [items]);
   const myPersonal = useMemo(() => personalOkrs.filter((p) => p.ownerId === viewerId), [viewerId]);
 
-  const counts = useMemo(() => flowCounts({ tasks, ctx: linkCtx, ownerId: viewerId, scope: scope === "self" ? "self" : "team", periodStart: PERIOD_START }), [tasks, linkCtx, viewerId, scope]);
-  const mineIds = useMemo(() => (isAll ? mineTaskIds(counts, viewerId) : undefined), [isAll, counts, viewerId]);
-  const layout = useMemo(
-    () => layoutFlow({ counts, krIds, personalIds: withPersonal ? myPersonal.map((p) => p.id) : [], expanded, showLoose: scope === "self", mineIds }),
-    [counts, krIds, withPersonal, scope, myPersonal, expanded, mineIds],
-  );
+  // いまの図と、切り替え先の図を両方つくる（高さをそろえ、選択が切り替え先に残るかを調べるため）
+  const { counts, layout, otherLayout, otherTaskIds } = useMemo(() => {
+    const build = (v: FlowView) => {
+      const c = flowCounts({ tasks, ctx: linkCtx, ownerId: viewerId, scope: v === "self" ? "self" : "team", periodStart: PERIOD_START });
+      const l = layoutFlow({
+        counts: c,
+        krIds,
+        personalIds: v !== "team" ? myPersonal.map((p) => p.id) : [],
+        expanded,
+        showLoose: v === "self",
+        mineIds: v === "all" ? mineTaskIds(c, viewerId) : undefined,
+      });
+      return { c, l };
+    };
+    const cur = build(scope);
+    const oth = build(otherScope);
+    return { counts: cur.c, layout: cur.l, otherLayout: oth.l, otherTaskIds: visibleTaskIds(oth.c, otherScope === "self") };
+  }, [tasks, linkCtx, viewerId, krIds, myPersonal, expanded, scope, otherScope]);
+
+  const switchFlow = (on: boolean) => {
+    if (on === isAll) return;
+    setSel(selectionAfterFlowSwitch(sel, otherTaskIds));
+    setFlowAll(mode, on);
+  };
 
   // 「押してから押す」の選択中は Esc で取り消せる
   useEffect(() => {
@@ -127,7 +148,7 @@ export function FlowDiagram() {
   const krReg = useMemo(() => Object.fromEntries(krIds.map((k) => [k, krRegistration(k, tasks, linkCtx, PERIOD_START)])), [krIds, tasks, linkCtx]);
   const note = reachNote(reachCounts(tasks, linkCtx, PERIOD_START));
   const objText = items.find((i) => i.kind === "objective")?.text ?? "";
-  const H = layout.height + TOP;
+  const H = Math.max(layout.height, otherLayout.height) + TOP;
   const taskOf = (id: string) => tasks.find((t) => t.id === id)!;
   const krNode = (krId: string) => layout.krNodes.find((k) => k.krId === krId)!;
 
@@ -163,6 +184,13 @@ export function FlowDiagram() {
           </svg>
           {scope === "self" ? "あなたの仕事の地図" : isAll ? "仕事がどこへ流れているか（チームとあなた）" : "仕事がどこへ流れているか"}
         </h2>
+        <div className="mk-seg mk-flowseg" role="group" aria-label="地図の表示の切り替え">
+          {([false, true] as const).map((on) => (
+            <button key={String(on)} type="button" className={`mk-seg-item${isAll === on ? " is-on" : ""}`} aria-pressed={isAll === on} onClick={() => switchFlow(on)}>
+              {on ? "全体" : mode === "self" ? "わたし" : "チーム"}
+            </button>
+          ))}
+        </div>
         {junctionIds.size > 0 && (
           <button
             type="button"
@@ -596,6 +624,7 @@ export function FlowDiagram() {
           </g>
         </svg>
       </div>
+      {isAll && <MineLine />}
       {/* 地図が見えない環境でも、数字を読めるように */}
       <p className="mk-sr">
         {krIds.map((k) => (krReg[k] === "none" ? `${krLabel(k)}：仕事の登録なし` : `${krLabel(k)}：${workPhrase(krNode(k).done, krNode(k).open)}`)).join("。")}

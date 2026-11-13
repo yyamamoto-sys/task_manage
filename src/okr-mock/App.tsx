@@ -14,7 +14,6 @@ import { ClaimsBanner } from "./parts/Claims";
 import { SelfHead, SelfPicks, SelfSection } from "./parts/SelfSection";
 import { Sidebar } from "./parts/Sidebar";
 import { TeamBand } from "./parts/TeamBand";
-import { MineLine, MineSummary } from "./parts/AllSummary";
 import { OBlock, RecentLearnings } from "./parts/OBlock";
 import { GoalsScreen } from "./screens/GoalsScreen";
 import { Modal } from "./ui";
@@ -64,7 +63,7 @@ function Guide() {
       <ol className="mk-guide-steps">
         <li>
           <span className="mk-guide-no">1</span>
-          <span>左の「全て」でチームと自分を一緒に、「チーム」で全体、「わたし」で自分の仕事を見ます</span>
+          <span>左の「チーム」で全体、「わたし」で自分の仕事を見ます。地図の右上の「全体」を押すと、いまの見え方と全体を見比べられます</span>
         </li>
         <li>
           <span className="mk-guide-no">2</span>
@@ -181,16 +180,7 @@ function Shell() {
         <main ref={mainRef} className="mk-main mk-onepage">
           <Header />
           <Guide />
-          {mode === "all" ? (
-            <>
-              <OBlock />
-              <TeamBand />
-              <MineLine />
-              <FlowAndDetail />
-              <MineSummary />
-              <RecentLearnings />
-            </>
-          ) : mode === "team" ? (
+          {mode === "team" ? (
             <>
               <OBlock />
               <TeamBand />

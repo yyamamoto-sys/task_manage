@@ -16,6 +16,10 @@
 .mk-seg-item { padding: 6px 16px; font-size: 13px; cursor: pointer; color: var(--color-text-secondary); position: relative; }
 .mk-seg-item.is-on { background: var(--color-brand); color: #fff; font-weight: 700; }
 .mk-seg-item:focus-within { outline: 3px solid var(--color-brand); outline-offset: -3px; }
+button.mk-seg-item { border: 0; background: transparent; font-family: inherit; }
+button.mk-seg-item.is-on { background: var(--color-brand); }
+button.mk-seg-item:focus-visible { outline: 3px solid var(--color-brand); outline-offset: -3px; }
+.mk-flowseg { margin-left: 4px; }
 .mk-iconbtn {
   position: relative; display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px;
   border-radius: 50%; border: 1px solid var(--color-border-secondary); background: var(--color-bg-primary); color: var(--color-text-primary);
@@ -263,12 +267,8 @@
 .mk-oline { margin: 0; font-size: 12px; color: var(--color-text-secondary); }
 .mk-selfnote { margin: 0; padding: 10px 16px; font-size: 13px; }
 @media print { .mk-shell { display: block !important; } }
-
-/* 「全て」のページ：あなたの分の1行・わたしの要約・凡例 */
+/* 流れの図を「全体」にしたときの、あなたの分の1行 */
+/* 流れの図を「全体」にしたときの、あなたの分の1行・凡例 */
 .mk-mineline { margin: 0; padding: 10px 16px; border-radius: 12px; font-size: 14px; font-weight: 600; border: 1px solid var(--color-border-tertiary, #d6dbe6); }
-.mk-mysum { display: flex; flex-wrap: wrap; gap: 10px; }
-.mk-mysum-card { display: flex; flex-direction: column; gap: 2px; min-width: 130px; padding: 8px 14px; border-radius: 12px; border: 1px solid var(--color-border-tertiary, #d6dbe6); background: var(--color-bg-secondary); color: inherit; font: inherit; text-align: left; cursor: pointer; }
-.mk-mysum-card strong { font-size: 18px; }
-.mk-mysum-card:hover { filter: brightness(0.97); }
 .mk-lg-you { background: #3b6fd4; }
 .mk-lg-others { background: rgba(59, 111, 212, 0.22); }
