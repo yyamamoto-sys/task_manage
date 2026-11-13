@@ -280,7 +280,7 @@ export function buildSummaryText(args: {
 export interface WorkDigest {
   done: number;
   total: number;
-  /** 仕事の消化（％の整数）。仕事が0件のときは null */
+  /** 仕事の完了率（％の整数）。仕事が0件のときは null */
   pct: number | null;
 }
 
@@ -514,7 +514,7 @@ export interface CompareRow {
   right: Seg[];
 }
 
-/** Kintone（正）とアプリのTFを突き合わせる。文言の違いと、行の過不足（Kintoneにだけある／アプリにだけある） */
+/** Kintone（正式な内容）とアプリのTFを突き合わせる。文言の違いと、行の過不足（Kintoneにだけある／アプリにだけある） */
 export function compareOkr(appTfs: OkrItem[], kintone: KintoneRow[]): CompareRow[] {
   const rows: CompareRow[] = [];
   for (const k of kintone) {

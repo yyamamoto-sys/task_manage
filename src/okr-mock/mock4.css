@@ -131,10 +131,18 @@
   .mk-burst { display: none; }
 }
 
+/* 図（760px 以上）＋詳細（360px）が横スクロールなしに並ぶのは、メイン領域の中身が 1166px 以上のとき。
+   メイン領域＝ウィンドウ幅 − サイドバー − 左右の余白48px。境目は nav.ts の panelNarrowPx と同じ値
+   （サイドバー160px なら 1373px、折りたたみ48px なら 1261px）。これより狭いときは詳細が右から出る引き出しになる */
+@media (max-width: 1373px) {
+  .mk-app:not(.is-sb-collapsed) .mk-flowwrap { grid-template-columns: minmax(0, 1fr); }
+  .mk-app:not(.is-sb-collapsed) .mk-panel { position: fixed; top: 0; right: 0; bottom: 0; z-index: 45; width: min(420px, 100%); max-height: none; border-radius: 16px 0 0 16px; box-shadow: var(--shadow-lg); outline: none; pointer-events: auto; }
+}
+@media (max-width: 1261px) {
+  .mk-app.is-sb-collapsed .mk-flowwrap { grid-template-columns: minmax(0, 1fr); }
+  .mk-app.is-sb-collapsed .mk-panel { position: fixed; top: 0; right: 0; bottom: 0; z-index: 45; width: min(420px, 100%); max-height: none; border-radius: 16px 0 0 16px; box-shadow: var(--shadow-lg); outline: none; pointer-events: auto; }
+}
 @media (max-width: 1100px) {
-  .mk-flowwrap { grid-template-columns: minmax(0, 1fr); }
-  /* 幅が狭いときは図の下ではなく、右から出る引き出し */
-  .mk-panel { position: fixed; top: 0; right: 0; bottom: 0; z-index: 45; width: min(420px, 100%); max-height: none; border-radius: 16px 0 0 16px; box-shadow: var(--shadow-lg); outline: none; pointer-events: auto; }
   .mk-band-body { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 700px) {
@@ -208,3 +216,50 @@
 .mk-learnfeed { padding: 10px 16px; }
 .mk-bandsdoc { margin: 6px 0; font-size: 12.5px; }
 .mk-bandsdoc summary { cursor: pointer; }
+
+/* 第11版：左のサイドバー（本番 MainLayout の Sidebar に似せた形）と、2つのページ */
+.mk-shell { display: flex; flex: 1; min-height: 0; }
+.mk-sidebar {
+  width: 160px; flex-shrink: 0; display: flex; flex-direction: column; min-height: 0; box-sizing: border-box;
+  background: var(--color-bg-primary); border-right: 1px solid var(--color-border-primary); font-size: 13px;
+}
+.mk-sidebar.is-collapsed { width: 48px; }
+.mk-sb-top { display: flex; align-items: center; justify-content: space-between; gap: 4px; padding: 10px 8px 6px; min-height: 36px; }
+.mk-sidebar.is-collapsed .mk-sb-top { justify-content: center; padding-inline: 4px; }
+.mk-sb-logo { display: inline-flex; align-items: baseline; gap: 4px; font-family: var(--font-display); font-size: 17px; padding-left: 4px; }
+.mk-sb-logo small { font-size: 10px; color: var(--color-text-secondary); font-family: inherit; }
+.mk-sb-fold, .mk-sb-btn, .mk-sb-mode {
+  border: none; background: transparent; color: var(--color-text-secondary); font: inherit; cursor: pointer; text-align: left; border-radius: var(--radius-md);
+}
+.mk-sb-fold { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; border: 1px solid var(--color-border-secondary); }
+.mk-sb-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 0 6px 8px; display: flex; flex-direction: column; gap: 2px; }
+.mk-sb-modes { display: flex; margin: 4px 0 6px; border: 1px solid var(--color-border-secondary); border-radius: var(--radius-full); overflow: hidden; }
+.mk-sidebar.is-collapsed .mk-sb-modes { flex-direction: column; border-radius: var(--radius-md); }
+.mk-sb-mode { flex: 1; padding: 5px 2px; font-size: 11px; text-align: center; border-radius: 0; white-space: nowrap; }
+.mk-sb-mode.is-on { background: var(--color-brand); color: #fff; font-weight: 700; cursor: default; }
+.mk-sb-btn { display: flex; align-items: center; gap: 8px; width: 100%; box-sizing: border-box; padding: 7px 8px; min-width: 0; }
+.mk-sidebar.is-collapsed .mk-sb-btn { justify-content: center; padding-inline: 0; }
+.mk-sb-btn:hover:not(.is-inert) { background: var(--color-bg-tertiary); }
+.mk-sb-btn.is-active { background: var(--color-brand-light); color: var(--color-brand); font-weight: 700; }
+[data-theme="dark"] .mk-sb-btn.is-active { color: var(--color-text-info); background: var(--color-bg-info); }
+.is-inert { opacity: 0.55; cursor: not-allowed; }
+.mk-sb-label { display: inline-flex; align-items: baseline; gap: 6px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mk-sb-note { font-size: 10px; font-weight: 500; color: var(--color-text-secondary); }
+.mk-sb-h { margin: 10px 4px 2px; font-size: 11px; font-weight: 700; color: var(--color-text-tertiary); letter-spacing: 0.04em; }
+.mk-sb-section { display: flex; flex-direction: column; gap: 1px; }
+.mk-sidebar.is-collapsed .mk-sb-section { margin-top: 8px; }
+.mk-sb-kr .mk-kdot { width: 10px; height: 10px; }
+.mk-sb-val { font-weight: 700; color: var(--color-text-primary); margin-left: 6px; }
+.mk-sb-tag { font-size: 10px; font-weight: 600; color: var(--color-text-secondary); }
+.mk-sb-docs { margin-top: 10px; border: 1px solid var(--color-border-secondary); color: var(--color-text-primary); }
+.mk-sidebar.is-collapsed .mk-sb-docs { border: none; }
+.mk-sb-bottom { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-top: 1px solid var(--color-border-primary); }
+.mk-sidebar.is-collapsed .mk-sb-bottom { justify-content: center; padding-inline: 0; }
+.mk-sb-avatar { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 50%; background: var(--color-brand); color: #fff; font-size: 12px; font-weight: 700; flex-shrink: 0; }
+.mk-sb-ver { font-size: 10px; color: var(--color-text-tertiary); }
+.mk-sb-fold:focus-visible, .mk-sb-btn:focus-visible, .mk-sb-mode:focus-visible { outline: 3px solid var(--color-brand); outline-offset: -3px; }
+
+/* 「わたし」のページの冒頭 */
+.mk-oline { margin: 0; font-size: 12px; color: var(--color-text-secondary); }
+.mk-selfnote { margin: 0; padding: 10px 16px; font-size: 13px; }
+@media print { .mk-shell { display: block !important; } }

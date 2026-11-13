@@ -22,6 +22,7 @@ import { useMock } from "../state";
 import { hasStretch, learningsOfKr, moveText, nextLine, nextRequirements, stepMove, stepsOf } from "../steps";
 import { proposalKey } from "../userState";
 import { TrendChart } from "./Trend";
+import { panelNarrowPx } from "../nav";
 import { hintText, JunctionMark, KrDot, KrDots, krLabel, krListText, krName, krText, nameOf, signed, StatusChip, StepScale, useFocusTrap, useNarrow } from "../ui";
 
 function KrPanel({ krId }: { krId: string }) {
@@ -149,7 +150,7 @@ function KrPanel({ krId }: { krId: string }) {
                 <i style={{ width: `${work.pct ?? 0}%` }} />
               </span>
               <span>
-                {work.pct === null ? "仕事なし" : `消化 ${work.pct}％`}
+                {work.pct === null ? "仕事なし" : `完了 ${work.pct}％`}
                 <span className="mk-muted">（{work.done}／{work.total}件 完了）</span>
               </span>
             </div>
@@ -364,7 +365,7 @@ function TaskPanel({ taskId }: { taskId: string }) {
             </fieldset>
           </>
         ) : (
-          <p className="mk-muted">この仕事はどのKRにもつながっていません。名前つきの一覧とAIの提案は、担当の本人が「自分」表示で見るときだけ出ます。</p>
+          <p className="mk-muted">この仕事はどのKRにもつながっていません。名前つきの一覧とAIの提案は、担当の本人が「わたし」のページで見るときだけ出ます。</p>
         )
       ) : mine ? (
         <>
@@ -414,12 +415,12 @@ function TaskPanel({ taskId }: { taskId: string }) {
 }
 
 /**
- * 詳細パネル。幅が広いときは地図の右、1100px 以下では右から出る引き出し。
+ * 詳細パネル。幅が広いときは地図の右、狭いときは右から出る引き出し（境目はサイドバーの幅しだい。nav.ts の panelNarrowPx と mock4.css が同じ値）。
  * 開いたらパネルへフォーカスを移す。離れた場所から開いて見えない位置にあるときはスクロールする
  */
 export function DetailPanel() {
-  const { sel, setSel } = useMock();
-  const narrow = useNarrow(1100);
+  const { sel, setSel, sidebarCollapsed } = useMock();
+  const narrow = useNarrow(panelNarrowPx(sidebarCollapsed));
   const ref = useRef<HTMLElement>(null);
   const key = sel ? `${sel.type}:${sel.id}` : "";
 

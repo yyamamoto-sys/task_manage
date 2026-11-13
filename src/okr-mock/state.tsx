@@ -1,4 +1,5 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from "react";
+import { SIDEBAR_AUTO_COLLAPSE_PX, switchPage } from "./nav";
 import { addOutcomeNotes, detectConflicts, mergeAssessments, mergeDecisions, mergeDrafts, mergeLearnings, notesOfResources } from "./confirm";
 import {
   assessInit,
@@ -47,8 +48,13 @@ interface MockState {
   /** 見ている人。「本人」＝この人（個人OKR・つなぎ先の変更・どう役立つか・振り返り・今週やる・提案の採否の持ち主） */
   viewerId: string;
   setViewerId: (id: string) => void;
+  /** 開いているページ。team＝チーム、self＝わたし（サイドバーのメニューで切り替える） */
   mode: ViewMode;
-  setMode: (m: ViewMode) => void;
+  /** ページを切り替える。詳細パネルは閉じる。anchor を渡すと、切替後にその場所へ移る（無ければ先頭へ） */
+  setMode: (m: ViewMode, anchor?: string) => void;
+  pageAnchor: MutableRefObject<string | null>;
+  sidebarCollapsed: boolean;
+  setSidebarCollapsed: (v: boolean) => void;
   sel: Selection;
   setSel: (s: Selection) => void;
   guideOpen: boolean;
@@ -68,7 +74,7 @@ interface MockState {
   lockedAt: string;
   imported: boolean;
   setImported: (v: boolean) => void;
-  /** Kintone（正）の内容を取り込んで確定する */
+  /** Kintone（正式な内容）を取り込んで確定する */
   importFromKintone: () => void;
   unlockDemo: () => void;
   kintone: KintoneRow[];
@@ -138,6 +144,8 @@ export interface InitialView {
   mode?: ViewMode;
   sel?: Selection;
   drawerOpen?: boolean;
+  /** サイドバーを折りたたんだ状態で始める（描画の確認用。既定は画面幅 900px 以下のときだけ折りたたむ） */
+  collapsed?: boolean;
   confirmedBy?: Record<string, string>;
   changes?: Change[];
   /** 利用の広がりを指定して始める（描画の確認用。既定は全員が登録） */
@@ -156,8 +164,21 @@ const reducedMotion = () => typeof window !== "undefined" && typeof window.match
 
 export function MockProvider({ children, initial }: { children: ReactNode; initial?: InitialView }) {
   const [viewerId, setViewerId] = useState(initial?.viewerId ?? DEFAULT_VIEWER);
-  const [mode, setMode] = useState<ViewMode>(initial?.mode ?? "team");
+  const [mode, setModeState] = useState<ViewMode>(initial?.mode ?? "team");
   const [sel, setSel] = useState<Selection>(initial?.sel ?? null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    () => initial?.collapsed ?? (typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia(`(max-width: ${SIDEBAR_AUTO_COLLAPSE_PX}px)`).matches),
+  );
+  const pageAnchor = useRef<string | null>(null);
+  const setMode = useCallback(
+    (m: ViewMode, anchor?: string) => {
+      pageAnchor.current = anchor ?? null;
+      const next = switchPage({ mode, sel }, m);
+      setModeState(next.mode);
+      setSel(next.sel);
+    },
+    [mode, sel],
+  );
   const [guideOpen, setGuideOpen] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(initial?.drawerOpen ?? false);
   const [modal, setModal] = useState<ModalId>(null);
@@ -227,6 +248,9 @@ export function MockProvider({ children, initial }: { children: ReactNode; initi
       setViewerId,
       mode,
       setMode,
+      pageAnchor,
+      sidebarCollapsed,
+      setSidebarCollapsed,
       sel,
       setSel,
       guideOpen,
@@ -335,12 +359,12 @@ export function MockProvider({ children, initial }: { children: ReactNode; initi
       toast,
       showToast,
     }),
-    [viewerId, reach, regTasks, history, assessHist, assess, learnings, mode, sel, guideOpen, drawerOpen, modal, junctionOnly, celebrations, changes, decisionsOpen, newDecisions, items, locked, imported, records, checkins, decisions, confirmedBy, linkCtx, me, outcomeNotes, confirmedLinks, toast, showToast],
+    [viewerId, reach, regTasks, history, assessHist, assess, learnings, mode, setMode, sidebarCollapsed, sel, guideOpen, drawerOpen, modal, junctionOnly, celebrations, changes, decisionsOpen, newDecisions, items, locked, imported, records, checkins, decisions, confirmedBy, linkCtx, me, outcomeNotes, confirmedLinks, toast, showToast],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 
-/** Kintone（正）とアプリの今期のTFの突き合わせ */
+/** Kintone（正式な内容）とアプリの今期のTFの突き合わせ */
 export function useCompareRows() {
   const { items, kintone } = useMock();
   return useMemo(

@@ -234,7 +234,7 @@ export interface PastWeek {
   answers: Record<string, { effect: Effect; match: Match; view: string }>;
 }
 
-/** Kintone（正）から読んだTFの1行 */
+/** Kintone（正式な内容）から読んだTFの1行 */
 export interface KintoneRow {
   id: string;
   label: string;

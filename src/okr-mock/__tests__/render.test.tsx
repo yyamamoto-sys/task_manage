@@ -13,23 +13,49 @@ const taskOf = (title: string) => tasks.find((t) => t.title === title)!;
 const FORBIDDEN = [/タスク/, /バンド/, /立場では/, /効かせられなかった/, /流れの図/, /目標の取り込み/, /本人にしか見えません/, /アプリ側に合わせる/];
 
 describe("1枚の画面（描画の確認）", () => {
-  it("上から O・段の帯・今週ここに力を・地図・決定事項と宿題。画面ごとのナビは無い", () => {
+  it("チームのページ：上から O・段の帯・最近の学び・地図・決定事項と宿題。今週ここに力を・振り返りは出ない", () => {
     const h = html();
-    const order = ["なぜこのOか", "チームはいま、どの段にいるか", "今週ここに力を", "仕事がどこへ流れているか", "決定事項と宿題"].map((s) => h.indexOf(s));
+    const order = ["なぜこのOか", "チームはいま、どの段にいるか", "仕事がどこへ流れているか", "決定事項と宿題"].map((s) => h.indexOf(s));
     expect(order.every((i) => i >= 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
     expect(h).toContain("日々の仕事と OKR をつなぐ地図");
     expect(h).toContain("はじめての人向けの案内");
+    expect(h).not.toContain("今週ここに力を");
+    expect(h).not.toContain("今週の振り返り");
+    expect(h).not.toContain("今週やると選んだ仕事");
   });
-  it("3ステップ案内はメンバーの順序。資料を読ませる操作は案内に入らず、ボタンに「チェックインの後に」と添える", () => {
+  it("わたしのページ：O は1行・「なぜこのOか」は出ない。本人だけの注記→今週ここに力を→今週やる仕事→地図→確かめる→振り返り→積み上げ→期のまとめ", () => {
+    const h = html({ mode: "self" });
+    expect(h).not.toContain("なぜこのOか");
+    expect(h).not.toContain("チームはいま、どの段にいるか");
+    expect(h).not.toContain("決定事項と宿題");
+    expect(h).toContain("O：</span>地域と企業が一緒に動く「共創の輪」を広げる");
+    const order = [
+      "O：",
+      "ここは本人だけの部分です。ほかの人にも、GMにも見えません。",
+      "今週ここに力を",
+      "今週やると選んだ仕事",
+      "あなたの仕事の地図",
+      "成果につながったかもしれない仕事",
+      "今週の振り返り",
+      "成果につながった仕事の積み上げ",
+      "期のまとめ",
+    ].map((s) => h.indexOf(s, s === "今週やると選んだ仕事" ? h.indexOf('id="mk-picks-h"') : 0));
+    expect(order.every((i) => i >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+  });
+  it("案内はサイドバーに合わせた言い方（3〜4項目）。資料を読ませる操作は案内に入らず、サイドバーのボタンに「チェックインの後に」と添える。用語に「地図」がある", () => {
     const h = html();
     const nav = h.slice(h.indexOf("はじめての人向けの案内"), h.indexOf("</nav>", h.indexOf("はじめての人向けの案内")));
-    const i1 = nav.indexOf("地図で見立てを見る");
-    const i2 = nav.indexOf("次の段への手がかりを確かめる");
-    const i3 = nav.indexOf("今週やる仕事を選ぶ");
+    const i1 = nav.indexOf("左の「チーム」で全体、「わたし」で自分の仕事を見ます");
+    const i2 = nav.indexOf("左の KR を押すと詳細が開きます");
+    const i3 = nav.indexOf("地図で見立てを見る");
     expect(i1).toBeGreaterThan(0);
     expect(i2).toBeGreaterThan(i1);
     expect(i3).toBeGreaterThan(i2);
+    expect(nav.match(/mk-guide-no/g)?.length).toBeLessThanOrEqual(4);
+    expect(nav).toContain("地図</b>：仕事から KR、O へのつながりを示す図");
+    expect(nav).toContain("見立て</b>");
     expect(nav).not.toContain("資料を読ませる");
     expect(h).toContain("チェックインの後に");
   });
@@ -42,7 +68,8 @@ describe("1枚の画面（描画の確認）", () => {
   });
   it("用語がそろっている：O（めざす姿）・AIの見立て・手がかり・段", () => {
     const h = html();
-    for (const w of ["O（めざす姿）", "AIの見立て", "手がかり", "次の段"]) expect(h).toContain(w);
+    for (const w of ["O（めざす姿）", "AIの見立て", "手がかり"]) expect(h).toContain(w);
+    expect(html({ mode: "self" })).toContain("次の段");
     for (const re of FORBIDDEN) expect(h).not.toMatch(re);
     expect(h).not.toMatch(/>目標</);
   });
@@ -112,8 +139,8 @@ describe("本人＝見ている人", () => {
     expect(m1).toContain("まだ選んでいません");
   });
   it("今週ここに力を：次の段への手がかり（まだ／一部の要件）・今週やるの印。遅れは使わない", () => {
-    const h = html();
-    const focus = h.slice(h.indexOf('id="mk-focus-h"'), h.indexOf("仕事がどこへ流れているか"));
+    const h = html({ mode: "self" });
+    const focus = h.slice(h.indexOf('id="mk-focus-h"'), h.indexOf('id="mk-picks-h"'));
     expect(focus).toContain("次の段（70）への手がかり");
     expect(focus).toContain("新しい進め方が資料にまとまり、他の人も使えること");
     expect(focus).toContain("今週やる ✓");
@@ -121,14 +148,14 @@ describe("本人＝見ている人", () => {
     expect(focus).not.toContain("ポイント");
   });
   it("自分の仕事がつながっていないKR（鈴木さんのKR2）は、今週ここに力をに挙げない", () => {
-    const h = html();
-    const focus = h.slice(h.indexOf('id="mk-focus-h"'), h.indexOf("仕事がどこへ流れているか"));
+    const h = html({ mode: "self" });
+    const focus = h.slice(h.indexOf('id="mk-focus-h"'), h.indexOf('id="mk-picks-h"'));
     expect(focus).not.toContain("KR2");
     expect(focus).not.toContain("この KR につなげられそうなあなたの仕事");
   });
   it("段のカードにも未更新の印が出る", () => {
     const h = html();
-    const gauge = h.slice(h.indexOf('class="mk-gauge'), h.indexOf("今週ここに力を"));
+    const gauge = h.slice(h.indexOf('class="mk-gauge'), h.indexOf('id="mk-flow-h"'));
     expect(gauge).toContain("未更新");
   });
 });

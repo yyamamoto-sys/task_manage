@@ -20,7 +20,7 @@ function useMyClaims() {
 
 export const claimBannerText = (n: number) => `あなたの仕事が成果につながったかもしれません ${n}件`;
 
-/** 「今週ここに力を」の近くに出す件数。確かめる場所は「自分」表示の中 */
+/** 「今週ここに力を」の近くに出す件数。確かめる場所は「わたし」のページの中 */
 export function ClaimsBanner() {
   const { mode, setMode } = useMock();
   const { pending } = useMyClaims();
@@ -34,15 +34,15 @@ export function ClaimsBanner() {
           確かめる
         </a>
       ) : (
-        <button type="button" className="mk-btn mk-btn-sm" onClick={() => setMode("self")}>
-          「自分」表示で確かめる
+        <button type="button" className="mk-btn mk-btn-sm" onClick={() => setMode("self", "mk-claims-h")}>
+          「わたし」で確かめる
         </button>
       )}
     </div>
   );
 }
 
-/** 「自分」表示の中。1件ずつ「そのとおり／違う」を選ぶ（文章入力なし）。本人の答えは本人にだけ見える */
+/** 「わたし」のページの中。1件ずつ「そのとおり／違う」を選ぶ（文章入力なし）。本人の答えは本人にだけ見える */
 export function ClaimsList() {
   const { outcomeNotes, answerClaim, viewerId, tasks } = useMock();
   const { rows, pending } = useMyClaims();

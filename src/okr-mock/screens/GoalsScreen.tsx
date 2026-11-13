@@ -14,7 +14,7 @@ const STATUS: Record<RowStatus, { label: string; cls: string }> = {
   appOnly: { label: "アプリにだけある", cls: "mk-chip-red" },
 };
 
-/** Kintone を正として取り込む画面。アプリ側に合わせる操作は無く、違いを見せて取り込むだけ */
+/** Kintone の内容を正式なものとして取り込む画面。アプリ側に合わせる操作は無く、違いを見せて取り込むだけ */
 export function GoalsScreen() {
   const { locked, lockedAt, imported, setImported, importFromKintone, unlockDemo, showToast, items } = useMock();
   const [q, setQ] = useState<Quarter>(CURRENT_QUARTER);
@@ -26,7 +26,7 @@ export function GoalsScreen() {
     <div>
       <h1 className="mk-h1">O・KRの取り込み</h1>
       <p className="mk-lead">
-        O（めざす姿）とKRは半期の間ずっと固定です。TFは四半期ごとに、Kintoneで確定した内容を正として取り込み、ロックします。
+        O（めざす姿）とKRは半期の間ずっと固定です。TFは四半期ごとに、Kintoneで確定した内容を正式なものとして取り込み、ロックします。
       </p>
 
       <div className="mk-card">
@@ -125,7 +125,7 @@ export function GoalsScreen() {
 
           {imported && (
             <>
-              <h2 className="mk-h2">Kintone（正）とアプリの違い（4QのTF）</h2>
+              <h2 className="mk-h2">Kintone（正式な内容）とアプリの違い（4QのTF）</h2>
               {diffs === 0 ? (
                 <p className="mk-chip mk-chip-green">違いはありません。取り込んでロックできます。</p>
               ) : (
@@ -137,7 +137,7 @@ export function GoalsScreen() {
                     <tr>
                       <th style={{ width: 70 }}></th>
                       <th>アプリにある内容（いま）</th>
-                      <th>Kintone（正）</th>
+                      <th>Kintone（正式な内容）</th>
                       <th style={{ width: 150 }}>違い</th>
                     </tr>
                   </thead>
@@ -168,7 +168,7 @@ export function GoalsScreen() {
                 >
                   Kintoneの内容を取り込んでロック
                 </button>
-                <span className="mk-muted">Kintoneが正です。アプリ側に合わせる操作はありません。</span>
+                <span className="mk-muted">Kintoneの内容が正式です。アプリ側に合わせる操作はありません。</span>
               </div>
             </>
           )}

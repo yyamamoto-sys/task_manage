@@ -284,8 +284,8 @@ describe("登録なしのKRでも、段の目盛り・見立て・学びが出�
 
 describe("今週ここに力を：新しい選び方（画面）", () => {
   it("次の段の要件にまだ／一部があり、自分の仕事がつながるKR。文言は「次の段（70）への手がかり」", () => {
-    const h = html({ viewerId: "m2" });
-    const focus = h.slice(h.indexOf('id="mk-focus-h"'), h.indexOf("仕事がどこへ流れているか"));
+    const h = html({ viewerId: "m2", mode: "self" });
+    const focus = h.slice(h.indexOf('id="mk-focus-h"'), h.indexOf('id="mk-picks-h"'));
     expect(focus).toContain("次の段（70）への手がかり");
     expect((focus.match(/次の段（70）への手がかり/g) ?? []).length).toBe(2);
     expect(focus).not.toMatch(BANNED);

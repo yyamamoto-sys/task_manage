@@ -119,7 +119,7 @@ export const MINE_COLOR = "#c2338a";
 export const PERIOD_END = "2026-12-31";
 
 /**
- * Kintone（正）の PDF から読んだ体のデータ（今期4QのTF）。アプリとの違いは4か所：
+ * Kintone（正式な内容）の PDF から読んだ体のデータ（今期4QのTF）。アプリとの違いは4か所：
  * 文言の違い2（TF2-2・TF3-2）、Kintoneにだけある行1（TF2-3）、アプリにだけある行1（TF3-3）
  */
 export const kintoneRows: KintoneRow[] = okrItems

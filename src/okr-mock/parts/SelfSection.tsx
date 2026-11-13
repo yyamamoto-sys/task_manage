@@ -29,7 +29,7 @@ function Picks() {
   return (
     <div>
       {out.total === 0 ? (
-        <p className="mk-muted">まだ選んでいません。「今週ここに力を」の自分の仕事で「今週やる」を押すと、ここに出ます。</p>
+        <p className="mk-muted">まだ選んでいません。上の「今週ここに力を」で「今週やる」を押すと、ここに出ます。</p>
       ) : (
         <>
           <p className="mk-small">
@@ -252,6 +252,38 @@ function Summary() {
   );
 }
 
+/** 「わたし」のページの冒頭。O は1行だけ小さく（「なぜこのOか」は出さない） */
+export function SelfHead() {
+  const { items } = useMock();
+  const o = items.find((i) => i.kind === "objective");
+  return (
+    <>
+      {o && (
+        <p className="mk-oline">
+          <span className="mk-oblock-k">O：</span>
+          {o.text}
+        </p>
+      )}
+      <p className="mk-card mk-selfnote" role="note">
+        ここは本人だけの部分です。ほかの人にも、GMにも見えません。
+      </p>
+    </>
+  );
+}
+
+/** 流れの図の手前：今週やると選んだ仕事 */
+export function SelfPicks() {
+  return (
+    <section className="mk-card" aria-labelledby="mk-picks-h">
+      <h2 id="mk-picks-h" className="mk-h2 mk-h2-big">
+        今週やると選んだ仕事
+      </h2>
+      <Picks />
+    </section>
+  );
+}
+
+/** 流れの図の後ろ：成果につながったかもしれない仕事・振り返り・積み上げ・期のまとめ */
 export function SelfSection() {
   const { viewerId } = useMock();
   return (
@@ -259,9 +291,6 @@ export function SelfSection() {
       <h2 id="mk-self-h" className="mk-h2 mk-h2-big">
         {nameOf(viewerId)}さんだけの振り返り
       </h2>
-      <p className="mk-muted">ここは本人だけの部分です。ほかの人にも、GMにも見えません。</p>
-      <h3 className="mk-h3">今週やると選んだ仕事</h3>
-      <Picks />
       <ClaimsList />
       <h3 className="mk-h3">今週の振り返り</h3>
       <Reflect />

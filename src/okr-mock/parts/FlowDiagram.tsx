@@ -506,7 +506,7 @@ export function FlowDiagram() {
               );
             })()}
 
-            {/* つながらない仕事：チーム表示では件数だけ。名前つきの一覧は本人が「自分」表示で見るときだけ */}
+            {/* つながらない仕事：チーム表示では件数だけ。名前つきの一覧は本人が「わたし」のページで見るときだけ */}
             {layout.looseCount > 0 && scope === "team" && (
               <text x={0} y={layout.looseTop + 12} fontSize={12} fontWeight={700} className="mk-svgtext-muted">
                 つながらない仕事 {layout.looseCount}件

@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { scrollToId } from "./nav";
 import { members, PERIOD_START, REACH_PJ_IDS, tasks as allTasks, VIEWER_IDS } from "./fixtures";
 import { formatFull, TODAY } from "./logic";
 import { reachCounts, registeredTasks, type Reach } from "./reach";
@@ -9,14 +10,16 @@ import { DetailPanel } from "./parts/DetailPanel";
 import { DocDrawer } from "./parts/DocDrawer";
 import { FlowDiagram } from "./parts/FlowDiagram";
 import { FocusCard } from "./parts/FocusCard";
-import { SelfSection } from "./parts/SelfSection";
+import { ClaimsBanner } from "./parts/Claims";
+import { SelfHead, SelfPicks, SelfSection } from "./parts/SelfSection";
+import { Sidebar } from "./parts/Sidebar";
 import { TeamBand } from "./parts/TeamBand";
 import { OBlock, RecentLearnings } from "./parts/OBlock";
 import { GoalsScreen } from "./screens/GoalsScreen";
 import { Modal } from "./ui";
 
 function Header() {
-  const { mode, setMode, setDrawerOpen, setModal, locked } = useMock();
+  const { setModal, locked } = useMock();
   return (
     <header className="mk-head print-hide">
       <div className="mk-head-title">
@@ -35,25 +38,6 @@ function Header() {
         </div>
       </div>
       <span className="mk-spacer" />
-      <div className="mk-seg" role="radiogroup" aria-label="表示の切替">
-        {(
-          [
-            ["team", "チーム"],
-            ["self", "自分"],
-          ] as const
-        ).map(([id, label]) => (
-          <label key={id} className={`mk-seg-item${mode === id ? " is-on" : ""}`}>
-            <input type="radio" name="mk-mode" className="mk-sr" checked={mode === id} onChange={() => setMode(id)} />
-            {label}
-          </label>
-        ))}
-      </div>
-      <span className="mk-withnote">
-        <button type="button" className="mk-btn mk-btn-primary" onClick={() => setDrawerOpen(true)}>
-          資料を読ませる
-        </button>
-        <span className="mk-btn-note">チェックインの後に</span>
-      </span>
       <button type="button" className="mk-iconbtn" aria-label={`O・KRの取り込み${locked ? "" : "（確定待ち）"}`} title="O・KRの取り込み" onClick={() => setModal("goals")}>
         <svg width={18} height={18} viewBox="-10 -10 20 20" aria-hidden="true">
           <circle r={3} fill="none" stroke="currentColor" strokeWidth={1.8} />
@@ -79,20 +63,22 @@ function Guide() {
       <ol className="mk-guide-steps">
         <li>
           <span className="mk-guide-no">1</span>
+          <span>左の「チーム」で全体、「わたし」で自分の仕事を見ます</span>
+        </li>
+        <li>
+          <span className="mk-guide-no">2</span>
+          <span>左の KR を押すと詳細が開きます</span>
+        </li>
+        <li>
+          <span className="mk-guide-no">3</span>
           <a className="mk-linkbtn" href="#mk-flow-h">
             地図で見立てを見る
           </a>
         </li>
         <li>
-          <span className="mk-guide-no">2</span>
-          <a className="mk-linkbtn" href="#mk-focus-h">
-            次の段への手がかりを確かめる
-          </a>
-        </li>
-        <li>
-          <span className="mk-guide-no">3</span>
-          <button type="button" className="mk-linkbtn" onClick={() => setMode("self")}>
-            今週やる仕事を選ぶ
+          <span className="mk-guide-no">4</span>
+          <button type="button" className="mk-linkbtn" onClick={() => setMode("self", "mk-focus-h")}>
+            「わたし」で今週やる仕事を選ぶ
           </button>
         </li>
       </ol>
@@ -109,13 +95,25 @@ function Guide() {
         <li>
           <b>手がかり</b>：状態を観るための数字（例：12社／30社）
         </li>
+        <li>
+          <b>地図</b>：仕事から KR、O へのつながりを示す図
+        </li>
       </ul>
     </nav>
   );
 }
 
+function FlowAndDetail() {
+  return (
+    <div className="mk-flowwrap">
+      <FlowDiagram />
+      <DetailPanel />
+    </div>
+  );
+}
+
 function Shell() {
-  const { toast, mode, drawerOpen, modal, setModal, viewerId, setViewerId, reach, setReach, linkCtx } = useMock();
+  const { toast, mode, pageAnchor, sidebarCollapsed, drawerOpen, modal, setModal, viewerId, setViewerId, reach, setReach, linkCtx } = useMock();
   const pjsCounts = reachCounts(registeredTasks(allTasks, "pjs", viewerId, REACH_PJ_IDS), linkCtx, PERIOD_START);
   const reachLabels: Record<Reach, string> = {
     all: "全員が登録（いまの架空データ）",
@@ -128,8 +126,25 @@ function Shell() {
     else document.documentElement.removeAttribute("data-theme");
   }, [dark]);
 
+  // ページを切り替えたら先頭へ戻す（場所を指定されたときはそこへ）。最初の表示では動かさない
+  const mainRef = useRef<HTMLElement>(null);
+  const firstPaint = useRef(true);
+  useEffect(() => {
+    if (firstPaint.current) {
+      firstPaint.current = false;
+      return;
+    }
+    const anchor = pageAnchor.current;
+    pageAnchor.current = null;
+    if (anchor && document.getElementById(anchor)) scrollToId(anchor);
+    else {
+      mainRef.current?.scrollTo?.(0, 0);
+      window.scrollTo?.(0, 0);
+    }
+  }, [mode, pageAnchor]);
+
   return (
-    <div className="mk-app">
+    <div className={`mk-app${sidebarCollapsed ? " is-sb-collapsed" : ""}`}>
       <div className="mk-banner print-hide" role="note">
         OKRモード モック（架空データ・保存されません）
         <span className="mk-banner-sub">今日＝{formatFull(TODAY)}で固定</span>
@@ -160,20 +175,31 @@ function Shell() {
           {dark ? "ライトにする" : "ダークにする"}
         </button>
       </div>
-      <main className="mk-main mk-onepage">
-        <Header />
-        <Guide />
-        <OBlock />
-        <TeamBand />
-        <RecentLearnings />
-        <FocusCard />
-        <div className="mk-flowwrap">
-          <FlowDiagram />
-          <DetailPanel />
-        </div>
-        {mode === "self" && <SelfSection />}
-        <DecisionsFold />
-      </main>
+      <div className="mk-shell">
+        <Sidebar />
+        <main ref={mainRef} className="mk-main mk-onepage">
+          <Header />
+          <Guide />
+          {mode === "team" ? (
+            <>
+              <OBlock />
+              <TeamBand />
+              <RecentLearnings />
+              <ClaimsBanner />
+              <FlowAndDetail />
+              <DecisionsFold />
+            </>
+          ) : (
+            <>
+              <SelfHead />
+              <FocusCard />
+              <SelfPicks />
+              <FlowAndDetail />
+              <SelfSection />
+            </>
+          )}
+        </main>
+      </div>
       {drawerOpen && <DocDrawer />}
       {modal === "goals" && (
         <Modal title="O・KRの取り込み" onClose={() => setModal(null)} wide>

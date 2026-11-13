@@ -110,7 +110,7 @@ describe("画面：結びつき", () => {
     expect(h).toMatch(/★1/);
     expect(html()).not.toMatch(/★1/);
   });
-  it("本人の「自分」表示と「今週ここに力を」の近くに、件数つきで届く。他の人には出ない", () => {
+  it("チームのページの知らせと、「わたし」のページに、件数つきで届く。他の人には出ない", () => {
     const m1 = html({ ...outcomeView(), viewerId: "m1" });
     expect(m1).toContain("あなたの仕事が成果につながったかもしれません 1件");
     const m1self = html({ ...outcomeView(), viewerId: "m1", mode: "self" });

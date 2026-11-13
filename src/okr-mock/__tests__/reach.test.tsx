@@ -231,11 +231,11 @@ describe("3つの利用の広がり：地図と詳細", () => {
     expect(solo).toMatch(/結節点の仕事\d+件（登録された分）を含みます/);
   });
   it("今週ここに力を：登録なしのKRでは未完了の件数を出さない。一部のときは「登録された分」と添える", () => {
-    const all = html({ reach: "all" });
+    const all = html({ reach: "all", mode: "self" });
     expect(all).toContain("全員で");
-    const pjs = html({ reach: "pjs" });
+    const pjs = html({ reach: "pjs", mode: "self" });
     expect(pjs).not.toContain("全員で");
-    for (const reach of ["pjs", "solo"] as const) expect(html({ reach, viewerId: "m3" })).not.toContain("全員で");
+    for (const reach of ["pjs", "solo"] as const) expect(html({ reach, viewerId: "m3", mode: "self" })).not.toContain("全員で");
   });
 });
 
