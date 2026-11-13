@@ -224,7 +224,7 @@ describe("仕事とKRのつながり", () => {
     expect(linkedTasks(dup, ctx)).toHaveLength(p7.length);
     expect(tasksOfKr(dup, "kr3", ctx)).toHaveLength(p7.length);
   });
-  it("AIの候補は全PJ・個人の仕事分にあり、どう効くかの案は全KR分にある", () => {
+  it("AIの候補は全PJ・個人の仕事分にあり、どう役立つかの案は全KR分にある", () => {
     for (const p of pjsInit) expect(aiCandidates[p.id]?.length).toBeGreaterThanOrEqual(1);
     expect(aiCandidates.personal.length).toBeGreaterThanOrEqual(2);
     for (const k of krIds) {
@@ -288,7 +288,7 @@ describe("前回更新〜今回更新の間に終えた仕事", () => {
   });
 });
 
-describe("効きの積み上がり", () => {
+describe("成果につながった仕事の積み上げ", () => {
   const b = buildup(tasks, M2, krIds, PERIOD_START, TODAY, ctx);
   it("期の始めの週から今週まで、週は月曜始まりで並ぶ", () => {
     expect(b.weeks[0]).toBe(weekStartOf(PERIOD_START));
@@ -323,7 +323,7 @@ describe("効きの積み上がり", () => {
 });
 
 describe("期のまとめ", () => {
-  it("「どう効くか」は仕事×KR。該当のKRの行にだけ付き、合計は1回に数える", () => {
+  it("「どう役立つか」は仕事×KR。該当のKRの行にだけ付き、合計は1回に数える", () => {
     const t = titled("集計の手順を書き出す");
     const text = buildSummaryText({
       period: "2026年 下期",
@@ -385,7 +385,7 @@ describe("今週の振り返りと今週やる", () => {
     const b = titled("デザインの初稿を作る");
     const c = titled("提案資料の英語版を作る");
     const out = picksOutcome(tasks, [a.id, b.id, c.id, "none"]);
-    expect(out.counts).toEqual({ 終えた: 1, 進行中: 1, 未着手: 1 });
+    expect(out.counts).toEqual({ 完了: 1, 進行中: 1, 未着手: 1 });
     expect(out.total).toBe(3);
   });
 });

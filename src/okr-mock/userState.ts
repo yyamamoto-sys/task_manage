@@ -1,4 +1,4 @@
-// 人ごとの状態（つなぎ先の変更・提案の採否・「どう効くか」・個人OKRのつなぎ・振り返り・今週やる）。
+// 人ごとの状態（つなぎ先の変更・提案の採否・「どう役立つか」・個人OKRのつなぎ・振り返り・今週やる）。
 // 「本人」＝いま見ている人。すべて利用者IDごとに分け、他の人の分は読まない・書かない。
 import { overridesInit, personalLinksInit, picksInit } from "./fixtures";
 import { answerKey, howKey } from "./logic";
@@ -9,7 +9,7 @@ export interface UserState {
   overrides: Record<string, string[]>;
   /** AIの提案の採否（仕事×KR。proposalKey） */
   proposals: Record<string, "taken" | "skipped">;
-  /** どう効くか（仕事×KR → 一言） */
+  /** どう役立つか（仕事×KR → 一言） */
   how: Record<string, string>;
   personalLinks: { personalId: string; krId: string }[];
   /** 週の振り返りの答え（週×KR） */
@@ -55,7 +55,7 @@ export const proposalKey = (taskId: string, krId: string) => `${taskId}|${krId}`
 /**
  * つなぎ先を選び直す（krIds＝選んだKRの集合。空配列＝どのKRにもつながない）／もとに戻す（krIds を渡さない）。担当者本人だけが変えられる。
  * defaultKrs はその仕事の既定のつなぎ先（もとに戻すと、これになる）。
- * つなぎ先から外れたKRの「どう効くか」と、採った提案の記録だけを消す（残したKRの答えは消さない）
+ * つなぎ先から外れたKRの「どう役立つか」と、採った提案の記録だけを消す（残したKRの答えは消さない）
  */
 export function setOverride(s: UserStates, userId: string, task: Task, krIds: string[] | undefined, defaultKrs: string[]): UserStates {
   if (task.assigneeId !== userId) return s;

@@ -44,7 +44,7 @@ export interface Change {
 const okrInit = itemsInQuarter(okrAll, CURRENT_QUARTER);
 
 interface MockState {
-  /** 見ている人。「本人」＝この人（個人OKR・つなぎ先の変更・どう効くか・振り返り・今週やる・提案の採否の持ち主） */
+  /** 見ている人。「本人」＝この人（個人OKR・つなぎ先の変更・どう役立つか・振り返り・今週やる・提案の採否の持ち主） */
   viewerId: string;
   setViewerId: (id: string) => void;
   mode: ViewMode;

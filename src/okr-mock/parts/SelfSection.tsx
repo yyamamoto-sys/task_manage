@@ -7,7 +7,7 @@ import type { Effect, Match } from "../types";
 import { krLabel, krName, mdOf, nameOf, StatusChip } from "../ui";
 import { ClaimsList } from "./Claims";
 
-const EFFECTS: Effect[] = ["よく効いた", "少し", "今週は届かず"];
+const EFFECTS: Effect[] = ["役立った", "少し役立った", "今週は役立たなかった"];
 const MATCHES: Match[] = ["そのとおり", "少し違う", "違う"];
 
 function Choice<T extends string>({ name, options, value, onChange }: { name: string; options: T[]; value?: T; onChange: (v: T) => void }) {
@@ -33,7 +33,7 @@ function Picks() {
       ) : (
         <>
           <p className="mk-small">
-            {(["終えた", "進行中", "未着手"] as const)
+            {(["完了", "進行中", "未着手"] as const)
               .filter((k) => out.counts[k] > 0)
               .map((k) => `${k} ${out.counts[k]}件`)
               .join("／")}
@@ -73,11 +73,11 @@ function Reflect() {
               <section key={k} className="mk-reflect-item" style={{ borderTopColor: krStyle(k).color }} aria-label={krName(k)}>
                 <strong>{krName(k)}</strong>
                 <div className="mk-small" style={{ margin: "6px 0 2px" }}>
-                  今週の効き具合
+                  今週の仕事はKRに役立ったか
                 </div>
                 <Choice name={`eff-${k}`} options={EFFECTS} value={a?.effect} onChange={(v) => setAnswer(k, { effect: v })} />
                 <div className="mk-aiview">
-                  <span className="mk-chip mk-chip-blue">AIの見立て</span> {weeklyView(moved)}
+                  <span className="mk-chip mk-chip-blue">AIのまとめ</span> {weeklyView(moved)}
                 </div>
                 <Choice name={`mat-${k}`} options={MATCHES} value={a?.match} onChange={(v) => setAnswer(k, { match: v })} />
               </section>
@@ -98,9 +98,9 @@ function Reflect() {
               <thead>
                 <tr>
                   <th>KR</th>
-                  <th>効き具合</th>
-                  <th>AIの見立て</th>
-                  <th>見立てへの答え</th>
+                  <th>役立ったか</th>
+                  <th>AIのまとめ</th>
+                  <th>まとめへの答え</th>
                 </tr>
               </thead>
               <tbody>
@@ -265,7 +265,7 @@ export function SelfSection() {
       <ClaimsList />
       <h3 className="mk-h3">今週の振り返り</h3>
       <Reflect />
-      <h3 className="mk-h3">効きの積み上がり</h3>
+      <h3 className="mk-h3">成果につながった仕事の積み上げ</h3>
       <Buildup />
       <h3 className="mk-h3">期のまとめ</h3>
       <Summary />

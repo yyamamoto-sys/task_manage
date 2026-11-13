@@ -11,7 +11,8 @@ export function StepLegend() {
       <p className="mk-small">
         <strong>60</strong>＝これまでの進め方でも届く水準／<strong>70</strong>＝取り組みによる明確な前進／<strong>80</strong>＝周りから見ても成果が明らか／<strong>90・100</strong>＝これまでのやり方を超える
       </p>
-      <p className="mk-small mk-muted">70 に届けば十分な前進です。60 台は、これまでの進め方の延長にいるということで、悪い状態ではありません。</p>
+      <p className="mk-small mk-muted">「背伸びの目標」は、90・100 の段を持つKRに付きます。</p>
+      <p className="mk-small mk-muted">70 に届けば十分な前進です。60 台は、これまでの進め方で届く範囲にいるという意味で、悪い状態ではありません。</p>
     </div>
   );
 }
@@ -35,7 +36,7 @@ function Gauge({ krId }: { krId: string }) {
       type="button"
       className={`mk-gauge${active ? " is-active" : ""}`}
       style={{ borderTopColor: color }}
-      aria-label={`${krLabel(krId)} ${krText(krId)}：AI の見立て ${a.value}、前回から${mv}。${next}${stale ? "。未更新" : ""}${change ? `。今回${change.text}` : ""}。押すと詳細を開きます`}
+      aria-label={`${krLabel(krId)} ${krText(krId)}：AIの見立て ${a.value}、前回から${mv}。${next}${stale ? "。未更新" : ""}${change ? `。今回${change.text}` : ""}。押すと詳細を開きます`}
       onClick={() => setSel({ type: "kr", id: krId })}
     >
       {change && (
@@ -51,7 +52,7 @@ function Gauge({ krId }: { krId: string }) {
       <span className="mk-gauge-text">{krText(krId)}</span>
       <StepScale krId={krId} value={a.value} width={200} />
       <span className="mk-gauge-num">
-        {`AI の見立て ${a.value}`}
+        {`AIの見立て ${a.value}`}
         <span className="mk-muted">{`（前回から ${mv}）`}</span>
       </span>
       <span className="mk-gauge-text">{next}</span>
@@ -103,7 +104,7 @@ export function TeamBand() {
           ))}
         </div>
       </div>
-      <p className="mk-muted">見立ては、チェックイン資料の記述からAIが出したものです。数字は状態を観る手がかりで、見立ての主役ではありません。</p>
+      <p className="mk-muted">見立ては、チェックイン資料の記述からAIが出したものです。数字は状態を観る手がかりで、数字だけで見立ては決まりません。</p>
     </section>
   );
 }

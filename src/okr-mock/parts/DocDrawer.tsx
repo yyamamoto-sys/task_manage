@@ -61,7 +61,7 @@ export function DocDrawer() {
             閉じる
           </button>
         </div>
-        <p className="mk-muted">チェックインの後に使います。資料からAIの見立て・手がかりの数字・学び・決定事項・宿題の下書きを取り出し、直したい数字だけ直して、まとめて確定します。見立ては資料の記述だけから決まり、そのまま確定されます。誰でも操作できます。</p>
+        <p className="mk-muted">チェックインの後に使います。資料から、AIの見立て・手がかりの数字・学び・決定事項・宿題の下書きを取り出します。直したい数字だけ直して、まとめて確定します。見立ては資料の記述だけから決まり、そのまま確定されます。誰でも操作できます。</p>
         {confirmer && (
           <div className="mk-card mk-note" role="status">
             この回（{formatMd(nextCheckin.date)} {nextCheckin.title}）は{nameOf(confirmer)}さんが確定済みです。続けて別の資料を確定すると、決定事項と宿題は資料ごとに足し合わされます。
@@ -87,7 +87,7 @@ export function DocDrawer() {
         {selected.length > 0 && read && (
           <>
             <h3 className="mk-h3">2. AIが読み取った下書き</h3>
-            <h4 className="mk-panel-sub">AI の見立て（資料の記述だけから。60が出発点）</h4>
+            <h4 className="mk-panel-sub">AIの見立て（資料の記述だけから。60が出発点）</h4>
             {assessedKrs.length === 0 ? (
               <p className="mk-muted">この資料からは、見立てを取り出せませんでした。</p>
             ) : (
@@ -100,7 +100,7 @@ export function DocDrawer() {
                   return (
                     <li key={k}>
                       <strong>{krName(k)}</strong>：前回 {before ? before.cur.assessment.value : "―"} → 案 <strong>{a.value}</strong>{" "}
-                      <span className="mk-muted">（AI の見立て・前回から {before ? moveText(a.value - before.cur.assessment.value) : "前回なし"}）</span>
+                      <span className="mk-muted">（AIの見立て・前回から {before ? moveText(a.value - before.cur.assessment.value) : "前回なし"}）</span>
                       <div className="mk-small">{a.summary}</div>
                       <ul className="mk-list mk-list-tight">
                         {a.basis.map((b) => (
@@ -269,7 +269,7 @@ export function DocDrawer() {
               >
                 まとめて確定
               </button>
-              <span className="mk-muted">{open.length > 0 ? "食い違いのすべてで、採る値を選ぶと押せます。" : "確定すると、地図と帯が新しい見立てになります。"}</span>
+              <span className="mk-muted">{open.length > 0 ? "食い違いのすべてで、採る値を選ぶと押せます。" : "確定すると、地図と「チームはいま、どの段にいるか」の欄が新しい見立てになります。"}</span>
             </div>
           </>
         )}

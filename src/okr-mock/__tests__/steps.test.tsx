@@ -93,7 +93,7 @@ describe("次の段の要件の取り出し", () => {
   it("「70 まで：◯◯が確認できれば」の1行になる。要件がそろっていれば別の言い方", () => {
     expect(nextLine(kr1, krBands.kr1)).toBe("70 まで：パートナー候補との接点が継続的に生まれていること、新しい進め方が資料にまとまり、他の人も使えること、紹介をきっかけにした提携が出ていることが確認できれば");
     const all = { ...kr1, basis: kr1.basis.map((b) => ({ ...b, status: "確認できた" as const })) };
-    expect(nextLine(all, krBands.kr1)).toBe("70 まで：要件はそろって見えています");
+    expect(nextLine(all, krBands.kr1)).toBe("70 まで：要件はすべて確認できています");
   });
 });
 
@@ -184,9 +184,9 @@ describe("画面：O・段の目盛り・凡例・学び", () => {
   });
   it("90・100 を持つKR（KR1・KR2）だけに「背伸びの目標」の印", () => {
     const h = html();
-    expect(h).toMatch(/KR1 共創パートナー企業を30社にする：AI の見立て[^"]*背伸びの目標/);
-    expect(h).toMatch(/KR2 地域拠点の稼働率を80%にする：AI の見立て[^"]*背伸びの目標/);
-    expect(h).not.toMatch(/KR3 社内の定型業務を減らす：AI の見立て[^"]*背伸びの目標/);
+    expect(h).toMatch(/KR1 共創パートナー企業を30社にする：AIの見立て[^"]*背伸びの目標/);
+    expect(h).toMatch(/KR2 地域拠点の稼働率を80%にする：AIの見立て[^"]*背伸びの目標/);
+    expect(h).not.toMatch(/KR3 社内の定型業務を減らす：AIの見立て[^"]*背伸びの目標/);
   });
   it("チームの帯：全体の％は出ない。KRごとの段の目盛りと、前回から動いたKR", () => {
     const h = html();
@@ -201,15 +201,15 @@ describe("画面：O・段の目盛り・凡例・学び", () => {
     const h = html({ sel: { type: "kr", id: "kr1" } });
     const i = h.indexOf("Oに近づいた証拠として見るもの");
     expect(i).toBeGreaterThan(0);
-    expect(i).toBeLessThan(h.indexOf("いまの段（AI の見立て）"));
+    expect(i).toBeLessThan(h.indexOf("いまの段（AIの見立て）"));
     expect(h).toContain("70 の要件");
     expect(h).toContain("資料の記述：「展示会のフォロー先を10社に絞った」");
     expect(h).toContain("資料に記述がありません");
-    expect(h).toContain("AI の見立て");
+    expect(h).toContain("AIの見立て");
   });
   it("詳細の学びは回の見出しつき・新しい順", () => {
     const h = html({ sel: { type: "kr", id: "kr2" } });
-    const sec = h.slice(h.indexOf("学び・気づき（資料から"), h.indexOf("成果と仕事の対比"));
+    const sec = h.slice(h.indexOf("学び・気づき（資料から"), h.indexOf("見立てと仕事の対比"));
     expect(sec).toContain("予約の流れが分かりにくいと、問い合わせが増える");
     expect(sec).toContain("10/20(火) 10月第2回チェックイン");
   });
@@ -254,14 +254,14 @@ describe("「遅れ」などの語は、詳細を開いていない画面に出�
     expect(h.match(BANNED)).toBeNull();
     const heads = [...h.matchAll(/<th>([^<]*)<\/th>/g)].map((m) => m[1]);
     expect(heads).toEqual(["KR", "段の基準（60／70／80の要約）", "いま", "前回から"]);
-    expect(h).toContain("（AI の見立て）");
+    expect(h).toContain("（AIの見立て）");
     expect(h).toContain("+2");
     expect(h).toContain("+3");
     expect(h).not.toMatch(/mk-chip-red|赤/);
   });
-  it("詳細の中だけに「手がかりの数字は期の経過より後ろです」が残る", () => {
-    expect(html().includes("期の経過より後ろです")).toBe(false);
-    expect(html({ sel: { type: "kr", id: "kr1" } }).includes("手がかりの数字は期の経過より後ろです")).toBe(true);
+  it("詳細の中だけに「手がかりの数字の進みは、期の経過より小さいです」が残る", () => {
+    expect(html().includes("期の経過より小さいです")).toBe(false);
+    expect(html({ sel: { type: "kr", id: "kr1" } }).includes("手がかりの数字の進みは、期の経過より小さいです")).toBe(true);
   });
 });
 
@@ -269,9 +269,9 @@ describe("登録なしのKRでも、段の目盛り・見立て・学びが出�
   it("一部のPJだけ登録：KR1は仕事の登録なし。地図に段の目盛りと見立て、詳細に見立て・学び", () => {
     const h = html({ reach: "pjs" });
     expect(h).toContain("KR1：仕事の登録なし");
-    expect(h).toMatch(/KR1 共創パートナー企業を30社にする：AI の見立て 66/);
+    expect(h).toMatch(/KR1 共創パートナー企業を30社にする：AIの見立て 66/);
     const d = html({ reach: "pjs", sel: { type: "kr", id: "kr1" } });
-    expect(d).toContain("いまの段（AI の見立て）");
+    expect(d).toContain("いまの段（AIの見立て）");
     expect(d).toContain("mk-stepscale");
     expect(d).toContain("展示会で会った相手は、お礼の連絡が早いほど反応が良い");
     expect(d).toContain("この KR につながる仕事は、アプリに登録されていません。");

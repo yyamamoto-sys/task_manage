@@ -30,12 +30,12 @@ describe("状態は利用者IDごとに分かれる（本人＝見ている人�
     expect(U.takeProposal(before, "m3", t2m2, "kr3", [], [])).toBe(before);
     expect(U.togglePick(before, "m3", WEEK_START, t2m2)).toBe(before);
   });
-  it("どう効くか・提案の採否・個人OKRのつなぎ・振り返り・今週やるは、人ごとに別", () => {
+  it("どう役立つか・提案の採否・個人OKRのつなぎ・振り返り・今週やるは、人ごとに別", () => {
     let s = fresh();
     s = U.setHow(s, "m3", t2.id, "kr1", "提案の質を上げて、紹介を増やす");
     s = U.setProposal(s, "m3", "any", "kr1", "skipped");
     s = U.toggleLink(s, "m3", "po5", "kr2");
-    s = U.setAnswer(s, "m3", WEEK_START, "kr1", { effect: "少し" });
+    s = U.setAnswer(s, "m3", WEEK_START, "kr1", { effect: "少し役立った" });
     s = U.togglePick(s, "m3", WEEK_START, t2);
     for (const other of ["m2", "m1"]) {
       const u = U.userOf(s, other);
@@ -45,7 +45,7 @@ describe("状態は利用者IDごとに分かれる（本人＝見ている人�
       expect(u.answers[answerKey(WEEK_START, "kr1")]).toBeUndefined();
       expect(u.picks[WEEK_START] ?? []).not.toContain(t2.id);
     }
-    expect(s.m3.answers[answerKey(WEEK_START, "kr1")]).toEqual({ effect: "少し" });
+    expect(s.m3.answers[answerKey(WEEK_START, "kr1")]).toEqual({ effect: "少し役立った" });
     expect(s.m3.picks[WEEK_START]).toContain(t2.id);
   });
   it("3人それぞれに個人OKRのつなぎと今週やるの初期データがある", () => {
@@ -55,7 +55,7 @@ describe("状態は利用者IDごとに分かれる（本人＝見ている人�
   });
 });
 
-describe("「どう効くか」は仕事×KR。つなぎ先を変えたら消える", () => {
+describe("「どう役立つか」は仕事×KR。つなぎ先を変えたら消える", () => {
   const two = tasks.find((t) => t.title === "ルールを全員に説明する")!;
   it("同じ仕事でもKRごとに別の答えを持つ", () => {
     let s = fresh();
@@ -168,12 +168,12 @@ describe("今週やる", () => {
 describe("振り返りの答えは週×KR", () => {
   it("同じKRでも週が違えば別、同じ週でもKRが違えば別", () => {
     let s = fresh();
-    s = U.setAnswer(s, "m2", WEEK_START, "kr1", { effect: "よく効いた" });
-    s = U.setAnswer(s, "m2", "2026-11-02", "kr1", { effect: "少し" });
+    s = U.setAnswer(s, "m2", WEEK_START, "kr1", { effect: "役立った" });
+    s = U.setAnswer(s, "m2", "2026-11-02", "kr1", { effect: "少し役立った" });
     s = U.setAnswer(s, "m2", WEEK_START, "kr3", { match: "違う" });
     s = U.setAnswer(s, "m2", WEEK_START, "kr1", { match: "そのとおり" });
-    expect(s.m2.answers[answerKey(WEEK_START, "kr1")]).toEqual({ effect: "よく効いた", match: "そのとおり" });
-    expect(s.m2.answers[answerKey("2026-11-02", "kr1")]).toEqual({ effect: "少し" });
+    expect(s.m2.answers[answerKey(WEEK_START, "kr1")]).toEqual({ effect: "役立った", match: "そのとおり" });
+    expect(s.m2.answers[answerKey("2026-11-02", "kr1")]).toEqual({ effect: "少し役立った" });
     expect(s.m2.answers[answerKey(WEEK_START, "kr3")]).toEqual({ match: "違う" });
   });
 });

@@ -116,7 +116,7 @@ export function FlowDiagram() {
 
   const personalPort = (pid: string) => layout.personal.find((p) => p.id === pid)!;
 
-  // 結節点＝2つ以上のKRにつながる仕事。強調は、結節点が1件以上あるときだけ効く
+  // 結節点＝2つ以上のKRにつながる仕事。強調は、結節点が1件以上あるときだけ働く
   const junctionIds = useMemo(() => junctionIdsOf(counts, linkCtx), [counts, linkCtx]);
   const jOn = junctionOnly && junctionIds.size > 0;
   const edgeHasJunction = (krId: string, pjIds: string[] | null) => counts.edges.some((e) => e.krId === krId && (pjIds === null || pjIds.includes(e.pjId)) && e.taskIds.some((id) => junctionIds.has(id)));
@@ -156,7 +156,7 @@ export function FlowDiagram() {
         <div className="mk-legend" aria-label="凡例">
           <span>
             <i className="mk-lg mk-lg-done" />
-            濃い＝終えた
+            濃い＝完了
           </span>
           <span>
             <i className="mk-lg mk-lg-open" />
@@ -177,9 +177,9 @@ export function FlowDiagram() {
           {note}
         </p>
       )}
-      <p className="mk-muted mk-kindnote">段の目盛りは成果（資料の記述からのAIの見立て）、帯は仕事（終えた・残り）。仕事を終えても、見立ては資料を読ませるまで動きません</p>
+      <p className="mk-muted mk-kindnote">段の目盛りはAIの見立て（資料の記述から）、帯は仕事（完了・残り）です。仕事を終えても、見立ては資料を読ませるまで動きません</p>
       <p className="mk-muted">
-        左のPJ（押すと仕事が開きます）から、中央のKR、右のO（めざす姿）へ。帯の太さは、そのKR向けの仕事のうち何割かを表します。KRを押すと詳細、仕事を押すとつなぎ先を確かめられます。
+        左のPJ（押すと仕事が開きます）から、中央のKR、右のO（めざす姿）へ。帯の太さは、そのKRにつながる仕事のうち、そのPJの仕事が占める割合を表します。KRを押すと詳細、仕事を押すとつなぎ先を確かめられます。
         {scope === "self" && " 個人OKRからKRへ矢印をドラッグ（または、左を押してから右を押す）でつなぎます。"}
       </p>
       {armed && (
@@ -417,7 +417,7 @@ export function FlowDiagram() {
               const change = changes.find((c) => c.krId === n.krId);
               const stretch = hasStretch(krBands[n.krId]);
               const hl = hintLine(r);
-              const label = `${krLabel(n.krId)} ${krText(n.krId)}：AI の見立て ${value}${hl ? `、${hl}` : ""}（${r.updatedAt}の資料）${stretch ? "、背伸びの目標" : ""}。押すと詳細を開きます`;
+              const label = `${krLabel(n.krId)} ${krText(n.krId)}：AIの見立て ${value}${hl ? `、${hl}` : ""}（${r.updatedAt}の資料）${stretch ? "、背伸びの目標" : ""}。押すと詳細を開きます`;
               return (
                 <SvgButton
                   key={n.krId}
@@ -440,7 +440,7 @@ export function FlowDiagram() {
                     {krLabel(n.krId)}
                   </text>
                   <text x={n.x + n.w - 14} y={n.y + 22} fontSize={11} fontWeight={700} textAnchor="end" className="mk-svgtext">
-                    AI の見立て
+                    AIの見立て
                   </text>
                   {stretch && (
                     <text x={n.x + n.w - 90} y={n.y + 22} fontSize={10} textAnchor="end" className="mk-svgtext-muted">

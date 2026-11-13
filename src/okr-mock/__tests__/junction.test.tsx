@@ -115,7 +115,7 @@ describe("積み上がり・期のまとめ・完了時のつながりは、KR�
     expect(b.total[last]).toBe(b0.total[last]);
     expect(b.cumulative.kr2[last]).toBe(b0.cumulative.kr2[last] + (krIdsOfTask(done, noOv).includes("kr2") ? 0 : 1));
   });
-  it("期のまとめ：選んだ各KRの下に1回ずつ載り、合計は1回。「どう効くか」はそのKRにだけ付く", () => {
+  it("期のまとめ：選んだ各KRの下に1回ずつ載り、合計は1回。「どう役立つか」はそのKRにだけ付く", () => {
     const ctx = withOv({ [done.id]: ["kr1", "kr3"] });
     const how = { [howKey(done.id, "kr3")]: "手作業を自動化して、時間を減らす" };
     const text = buildSummaryText({ period: "p", owner: "o", krs: okrItems.filter((i) => i.kind === "kr"), tasks, memberId: "m2", start: PERIOD_START, today: TODAY, ctx, how });
@@ -211,7 +211,7 @@ describe("結節点の描画", () => {
   });
   it("つなぎ先の選択はチェック式：AIの候補が上、ほかのKRが下。すべてのKRが選べる。もとに戻すボタンがある", () => {
     const h = html({ sel: { type: "task", id: A.id } });
-    const sec = h.slice(h.indexOf("つなぎ先を変える（複数選べます）"), h.indexOf("にどう効くか"));
+    const sec = h.slice(h.indexOf("つなぎ先を変える（複数選べます）"), h.indexOf("にどう役立つか"));
     expect(sec).toContain('type="checkbox"');
     expect(sec).not.toContain('type="radio"');
     expect((sec.match(/type="checkbox"/g) ?? []).length).toBe(3);

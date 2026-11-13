@@ -217,12 +217,12 @@ export function buildup(tasks: Task[], memberId: string, krIds: string[], start:
   return { weeks, cumulative, total };
 }
 
-/** 「どう効くか」の答えの持ち方：仕事×KR */
+/** 「どう役立つか」の答えの持ち方：仕事×KR */
 export const howKey = (taskId: string, krId: string) => `${taskId}|${krId}`;
 /** 週の振り返りの答えの持ち方：週×KR */
 export const answerKey = (weekStart: string, krId: string) => `${weekStart}|${krId}`;
 
-/** 期のまとめ（コピー用の文面）。どのKRへ何を積んだか。「どう効くか」は該当のKRにだけ付ける */
+/** 期のまとめ（コピー用の文面）。どのKRへ何を積んだか。「どう役立つか」は該当のKRにだけ付ける */
 export function buildSummaryText(args: {
   period: string;
   owner: string;
@@ -236,7 +236,7 @@ export function buildSummaryText(args: {
   how: Record<string, string>;
   /** 本人が「そのとおり」と確かめた、成果につながった仕事 */
   outcomes?: { title: string; krLabel: string; change: string; excerpt: string }[];
-  /** 週の振り返りの答え（本人の分だけ。効き具合は選んだ言葉のまま） */
+  /** 週の振り返りの答え（本人の分だけ。役立ったかは選んだ言葉のまま） */
   reflections?: { weekStart: string; krLabel: string; effect: string }[];
   /** KRごとのAIの見立ての推移（例：10/6 62 → 10/20 64）。資料に出た回だけ */
   trends?: { krLabel: string; text: string }[];
@@ -269,7 +269,7 @@ export function buildSummaryText(args: {
     for (const l of learnings) lines.push(`  ・${l.krLabel}（${l.kind}）${l.text}`);
   }
   if (reflections.length > 0) {
-    lines.push("", "週の振り返り（本人が選んだ効き具合）");
+    lines.push("", "週の振り返り（仕事がKRに役立ったか。本人の選択）");
     for (const r of reflections) lines.push(`  ・${formatMd(r.weekStart)}の週 ${r.krLabel}：${r.effect}`);
   }
   return lines.join("\n");
@@ -436,20 +436,20 @@ export function weekKrIds(tasks: Task[], memberId: string, weekStart: string, ct
   return krOrder.filter((k) => set.has(k));
 }
 
-export type PickOutcome = "終えた" | "進行中" | "未着手";
+export type PickOutcome = "完了" | "進行中" | "未着手";
 
 /** 「今週やる」と選んだ仕事がどうなったか */
 export function picksOutcome(tasks: Task[], picked: string[]): { total: number; counts: Record<PickOutcome, number>; rows: { task: Task; outcome: PickOutcome }[] } {
   const rows = picked
     .map((id) => tasks.find((t) => t.id === id))
     .filter((t): t is Task => !!t)
-    .map((task) => ({ task, outcome: (task.status === "完了" ? "終えた" : task.status) as PickOutcome }));
-  const counts: Record<PickOutcome, number> = { 終えた: 0, 進行中: 0, 未着手: 0 };
+    .map((task) => ({ task, outcome: (task.status === "完了" ? "完了" : task.status) as PickOutcome }));
+  const counts: Record<PickOutcome, number> = { 完了: 0, 進行中: 0, 未着手: 0 };
   for (const r of rows) counts[r.outcome]++;
   return { total: rows.length, counts, rows };
 }
 
-/** AIの見立て（固定の型に、その週の実データを当てはめる） */
+/** AIのまとめ（固定の型に、その週の実データを当てはめる） */
 export function weeklyView(moved: Task[]): string {
   const done = moved.filter((t) => t.status === "完了");
   const doing = moved.filter((t) => t.status !== "完了");

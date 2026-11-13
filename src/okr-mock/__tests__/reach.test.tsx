@@ -139,7 +139,7 @@ describe("成果の推移", () => {
   it("KRの詳細に「成果の推移」が出る（3つの広がりで同じ）。見立て（下端は60）が主、手がかりの数字は副。未更新の印がある", () => {
     const hs = REACHES.map((reach) => html({ reach, sel: { type: "kr", id: "kr2" } }));
     for (const h of hs) {
-      expect(h).toContain("成果の推移（チェックインの回ごと）");
+      expect(h).toContain("見立ての推移（チェックインの回ごと）");
       expect(h).toContain("見立ての推移（下端は60）：10/6 63 → 10/20 66 → 11/3 66（未更新）");
       expect(h).toContain("手がかりの数字：10/6 66% → 10/20 71% → 11/3 71%（未更新）");
     }
@@ -170,7 +170,7 @@ describe("3つの利用の広がり：地図と詳細", () => {
     const band = (h: string) => h.match(/<section class="mk-card mk-band"[\s\S]*?<\/section>/)![0];
     expect(band(hs[1])).toBe(band(hs[0]));
     expect(band(hs[2])).toBe(band(hs[0]));
-    for (const h of hs) for (const s of ["手がかり 18社／30社", "手がかり 71%／80%", "KR3 社内の定型業務を減らす：AI の見立て 63"]) expect(h).toContain(s);
+    for (const h of hs) for (const s of ["手がかり 18社／30社", "手がかり 71%／80%", "KR3 社内の定型業務を減らす：AIの見立て 63"]) expect(h).toContain(s);
   });
   it("全員が登録：注記も「仕事の登録なし」も出ない", () => {
     const h = html({ reach: "all" });
@@ -188,22 +188,22 @@ describe("3つの利用の広がり：地図と詳細", () => {
     expect(h).toContain('class="mk-noreg-box"');
     expect((h.match(/仕事はアプリに登録された分です（7PJ中2PJ）/g) ?? []).length).toBe(1);
     expect(h).toContain("手がかり 18社／30社");
-    expect(h).toContain("KR1 共創パートナー企業を30社にする：AI の見立て 66");
+    expect(h).toContain("KR1 共創パートナー企業を30社にする：AIの見立て 66");
     expect(h).toContain("KR1：仕事の登録なし");
   });
   it("注記は地図の凡例の近く（見出しの下・凡例の1行の前）。利用状況を大きな数字やゲージでは出さない", () => {
     const h = html({ reach: "pjs" });
     expect(h.indexOf("仕事はアプリに登録された分です")).toBeGreaterThan(h.indexOf("mk-legend"));
-    expect(h.indexOf("仕事はアプリに登録された分です")).toBeLessThan(h.indexOf("段の目盛りは成果"));
+    expect(h.indexOf("仕事はアプリに登録された分です")).toBeLessThan(h.indexOf("段の目盛りはAIの見立て"));
     expect(h).not.toMatch(/利用率|利用状況/);
   });
   it("登録なしのKRの詳細：対比・仕事の一覧・重なる仕事を出さず、1行だけ", () => {
     const h = html({ reach: "pjs", sel: { type: "kr", id: "kr1" } });
     expect(h).toContain("この KR につながる仕事は、アプリに登録されていません。見立てと学びはチェックイン資料から出ています。");
-    expect(h).toContain("いまの段（AI の見立て）");
+    expect(h).toContain("いまの段（AIの見立て）");
     expect(h).toContain("展示会で会った相手は、お礼の連絡が早いほど反応が良い");
     expect(h).toContain("mk-stepscale");
-    expect(h).not.toContain('aria-label="成果と仕事の対比"');
+    expect(h).not.toContain('aria-label="見立てと仕事の対比"');
     expect(h).not.toContain("このKRにつながる仕事");
     expect(h).not.toContain("ほかのKRとも重なる仕事");
     expect(h).not.toContain("この動きの間にあなたが終えた仕事");
@@ -211,12 +211,12 @@ describe("3つの利用の広がり：地図と詳細", () => {
   it("一部だけ登録のKRの詳細：仕事の一覧と対比の見出しに「登録された分」。対比の1行は出さない", () => {
     for (const k of ["kr2", "kr3"]) {
       const h = html({ reach: "pjs", sel: { type: "kr", id: k } });
-      expect(h).toContain("成果と仕事の対比（登録された分）");
+      expect(h).toContain("見立てと仕事の対比（登録された分）");
       expect(h).toContain("このKRにつながる仕事（登録された分）");
-      expect(h).toContain('aria-label="成果と仕事の対比"');
+      expect(h).toContain('aria-label="見立てと仕事の対比"');
     }
     const full = html({ reach: "all", sel: { type: "kr", id: "kr2" } });
-    expect(full).toContain("成果と仕事の対比</h4>");
+    expect(full).toContain("見立てと仕事の対比</h4>");
     expect(full).not.toContain("登録された分");
   });
   it("結節点：「0件」とは書かない。一部登録のときは「登録された分」と添える", () => {
@@ -248,7 +248,7 @@ describe("1人だけが使っている状態", () => {
     expect(h).toContain("PJ「パートナー向け提案資料の刷新」");
     expect(h).not.toContain("PJ「拠点の予約サイト改修」");
     expect(h).toContain("手がかり 71%／80%");
-    expect(h).toContain("KR2 地域拠点の稼働率を80%にする：AI の見立て 66");
+    expect(h).toContain("KR2 地域拠点の稼働率を80%にする：AIの見立て 66");
   });
   it("他の人の名前・「全員で」の件数が、地図・今週ここに力を・自分の振り返り・KRの詳細（決定事項の前まで）に出ない", () => {
     for (const k of ["kr1", "kr2", "kr3"]) {
@@ -275,12 +275,12 @@ describe("1人だけが使っている状態", () => {
       ctx,
       how: {},
       outcomes: [{ title: "価格表を最新にする", krLabel: "KR1", change: "＋1社", excerpt: "北斗産業と提携" }],
-      reflections: [{ weekStart: "2026-11-02", krLabel: "KR1", effect: "よく効いた" }],
+      reflections: [{ weekStart: "2026-11-02", krLabel: "KR1", effect: "役立った" }],
     });
     expect(text).toContain("KR1 共創パートナー企業を30社にする：");
     expect(text).toContain("成果につながった仕事：1件");
     expect(text).toContain("週の振り返り");
-    expect(text).toContain("11/2(月)の週 KR1：よく効いた");
+    expect(text).toContain("11/2(月)の週 KR1：役立った");
     expect(text).not.toMatch(/チームでは|全員|ほかの人/);
     for (const n of OTHERS_OF_M3) expect(text).not.toContain(n);
     expect(text).not.toMatch(/(?<![0-9])0件/);

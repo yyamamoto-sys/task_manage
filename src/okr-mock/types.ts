@@ -178,7 +178,7 @@ export interface OutcomeLink {
 export interface ResourceNote {
   key: string;
   krId: string;
-  /** 増減の表記（例：＋1社、C→B） */
+  /** 増減の表記（例：＋1社、63→66の要因の一つ） */
   change: string;
   excerpt: string;
   source: Source;
@@ -221,7 +221,7 @@ export interface AiCandidate {
   reason: string;
 }
 
-export type Effect = "よく効いた" | "少し" | "今週は届かず";
+export type Effect = "役立った" | "少し役立った" | "今週は役立たなかった";
 export type Match = "そのとおり" | "少し違う" | "違う";
 
 export interface KrAnswer {

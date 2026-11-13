@@ -47,7 +47,7 @@ export function CompareTable() {
                   <td>
                     {ca ? (
                       <>
-                        <strong>{ca.cur.assessment.value}</strong> <span className="mk-muted">（AI の見立て）</span>
+                        <strong>{ca.cur.assessment.value}</strong> <span className="mk-muted">（AIの見立て）</span>
                       </>
                     ) : (
                       "―"

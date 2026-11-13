@@ -158,7 +158,7 @@ export function StepScaleG({ krId, value, bands, geo, fontSize = 10 }: { krId: s
 /** 段の目盛り（文の中に置く。幅いっぱい） */
 export function StepScale({ krId, value, width = 260, label }: { krId: string; value: number; width?: number; label?: string }) {
   const bands = krBands[krId];
-  const text = label ?? `${krLabel(krId)} の見立て ${value}（AI の見立て）。段は ${stepsOf(bands).join("・")}`;
+  const text = label ?? `${krLabel(krId)} の見立て ${value}（AIの見立て）。段は ${stepsOf(bands).join("・")}`;
   return (
     <svg viewBox={`0 0 ${width} 44`} width="100%" style={{ maxWidth: width }} className="mk-stepscale" role="img" aria-label={text}>
       <StepScaleG krId={krId} value={value} bands={bands} geo={{ x: 12, y: 22, w: width - 24 }} />

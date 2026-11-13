@@ -133,11 +133,11 @@ describe("画面：結びつき", () => {
 describe("画面：成果と仕事", () => {
   it("用語：成果・仕事の見出し語、凡例の1行、KRの詳細の対比", () => {
     const h = html({ sel: { type: "kr", id: "kr1" } });
-    expect(h).toContain("段の目盛りは成果（資料の記述からのAIの見立て）、帯は仕事（終えた・残り）。仕事を終えても、見立ては資料を読ませるまで動きません");
+    expect(h).toContain("段の目盛りはAIの見立て（資料の記述から）、帯は仕事（完了・残り）です。仕事を終えても、見立ては資料を読ませるまで動きません");
     expect(h).toContain("手がかり 18社／30社");
     expect(h).toMatch(/仕事 完了 \d+／残り \d+/);
-    expect(h).toContain('aria-label="成果と仕事の対比"');
-    expect(h).toContain("いまの段（AI の見立て）");
+    expect(h).toContain('aria-label="見立てと仕事の対比"');
+    expect(h).toContain("いまの段（AIの見立て）");
   });
 });
 

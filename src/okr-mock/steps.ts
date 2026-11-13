@@ -55,7 +55,7 @@ export function nextLine(a: Assessment, bands: KrBands): string {
   const nr = nextRequirements(a, bands);
   if (!nr) return "いちばん上の段にいます";
   if (nr.items.length === 0) return `${nr.step} まで：要件の整理はこれからです`;
-  if (nr.pending.length === 0) return `${nr.step} まで：要件はそろって見えています`;
+  if (nr.pending.length === 0) return `${nr.step} まで：要件はすべて確認できています`;
   return `${nr.step} まで：${nr.pending.map((p) => p.requirement).join("、")}が確認できれば`;
 }
 

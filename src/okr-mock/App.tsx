@@ -99,6 +99,17 @@ function Guide() {
       <button type="button" className="mk-btn mk-btn-sm" onClick={closeGuide} aria-label="案内を閉じる">
         閉じる
       </button>
+      <ul className="mk-guide-terms">
+        <li>
+          <b>見立て</b>：資料の記述からAIが出した、KRのいまの位置（60〜100）
+        </li>
+        <li>
+          <b>段</b>：60・70・80…の目安。60 が出発点
+        </li>
+        <li>
+          <b>手がかり</b>：状態を観るための数字（例：12社／30社）
+        </li>
+      </ul>
     </nav>
   );
 }
@@ -170,7 +181,7 @@ function Shell() {
         </Modal>
       )}
       {modal === "table" && (
-        <Modal title="表で見る（全KRの目標と現状）" onClose={() => setModal(null)} wide>
+        <Modal title="表で見る（全KRの段の基準といま）" onClose={() => setModal(null)} wide>
           <CompareTable />
         </Modal>
       )}

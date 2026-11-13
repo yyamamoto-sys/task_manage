@@ -25,9 +25,10 @@
 .mk-btn:focus-visible, .mk-linkbtn:focus-visible, .mk-gauge:focus-visible, .mk-iconbtn:focus-visible, .mk-foldbtn:focus-visible { outline: 3px solid var(--color-brand); outline-offset: 2px; }
 
 /* はじめての人向けの案内 */
-.mk-guide { display: flex; align-items: center; gap: 12px; padding: 8px 14px; border-radius: 14px; background: var(--color-bg-info); color: var(--color-text-info); }
+.mk-guide { flex-wrap: wrap; display: flex; align-items: center; gap: 12px; padding: 8px 14px; border-radius: 14px; background: var(--color-bg-info); color: var(--color-text-info); }
 .mk-guide-steps { display: flex; gap: 22px; flex-wrap: wrap; list-style: none; margin: 0; padding: 0; flex: 1; font-size: 13px; }
 .mk-guide-steps li { display: flex; align-items: center; gap: 8px; }
+.mk-guide-terms { flex-basis: 100%; list-style: none; margin: 0; padding: 0; font-size: 12px; display: flex; gap: 18px; flex-wrap: wrap; }
 .mk-guide-no { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: var(--color-text-info); color: var(--color-bg-info); font-weight: 700; font-size: 12px; }
 .mk-linkbtn { border: none; background: transparent; padding: 0; font: inherit; color: var(--color-brand); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; text-align: left; }
 .mk-linkbtn:disabled { color: var(--color-text-tertiary); cursor: not-allowed; text-decoration: none; }

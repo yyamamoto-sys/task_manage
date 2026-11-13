@@ -40,9 +40,9 @@ describe("1枚の画面（描画の確認）", () => {
     expect(sel).toBeLessThan(h.indexOf("<header"));
     expect(h.slice(h.indexOf("<header"))).not.toContain("見ている人");
   });
-  it("用語がそろっている：O（めざす姿）・AI の見立て・手がかり・段", () => {
+  it("用語がそろっている：O（めざす姿）・AIの見立て・手がかり・段", () => {
     const h = html();
-    for (const w of ["O（めざす姿）", "AI の見立て", "手がかり", "次の段"]) expect(h).toContain(w);
+    for (const w of ["O（めざす姿）", "AIの見立て", "手がかり", "次の段"]) expect(h).toContain(w);
     for (const re of FORBIDDEN) expect(h).not.toMatch(re);
     expect(h).not.toMatch(/>目標</);
   });
@@ -51,7 +51,7 @@ describe("1枚の画面（描画の確認）", () => {
     expect(h).toContain("からKR1へ：終えた仕事");
     expect(h).toContain("PJ「パートナー向け提案資料の刷新」");
     expect(h).toMatch(/完了 \d+／残り \d+/);
-    expect(h).toContain("濃い＝終えた");
+    expect(h).toContain("濃い＝完了");
     expect(h).toContain("薄い＝残り");
     expect(h).not.toContain("あなたの分");
   });
@@ -102,9 +102,9 @@ describe("本人＝見ている人", () => {
       expect(h).toContain("ほかの人にも、GMにも見えません");
     }
   });
-  it("今週の振り返りは「今週は届かず」の選択肢。今週やると選んだ仕事のその後が出る", () => {
+  it("今週の振り返りは「今週は役立たなかった」の選択肢。今週やると選んだ仕事のその後が出る", () => {
     const h = html({ mode: "self" });
-    expect(h).toContain("今週は届かず");
+    expect(h).toContain("今週は役立たなかった");
     expect(h).toContain("今週やると選んだ仕事");
     expect(h).toContain("進行中 2件");
     expect(h).not.toContain("終えた 0件");
@@ -139,7 +139,7 @@ describe("詳細パネルと引き出し", () => {
     expect(h).toContain("このKRにつながる仕事");
     expect(h).toContain("このKRに関わる決定事項と宿題");
     expect(h).toContain("Oに近づいた証拠として見るもの");
-    expect(h).toContain("いまの段（AI の見立て）");
+    expect(h).toContain("いまの段（AIの見立て）");
     expect(h).toContain("手がかりの数字");
     expect(h).toContain("段の基準を見る");
     expect(h).toContain("学び・気づき");
@@ -147,9 +147,9 @@ describe("詳細パネルと引き出し", () => {
     expect(h).toContain('tabindex="-1"');
     for (const re of FORBIDDEN) expect(h).not.toMatch(re);
   });
-  it("「手がかりの数字は期の経過より後ろです」は数値のあるKRの詳細だけ。数値の無いKR3には出ない", () => {
-    expect(html({ sel: { type: "kr", id: "kr2" } })).toContain("手がかりの数字は期の経過より後ろです");
-    expect(html({ sel: { type: "kr", id: "kr1" } })).toContain("手がかりの数字は期の経過より後ろです");
+  it("「手がかりの数字の進みは、期の経過より小さいです」は数値のあるKRの詳細だけ。数値の無いKR3には出ない", () => {
+    expect(html({ sel: { type: "kr", id: "kr2" } })).toContain("手がかりの数字の進みは、期の経過より小さいです");
+    expect(html({ sel: { type: "kr", id: "kr1" } })).toContain("手がかりの数字の進みは、期の経過より小さいです");
     const h3 = html({ sel: { type: "kr", id: "kr3" } });
     expect(h3).not.toContain("期の経過より後ろ");
     expect(h3).not.toContain("手がかりの数字</dt>");
@@ -160,13 +160,13 @@ describe("詳細パネルと引き出し", () => {
     expect(html({ mode: "self", sel: { type: "task", id: t.id } })).toContain(">AIの提案<");
     expect(html({ sel: { type: "task", id: t.id } })).not.toContain(">AIの提案<");
   });
-  it("つながっている仕事：自分の仕事なら「つなぎ先を変える」と、つなぎ先のKRごとの「どう効くか」が出る", () => {
+  it("つながっている仕事：自分の仕事なら「つなぎ先を変える」と、つなぎ先のKRごとの「どう役立つか」が出る", () => {
     const t = taskOf("フォルダ構成案を作る");
     const h = html({ sel: { type: "task", id: t.id } });
     expect(h).toContain("つなぎ先を変える");
-    expect(h).toContain("KR2にどう効くか");
-    expect(h).toContain("KR3にどう効くか");
-    expect(h).toContain("つなぎ先から外したKRの「どう効くか」だけが消えます");
+    expect(h).toContain("KR2にどう役立つか");
+    expect(h).toContain("KR3にどう役立つか");
+    expect(h).toContain("つなぎ先から外したKRの「どう役立つか」だけが消えます");
   });
   it("引き出しを開くと資料の選択が出る。その回を確定済みの人がいれば表示する", () => {
     expect(html({ drawerOpen: true })).toContain("読ませる資料");

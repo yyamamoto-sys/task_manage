@@ -58,10 +58,10 @@ function KrPanel({ krId }: { krId: string }) {
       </p>
       {ca && (
         <>
-          <h4 className="mk-panel-sub">いまの段（AI の見立て）</h4>
+          <h4 className="mk-panel-sub">いまの段（AIの見立て）</h4>
           <StepScale krId={krId} value={ca.cur.assessment.value} width={320} />
           <p>
-            <strong>{ca.cur.assessment.value}</strong> <span className="mk-muted">{`AI の見立て（前回から ${moveText(stepMove(ca))}）`}</span>
+            <strong>{ca.cur.assessment.value}</strong> <span className="mk-muted">{`AIの見立て（前回から ${moveText(stepMove(ca))}）`}</span>
           </p>
           <p className="mk-small">{ca.cur.assessment.summary}</p>
           <p className="mk-small">{nextLine(ca.cur.assessment, bands)}</p>
@@ -94,7 +94,7 @@ function KrPanel({ krId }: { krId: string }) {
             <dd>
               {hintText(r.hint, r.hint.value)}／{hintText(r.hint, r.hint.target)}
               <span className="mk-muted">（期首 {hintText(r.hint, r.hint.start)}・{r.hint.direction === "up" ? "増やす" : "減らす"}。前回から {signed(r.hint.value - r.hint.prev, r.hint.unit)}）</span>
-              {trails && <div className="mk-small mk-muted">手がかりの数字は期の経過より後ろです</div>}
+              {trails && <div className="mk-small mk-muted">手がかりの数字の進みは、期の経過より小さいです</div>}
             </dd>
           </>
         )}
@@ -109,7 +109,7 @@ function KrPanel({ krId }: { krId: string }) {
           )}
         </dd>
       </dl>
-      <h4 className="mk-panel-sub">成果の推移（チェックインの回ごと）</h4>
+      <h4 className="mk-panel-sub">見立ての推移（チェックインの回ごと）</h4>
       <TrendChart krId={krId} />
       <h4 className="mk-panel-sub">学び・気づき（資料から。回ごと・新しい順）</h4>
       {groups.length === 0 ? (
@@ -134,12 +134,12 @@ function KrPanel({ krId }: { krId: string }) {
         <p className="mk-muted mk-noreg-line">この KR につながる仕事は、アプリに登録されていません。見立てと学びはチェックイン資料から出ています。</p>
       ) : (
         <>
-          <h4 className="mk-panel-sub">成果と仕事の対比{scopeNote}</h4>
-          <div className="mk-contrast" role="group" aria-label="成果と仕事の対比">
+          <h4 className="mk-panel-sub">見立てと仕事の対比{scopeNote}</h4>
+          <div className="mk-contrast" role="group" aria-label="見立てと仕事の対比">
             <div className="mk-contrast-row">
-              <span className="mk-contrast-k">成果</span>
+              <span className="mk-contrast-k">見立て</span>
               <span style={{ gridColumn: "2 / 4" }}>
-                {ca ? `${ca.cur.assessment.value} の段（AI の見立て）` : "見立てなし"}
+                {ca ? `${ca.cur.assessment.value} の段（AIの見立て）` : "見立てなし"}
                 <span className="mk-muted">（{hintTextOrNone(r)}資料は {formatMd(r.updatedAt)}）</span>
               </span>
             </div>
@@ -150,7 +150,7 @@ function KrPanel({ krId }: { krId: string }) {
               </span>
               <span>
                 {work.pct === null ? "仕事なし" : `消化 ${work.pct}％`}
-                <span className="mk-muted">（{work.done}／{work.total}件 終えた）</span>
+                <span className="mk-muted">（{work.done}／{work.total}件 完了）</span>
               </span>
             </div>
           </div>
@@ -382,12 +382,12 @@ function TaskPanel({ taskId }: { taskId: string }) {
             </button>
             <span className="mk-muted">属するPJのKRに戻ります。</span>
           </div>
-          <p className="mk-muted">つなぎ先から外したKRの「どう効くか」だけが消えます。</p>
+          <p className="mk-muted">つなぎ先から外したKRの「どう役立つか」だけが消えます。</p>
           {krs.map((k) => (
             <div key={k}>
-              <h4 className="mk-panel-sub">この仕事は{krLabel(k)}にどう効くか（AIの案から選ぶ）</h4>
+              <h4 className="mk-panel-sub">この仕事は{krLabel(k)}にどう役立つか（AIの案から選ぶ）</h4>
               <fieldset className="mk-fieldset">
-                <legend className="mk-sr">{krLabel(k)}にどう効くか</legend>
+                <legend className="mk-sr">{krLabel(k)}にどう役立つか</legend>
                 {(howOptions[k] ?? []).map((h) => (
                   <label key={h} className={`mk-opt${how[howKey(t.id, k)] === h ? " is-on" : ""}`}>
                     <input type="radio" name={`how-${t.id}-${k}`} checked={how[howKey(t.id, k)] === h} onChange={() => setHow(t.id, k, h)} /> {h}
