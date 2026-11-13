@@ -236,7 +236,7 @@ describe("画面：O・段の目盛り・凡例・学び", () => {
 
 describe("「遅れ」などの語は、詳細を開いていない画面に出ない", () => {
   const views: [string, InitialView][] = [];
-  for (const reach of ["all", "pjs", "solo"] as const) for (const viewerId of ["m2", "m3", "m1"]) for (const mode of ["team", "self"] as const) views.push([`${reach}/${viewerId}/${mode}`, { reach, viewerId, mode }]);
+  for (const reach of ["all", "pjs", "solo"] as const) for (const viewerId of ["m2", "m3", "m1"]) for (const mode of ["all", "team", "self"] as const) views.push([`${reach}/${viewerId}/${mode}`, { reach, viewerId, mode }]);
   it("3つの広がり×3人×チーム／自分。属性・読み上げ文も含めて、禁止語が無い", () => {
     for (const [name, v] of views) {
       const h = html(v);

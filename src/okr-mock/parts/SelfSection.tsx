@@ -292,7 +292,9 @@ export function SelfSection() {
         {nameOf(viewerId)}さんだけの振り返り
       </h2>
       <ClaimsList />
-      <h3 className="mk-h3">今週の振り返り</h3>
+      <h3 id="mk-reflect-h" className="mk-h3">
+        今週の振り返り
+      </h3>
       <Reflect />
       <h3 className="mk-h3">成果につながった仕事の積み上げ</h3>
       <Buildup />

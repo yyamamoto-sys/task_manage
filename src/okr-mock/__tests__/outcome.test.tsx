@@ -111,7 +111,7 @@ describe("画面：結びつき", () => {
     expect(html()).not.toMatch(/★1/);
   });
   it("チームのページの知らせと、「わたし」のページに、件数つきで届く。他の人には出ない", () => {
-    const m1 = html({ ...outcomeView(), viewerId: "m1" });
+    const m1 = html({ ...outcomeView(), viewerId: "m1", mode: "team" });
     expect(m1).toContain("あなたの仕事が成果につながったかもしれません 1件");
     const m1self = html({ ...outcomeView(), viewerId: "m1", mode: "self" });
     expect(m1self).toContain("成果につながったかもしれない仕事");
@@ -132,7 +132,7 @@ describe("画面：結びつき", () => {
 
 describe("画面：成果と仕事", () => {
   it("用語：成果・仕事の見出し語、凡例の1行、KRの詳細の対比", () => {
-    const h = html({ sel: { type: "kr", id: "kr1" } });
+    const h = html({ mode: "team", sel: { type: "kr", id: "kr1" } });
     expect(h).toContain("段の目盛りはAIの見立て（資料の記述から）、帯は仕事（完了・残り）です。仕事を終えても、見立ては資料を読ませるまで動きません");
     expect(h).toContain("手がかり 18社／30社");
     expect(h).toMatch(/仕事 完了 \d+／残り \d+/);

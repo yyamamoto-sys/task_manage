@@ -14,7 +14,7 @@ const FORBIDDEN = [/タスク/, /バンド/, /立場では/, /効かせられな
 
 describe("1枚の画面（描画の確認）", () => {
   it("チームのページ：上から O・段の帯・最近の学び・地図・決定事項と宿題。今週ここに力を・振り返りは出ない", () => {
-    const h = html();
+    const h = html({ mode: "team" });
     const order = ["なぜこのOか", "チームはいま、どの段にいるか", "仕事がどこへ流れているか", "決定事項と宿題"].map((s) => h.indexOf(s));
     expect(order.every((i) => i >= 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
@@ -47,7 +47,7 @@ describe("1枚の画面（描画の確認）", () => {
   it("案内はサイドバーに合わせた言い方（3〜4項目）。資料を読ませる操作は案内に入らず、サイドバーのボタンに「チェックインの後に」と添える。用語に「地図」がある", () => {
     const h = html();
     const nav = h.slice(h.indexOf("はじめての人向けの案内"), h.indexOf("</nav>", h.indexOf("はじめての人向けの案内")));
-    const i1 = nav.indexOf("左の「チーム」で全体、「わたし」で自分の仕事を見ます");
+    const i1 = nav.indexOf("左の「全て」でチームと自分を一緒に、「チーム」で全体、「わたし」で自分の仕事を見ます");
     const i2 = nav.indexOf("左の KR を押すと詳細が開きます");
     const i3 = nav.indexOf("地図で見立てを見る");
     expect(i1).toBeGreaterThan(0);
@@ -74,7 +74,7 @@ describe("1枚の画面（描画の確認）", () => {
     expect(h).not.toMatch(/>目標</);
   });
   it("地図の帯・ノードに aria-label がある。KR側の端に「完了◯／残り◯」の数字がある", () => {
-    const h = html();
+    const h = html({ mode: "team" });
     expect(h).toContain("からKR1へ：終えた仕事");
     expect(h).toContain("PJ「パートナー向け提案資料の刷新」");
     expect(h).toMatch(/完了 \d+／残り \d+/);

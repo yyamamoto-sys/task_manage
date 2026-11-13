@@ -16,7 +16,7 @@ const assess = Object.fromEntries(krItems.map((k) => [k.id, currentAssessment(as
 
 describe("サイドバー：メニューとページの切替", () => {
   it("チームのページでは「チーム」が aria-current=page。「わたし」には付かない。わたしのページでは逆", () => {
-    const team = sidebarOf(html());
+    const team = sidebarOf(html({ mode: "team" }));
     expect(team).toMatch(/aria-current="page"[^>]*>(?:(?!<\/button>).)*チーム/s);
     expect(team.match(/aria-current="page"/g)?.length).toBe(1);
     const self = sidebarOf(html({ mode: "self" }));
@@ -48,7 +48,7 @@ describe("サイドバー：メニューとページの切替", () => {
   });
   it("下段はアバターと版だけ", () => {
     const s = sidebarOf(html());
-    expect(s).toContain("mock v11");
+    expect(s).toContain("mock v12");
     expect(s).toContain("見ている人：鈴木");
   });
 });
@@ -83,7 +83,7 @@ describe("サイドバー：KR 行", () => {
     expect(s).toContain('title="KR1 共創パートナー企業を30社にする"');
   });
   it("KR を開いているとき、その行が強調される（開いていない行は強調されない）。詳細パネルにもそのKRが出る", () => {
-    for (const mode of ["team", "self"] as const) {
+    for (const mode of ["all", "team", "self"] as const) {
       const h = html({ mode, sel: { type: "kr", id: "kr2" } });
       const s = sidebarOf(h);
       expect(s.match(/mk-sb-btn mk-sb-kr is-active/g)?.length).toBe(1);
@@ -104,7 +104,7 @@ describe("サイドバー：KR 行", () => {
 
 describe("サイドバー：資料と折りたたみ", () => {
   it("「資料を読ませる」で引き出しが開く：どちらのページでもボタンがあり、開いた状態では DocDrawer が出る", () => {
-    for (const mode of ["team", "self"] as const) {
+    for (const mode of ["all", "team", "self"] as const) {
       expect(sidebarOf(html({ mode }))).toContain("📄");
       expect(html({ mode })).not.toContain("読ませる資料");
       expect(html({ mode, drawerOpen: true })).toContain("読ませる資料");
@@ -121,7 +121,7 @@ describe("サイドバー：資料と折りたたみ", () => {
     expect(s).toContain("👥");
     expect(s).toContain("👤");
     expect(s).not.toContain("mk-sb-label");
-    expect(s).not.toContain("mock v11");
+    expect(s).not.toContain("mock v12");
     expect(s).toMatch(/title="KR1：AIの見立て \d+/);
     expect(html({ collapsed: true })).toContain("mk-app is-sb-collapsed");
     expect(sidebarOf(html())).toContain('aria-label="メニューを閉じる"');
@@ -140,7 +140,7 @@ describe("サイドバー：資料と折りたたみ", () => {
 
 describe("ページの中身の分担と文言", () => {
   it("チームのページに FocusCard・振り返りは無く、わたしのページにある。知らせはチームのページから「わたし」へ誘導する", () => {
-    const team = html();
+    const team = html({ mode: "team" });
     const self = html({ mode: "self" });
     for (const w of ["今週ここに力を", "今週の振り返り", "期のまとめを出す"]) {
       expect(team).not.toContain(w);

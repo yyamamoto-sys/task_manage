@@ -2,7 +2,7 @@ import { scrollToId, sidebarKrRows } from "../nav";
 import { useMock, type ViewMode } from "../state";
 import { nameOf } from "../ui";
 
-export const MOCK_VERSION = "mock v11";
+export const MOCK_VERSION = "mock v12";
 const ONLY_OKR = "モックでは OKR モードだけ動きます";
 
 /** 押せない見た目の部品（本番にある操作。モックでは動かさない） */
@@ -17,13 +17,14 @@ function Inert({ icon, label, collapsed }: { icon: string; label: string; collap
 
 /**
  * 本番アプリ（MainLayout の Sidebar）に似せた左のサイドバー。
- * 上からロゴ・モード切替・検索／AI（見た目だけ）・メニュー（チーム／わたし）・KR・資料を読ませる、下段にアバターと版。
+ * 上からロゴ・モード切替・検索／AI（見た目だけ）・メニュー（全て／チーム／わたし）・KR・資料を読ませる、下段にアバターと版。
  * 幅は既定 160px、折りたたむと 48px。
  */
 export function Sidebar() {
   const { mode, setMode, sel, setSel, assess, items, setDrawerOpen, viewerId, sidebarCollapsed: collapsed, setSidebarCollapsed } = useMock();
   const krs = sidebarKrRows(items, assess);
   const pages: { id: ViewMode; icon: string; label: string; note?: string }[] = [
+    { id: "all", icon: "🗺", label: "全て" },
     { id: "team", icon: "👥", label: "チーム" },
     { id: "self", icon: "👤", label: "わたし", note: "本人だけ" },
   ];

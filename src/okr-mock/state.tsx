@@ -27,7 +27,7 @@ import type { AssessEntry, Checkin, ClaimStatus, Decision, KintoneRow, KrAnswer,
 import { addHistory, registeredTasks, type History, type Reach } from "./reach";
 import * as U from "./userState";
 
-export type ViewMode = "team" | "self";
+export type ViewMode = "all" | "team" | "self";
 export type Selection = { type: "kr"; id: string } | { type: "task"; id: string } | null;
 export type ModalId = "goals" | "table" | null;
 export interface Celebration {
@@ -48,7 +48,7 @@ interface MockState {
   /** 見ている人。「本人」＝この人（個人OKR・つなぎ先の変更・どう役立つか・振り返り・今週やる・提案の採否の持ち主） */
   viewerId: string;
   setViewerId: (id: string) => void;
-  /** 開いているページ。team＝チーム、self＝わたし（サイドバーのメニューで切り替える） */
+  /** 開いているページ。all＝全て、team＝チーム、self＝わたし（サイドバーのメニューで切り替える） */
   mode: ViewMode;
   /** ページを切り替える。詳細パネルは閉じる。anchor を渡すと、切替後にその場所へ移る（無ければ先頭へ） */
   setMode: (m: ViewMode, anchor?: string) => void;
@@ -164,7 +164,7 @@ const reducedMotion = () => typeof window !== "undefined" && typeof window.match
 
 export function MockProvider({ children, initial }: { children: ReactNode; initial?: InitialView }) {
   const [viewerId, setViewerId] = useState(initial?.viewerId ?? DEFAULT_VIEWER);
-  const [mode, setModeState] = useState<ViewMode>(initial?.mode ?? "team");
+  const [mode, setModeState] = useState<ViewMode>(initial?.mode ?? "all");
   const [sel, setSel] = useState<Selection>(initial?.sel ?? null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     () => initial?.collapsed ?? (typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia(`(max-width: ${SIDEBAR_AUTO_COLLAPSE_PX}px)`).matches),

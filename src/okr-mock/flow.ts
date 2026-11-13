@@ -133,6 +133,33 @@ export function bandSegments(c: { done: number; open: number }, width: number): 
   return out;
 }
 
+export type MineKind = "mine" | "others";
+
+export interface MineSeg {
+  kind: MineKind;
+  count: number;
+  offset: number;
+  thickness: number;
+}
+
+/**
+ * 「全て」のページの帯の区切り。上から あなたの分（濃い）／ほかの人の分（薄い）。
+ * 太さは件数の割合で、帯の太さは変わらない。あなたの分が0なら全体が「ほかの人の分」、全部あなたの分なら全体が「あなたの分」
+ */
+export function mineSegments(mine: number, total: number, width: number): MineSeg[] {
+  if (total <= 0) return [];
+  const m = Math.min(Math.max(mine, 0), total);
+  const out: MineSeg[] = [];
+  let offset = 0;
+  for (const [kind, count] of [["mine", m], ["others", total - m]] as [MineKind, number][]) {
+    if (count <= 0) continue;
+    const thickness = (width * count) / total;
+    out.push({ kind, count, offset, thickness });
+    offset += thickness;
+  }
+  return out;
+}
+
 export interface Ribbon {
   id: string;
   fromId: string;
@@ -145,6 +172,9 @@ export interface Ribbon {
   done: number;
   open: number;
   segments: BandSeg[];
+  /** 「全て」のときだけ：この帯のうち、見ている人の仕事の件数と、その区切り */
+  mine?: number;
+  mineSegs?: MineSeg[];
   /** 帯のKR側の端に書く「完了 5／残り 3」の位置 */
   labelX: number;
   labelY: number;
@@ -229,6 +259,7 @@ interface NodeEdge {
   krId: string;
   done: number;
   open: number;
+  mine: number;
 }
 
 export function layoutFlow(args: {
@@ -240,8 +271,10 @@ export function layoutFlow(args: {
   /** つながらない仕事を名前つきで並べるか（自分の表示だけ。チーム表示は件数だけ） */
   showLoose: boolean;
   maxPj?: number;
+  /** 渡すと「全て」の描き分け用に、帯ごとの「見ている人の仕事の件数」を数える（仕事ID） */
+  mineIds?: Set<string>;
 }): FlowLayout {
-  const { counts, krIds, personalIds, expanded, showLoose } = args;
+  const { counts, krIds, personalIds, expanded, showLoose, mineIds } = args;
   const maxPj = args.maxPj ?? MAX_PJ;
   const withPersonal = personalIds.length > 0;
   const cols = {
@@ -266,7 +299,10 @@ export function layoutFlow(args: {
   for (const nodeId of nodeIds) {
     for (const k of krIds) {
       const es = counts.edges.filter((e) => e.krId === k && membersOf(nodeId).includes(e.pjId));
-      if (es.length) nodeEdges.push({ nodeId, krId: k, done: es.reduce((s, e) => s + e.done, 0), open: es.reduce((s, e) => s + e.open, 0) });
+      if (es.length) {
+        const mine = mineIds ? es.reduce((s, e) => s + e.taskIds.filter((id) => mineIds.has(id)).length, 0) : 0;
+        nodeEdges.push({ nodeId, krId: k, done: es.reduce((s, e) => s + e.done, 0), open: es.reduce((s, e) => s + e.open, 0), mine });
+      }
     }
   }
   const primary = (nodeId: string) => Math.min(...nodeEdges.filter((e) => e.nodeId === nodeId).map((e) => krIndex(e.krId)));
@@ -394,6 +430,7 @@ export function layoutFlow(args: {
         done: e.done,
         open: e.open,
         segments: bandSegments(e, w),
+        ...(mineIds ? { mine: e.mine, mineSegs: mineSegments(e.mine, e.done + e.open, w) } : {}),
         labelX: tx + 8,
         labelY: labelYs.get(`${e.nodeId}>${e.krId}`) ?? 0,
       });
@@ -409,6 +446,7 @@ export function layoutFlow(args: {
     O_BAND,
     MIN_BAND,
   );
+  const mineOfKr = (k: string) => nodeEdges.filter((e) => e.krId === k).reduce((s, e) => s + e.mine, 0);
   const oSum = oWs.reduce((s, v) => s + v, 0);
   let ty = o.y + (o.h - oSum) / 2;
   active.forEach((kn, i) => {
@@ -425,6 +463,7 @@ export function layoutFlow(args: {
       done: kn.done,
       open: kn.open,
       segments: bandSegments(kn, w),
+      ...(mineIds ? { mine: mineOfKr(kn.krId), mineSegs: mineSegments(mineOfKr(kn.krId), kn.done + kn.open, w) } : {}),
       labelX: 0,
       labelY: 0,
     });

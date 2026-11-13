@@ -4,7 +4,7 @@ import type { ClaimStatus } from "../types";
 import { krLabel, nameOf } from "../ui";
 
 /** 見ている人に届いた、資料の記述との結びつき（本人の分だけ） */
-function useMyClaims() {
+export function useMyClaims() {
   const { outcomeNotes, claims, tasks } = useMock();
   const rows: { noteKey: string; taskId: string; status: ClaimStatus }[] = [];
   for (const n of outcomeNotes) {
