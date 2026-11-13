@@ -184,8 +184,9 @@ describe("3つの利用の広がり：地図と詳細", () => {
     expect(h).not.toContain("からKR1へ：");
     expect(h).toContain("からKR2へ：");
     expect(h).toContain("からKR3へ：");
-    expect((h.match(/仕事の登録なし/g) ?? []).length).toBe(2); // 地図の枠＋読み上げ用の一文
-    expect(h).toContain('class="mk-noreg-box"');
+    expect((h.match(/class="mk-noreg-box"/g) ?? []).length).toBe(1); // KR1の枠（TFの枠は別の印）
+    expect((h.match(/KR1：仕事の登録なし/g) ?? []).length).toBe(1); // 読み上げ用の一文
+    expect((h.match(/mk-tf-empty/g) ?? []).length).toBe(3); // 仕事の無いTF（TF1〜TF3）は点線の枠
     expect((h.match(/仕事はアプリに登録された分です（7PJ中2PJ）/g) ?? []).length).toBe(1);
     expect(h).toContain("手がかり 18社／30社");
     expect(h).toContain("KR1 共創パートナー企業を30社にする：AIの見立て 66");

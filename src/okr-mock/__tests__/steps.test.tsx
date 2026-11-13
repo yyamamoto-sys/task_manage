@@ -177,10 +177,10 @@ describe("画面：O・段の目盛り・凡例・学び", () => {
     expect(h).toContain("なぜこのOか");
     expect(h.indexOf("なぜこのOか")).toBeLessThan(h.indexOf("仕事がどこへ流れているか"));
   });
-  it("凡例は1か所：60・70・80・90/100 の意味と「70 に届けば十分な前進」", () => {
+  it("段の凡例の文章は画面のどこにも出ない（KRの詳細の「段の基準を見る」に、KRごとの基準文だけが残る）", () => {
     const h = html();
-    expect((h.match(/70 に届けば十分な前進です/g) ?? []).length).toBe(1);
-    for (const s of ["これまでの進め方でも届く水準", "取り組みによる明確な前進", "周りから見ても成果が明らか", "これまでのやり方を超える", "60 台は", "悪い状態ではありません"]) expect(h).toContain(s);
+    for (const s of ["70 に届けば十分な前進です", "60 台は", "悪い状態ではありません", "取り組みによる明確な前進", "周りから見ても成果が明らか", "これまでのやり方を超える", "「背伸びの目標」は、90・100 の段を持つKRに付きます"]) expect(h).not.toContain(s);
+    expect(html({ sel: { type: "kr", id: "kr1" } })).toContain("段の基準を見る");
   });
   it("90・100 を持つKR（KR1・KR2）だけに「背伸びの目標」の印", () => {
     const h = html();
@@ -188,14 +188,14 @@ describe("画面：O・段の目盛り・凡例・学び", () => {
     expect(h).toMatch(/KR2 地域拠点の稼働率を80%にする：AIの見立て[^"]*背伸びの目標/);
     expect(h).not.toMatch(/KR3 社内の定型業務を減らす：AIの見立て[^"]*背伸びの目標/);
   });
-  it("チームの帯：全体の％は出ない。KRごとの段の目盛りと、前回から動いたKR", () => {
+  it("チームの帯：全体の％は出ない。KRごとの段の目盛りのカードだけ（動いたKRの一覧・凡例・注釈は無い）", () => {
     const h = html();
     const band = h.match(/<section class="mk-card mk-band"[\s\S]*?<\/section>/)![0];
     expect(band).not.toContain("全体の進み");
     expect(band).not.toContain("期の道のり");
-    expect(band).toContain("前回から段の位置が動いたKR");
     expect((band.match(/mk-stepscale/g) ?? []).length).toBe(3);
     expect(band).toContain("前回から +2");
+    for (const s of ["前回から段の位置が動いたKR", "前回から動いたKRはありません", "64 → 66", "mk-bandline", "mk-band-body", "mk-legend", "70 に届けば十分な前進です", "背伸びの目標」は、90・100"]) expect(band).not.toContain(s);
   });
   it("KRの詳細の先頭に「Oに近づいた証拠として見るもの」。次の段の要件と資料の記述が出る", () => {
     const h = html({ sel: { type: "kr", id: "kr1" } });

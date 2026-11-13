@@ -2,7 +2,7 @@ import { scrollToId, sidebarKrRows } from "../nav";
 import { useMock, type ViewMode } from "../state";
 import { nameOf } from "../ui";
 
-export const MOCK_VERSION = "mock v13";
+export const MOCK_VERSION = "mock v14";
 const ONLY_OKR = "モックでは OKR モードだけ動きます";
 
 /** 押せない見た目の部品（本番にある操作。モックでは動かさない） */

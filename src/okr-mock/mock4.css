@@ -38,8 +38,7 @@ button.mk-seg-item:focus-visible { outline: 3px solid var(--color-brand); outlin
 .mk-linkbtn:disabled { color: var(--color-text-tertiary); cursor: not-allowed; text-decoration: none; }
 [data-theme="dark"] .mk-linkbtn { color: var(--color-text-info); }
 
-/* チームはどこまで来たか */
-.mk-band-body { display: grid; grid-template-columns: minmax(260px, 0.9fr) minmax(0, 1.6fr); gap: 16px; align-items: start; }
+/* チームはどこまで来たか：KRのカードを幅いっぱいに並べる */
 .mk-svgtext { fill: var(--color-text-primary); }
 .mk-svgtext-muted { fill: var(--color-text-secondary); }
 .mk-track { fill: var(--color-bg-tertiary); }
@@ -146,9 +145,6 @@ button.mk-seg-item:focus-visible { outline: 3px solid var(--color-brand); outlin
   .mk-app.is-sb-collapsed .mk-flowwrap { grid-template-columns: minmax(0, 1fr); }
   .mk-app.is-sb-collapsed .mk-panel { position: fixed; top: 0; right: 0; bottom: 0; z-index: 45; width: min(420px, 100%); max-height: none; border-radius: 16px 0 0 16px; box-shadow: var(--shadow-lg); outline: none; pointer-events: auto; }
 }
-@media (max-width: 1100px) {
-  .mk-band-body { grid-template-columns: minmax(0, 1fr); }
-}
 @media (max-width: 700px) {
   .mk-head { gap: 8px; }
   .mk-guide { flex-direction: column; align-items: flex-start; }
@@ -180,7 +176,6 @@ button.mk-seg-item:focus-visible { outline: 3px solid var(--color-brand); outlin
 .mk-pickbtn:focus-visible, .mk-panel:focus-visible { outline: 3px solid var(--color-brand); outline-offset: 2px; }
 .mk-armed { margin: 4px 0; padding: 6px 12px; border-radius: 10px; background: var(--color-bg-info); color: var(--color-text-info); font-weight: 700; font-size: 13px; }
 .mk-conflict { margin: 6px 0; padding: 6px 10px; border: 1px solid var(--color-border-warning) !important; border-radius: 12px; }
-.mk-bandline { margin: 6px 0 0; padding-left: 18px; font-size: 12px; }
 .mk-panel-scrim { position: fixed; inset: 0; z-index: 44; border: none; background: var(--tour-scrim); cursor: default; }
 
 /* KRの点：文字を添える／色が足りないときの模様 */
@@ -201,6 +196,7 @@ button.mk-seg-item:focus-visible { outline: 3px solid var(--color-brand); outlin
 
 /* 仕事の登録なし：責めない穏やかな点線の枠（灰色系・丸み。警告色や三角は使わない） */
 .mk-noreg-box { fill: none; stroke: var(--color-text-tertiary, #8a93a6); stroke-width: 1.5; stroke-dasharray: 4 4; }
+.mk-fnode.mk-tf-empty { stroke: var(--color-text-tertiary, #8a93a6); stroke-dasharray: 4 4; }
 .mk-noreg-line { padding: 8px 12px; border: 1.5px dashed var(--color-border-secondary); border-radius: 12px; }
 .mk-reachnote { margin: 0 0 4px; font-size: 12px; }
 .mk-trend { margin: 2px 0 6px; }
@@ -216,7 +212,6 @@ button.mk-seg-item:focus-visible { outline: 3px solid var(--color-brand); outlin
 .mk-oblock-why { font-size: 13px; line-height: 1.6; max-width: 62em; }
 .mk-oblock-why p { margin: 2px 0 6px; color: var(--color-text-secondary); }
 .mk-legend { margin-top: 10px; padding: 8px 10px; border-radius: 12px; background: var(--color-bg-secondary); }
-.mk-legend p { margin: 2px 0; }
 .mk-learnfeed { padding: 10px 16px; }
 .mk-bandsdoc { margin: 6px 0; font-size: 12.5px; }
 .mk-bandsdoc summary { cursor: pointer; }

@@ -48,7 +48,7 @@ describe("サイドバー：メニューとページの切替", () => {
   });
   it("下段はアバターと版だけ", () => {
     const s = sidebarOf(html());
-    expect(s).toContain("mock v13");
+    expect(s).toContain("mock v14");
     expect(s).toContain("見ている人：鈴木");
   });
 });
@@ -121,7 +121,7 @@ describe("サイドバー：資料と折りたたみ", () => {
     expect(s).toContain("👥");
     expect(s).toContain("👤");
     expect(s).not.toContain("mk-sb-label");
-    expect(s).not.toContain("mock v13");
+    expect(s).not.toContain("mock v14");
     expect(s).toMatch(/title="KR1：AIの見立て \d+/);
     expect(html({ collapsed: true })).toContain("mk-app is-sb-collapsed");
     expect(sidebarOf(html())).toContain('aria-label="メニューを閉じる"');

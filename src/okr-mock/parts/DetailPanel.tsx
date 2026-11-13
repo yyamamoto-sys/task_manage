@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { aiCandidates, howOptions, krBands, krDefs, krStyle, MINE_COLOR, PERIOD_END, PERIOD_START, pjsInit, PERSONAL_NAME } from "../fixtures";
+import { aiCandidates, howOptions, krBands, krDefs, krStyle, MINE_COLOR, PERIOD_END, PERIOD_START, pjsInit, PERSONAL_NAME, tfsInit } from "../fixtures";
 import {
   formatMd,
   hintTrailsPeriod,
@@ -17,7 +17,7 @@ import {
   TODAY,
   workDigest,
 } from "../logic";
-import { krRegistration } from "../reach";
+import { krRegistration, workPhrase } from "../reach";
 import { useMock } from "../state";
 import { hasStretch, learningsOfKr, moveText, nextLine, nextRequirements, stepMove, stepsOf } from "../steps";
 import { proposalKey } from "../userState";
@@ -48,6 +48,7 @@ function KrPanel({ krId }: { krId: string }) {
   const trails = hintTrailsPeriod(r.hint, elapsed);
   const groups = learningsOfKr(learnings, krId, checkins);
   const nr = ca ? nextRequirements(ca.cur.assessment, bands) : null;
+  const krTfs = tfsInit.filter((t) => t.krId === krId);
   return (
     <>
       <h3 className="mk-panel-h" style={{ borderLeftColor: color }}>
@@ -160,6 +161,21 @@ function KrPanel({ krId }: { krId: string }) {
       <button type="button" className="mk-btn mk-btn-sm" onClick={() => setModal("table")}>
         表で見る（全KR）
       </button>
+
+      {krTfs.length > 0 && (
+        <>
+          <h4 className="mk-panel-sub">このKRのTF</h4>
+          <ul className="mk-list mk-list-tight" aria-label="このKRのTF">
+            {krTfs.map((tf) => (
+              <li key={tf.id}>
+                <button type="button" className="mk-linkbtn" onClick={() => setSel({ type: "tf", id: tf.id })}>
+                  {tf.short} {tf.name}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
 
       <h4 className="mk-panel-sub">この成果につながった仕事（全員に見えます）</h4>
       {effective.length === 0 ? (
@@ -414,6 +430,109 @@ function TaskPanel({ taskId }: { taskId: string }) {
   );
 }
 
+/** TFの詳細。AIの見立て（60〜の値）はKRだけのもので、TFには値を付けない */
+function TfPanel({ tfId }: { tfId: string }) {
+  const { tasks, linkCtx, setSel } = useMock();
+  const tf = tfsInit.find((t) => t.id === tfId);
+  if (!tf) return null;
+  const color = krStyle(tf.krId).color;
+  const pjs = pjsInit.filter((p) => p.tfId === tf.id);
+  const tfTasks = tasksOfKr(periodTasks(tasks, PERIOD_START), tf.krId, linkCtx).filter((t) => pjs.some((p) => p.id === t.pjId));
+  const done = tfTasks.filter((t) => t.status === "完了").length;
+  const open = tfTasks.length - done;
+  const people = [...new Set(tfTasks.map((t) => t.assigneeId))];
+  return (
+    <>
+      <h3 className="mk-panel-h" style={{ borderLeftColor: color }}>
+        <span style={{ color }}>{tf.short}</span> {tf.name}
+      </h3>
+      <dl className="mk-dl">
+        <dt>属するKR</dt>
+        <dd>
+          <button type="button" className="mk-linkbtn" onClick={() => setSel({ type: "kr", id: tf.krId })}>
+            {krName(tf.krId)}
+          </button>
+        </dd>
+        <dt>つながるPJ</dt>
+        <dd>
+          {pjs.length === 0 ? (
+            "まだありません"
+          ) : (
+            <ul className="mk-list mk-list-tight" aria-label="つながるPJ">
+              {pjs.map((p) => (
+                <li key={p.id}>
+                  <button type="button" className="mk-linkbtn" onClick={() => setSel({ type: "pj", id: p.id })}>
+                    {p.name}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </dd>
+        {tfTasks.length > 0 && (
+          <>
+            <dt>仕事</dt>
+            <dd>{workPhrase(done, open)}</dd>
+            <dt>関わる人</dt>
+            <dd>{people.map((id) => nameOf(id)).join("、")}</dd>
+          </>
+        )}
+      </dl>
+      {tfTasks.length === 0 && <p className="mk-muted mk-noreg-line">このTFには、仕事の登録がありません。</p>}
+    </>
+  );
+}
+
+/** PJの詳細（TFの詳細から開く）。仕事の一覧と、つなぎ先のTF・KR */
+function PjPanel({ pjId }: { pjId: string }) {
+  const { tasks, linkCtx, setSel } = useMock();
+  const pj = pjsInit.find((p) => p.id === pjId);
+  if (!pj) return null;
+  const pjTasks = periodTasks(tasks, PERIOD_START).filter((t) => t.pjId === pj.id);
+  const tf = tfsInit.find((t) => t.id === pj.tfId);
+  const krs = [...new Set(pjTasks.flatMap((t) => krIdsOfTask(t, linkCtx)))];
+  const done = pjTasks.filter((t) => t.status === "完了").length;
+  return (
+    <>
+      <h3 className="mk-panel-h">{pj.name}</h3>
+      <dl className="mk-dl">
+        {tf && (
+          <>
+            <dt>TF</dt>
+            <dd>
+              <button type="button" className="mk-linkbtn" onClick={() => setSel({ type: "tf", id: tf.id })}>
+                {tf.short} {tf.name}
+              </button>
+            </dd>
+          </>
+        )}
+        <dt>つなぎ先</dt>
+        <dd>{krs.length === 0 ? "つながっていません" : krs.map((k) => krName(k)).join("、")}</dd>
+        {pjTasks.length > 0 && (
+          <>
+            <dt>仕事</dt>
+            <dd>{workPhrase(done, pjTasks.length - done)}</dd>
+          </>
+        )}
+      </dl>
+      {pjTasks.length === 0 ? (
+        <p className="mk-muted mk-noreg-line">このPJには、仕事の登録がありません。</p>
+      ) : (
+        <ul className="mk-list mk-list-tight">
+          {pjTasks.map((t) => (
+            <li key={t.id}>
+              <button type="button" className="mk-linkbtn" onClick={() => setSel({ type: "task", id: t.id })}>
+                {t.title}
+              </button>{" "}
+              <span className="mk-muted">{nameOf(t.assigneeId)}</span> <StatusChip status={t.status} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
+  );
+}
+
 /**
  * 詳細パネル。幅が広いときは地図の右、狭いときは右から出る引き出し（境目はサイドバーの幅しだい。nav.ts の panelNarrowPx と mock4.css が同じ値）。
  * 開いたらパネルへフォーカスを移す。離れた場所から開いて見えない位置にあるときはスクロールする
@@ -470,7 +589,7 @@ export function DetailPanel() {
         aria-modal={narrow ? true : undefined}
       >
         <div className="mk-row" style={{ marginBottom: 6 }}>
-          <span className="mk-muted">{!sel ? "詳細" : sel.type === "kr" ? "KRの詳細" : "仕事の詳細"}</span>
+          <span className="mk-muted">{!sel ? "詳細" : sel.type === "kr" ? "KRの詳細" : sel.type === "tf" ? "TFの詳細" : sel.type === "pj" ? "PJの詳細" : "仕事の詳細"}</span>
           <span className="mk-spacer" />
           {sel && (
             <button type="button" className="mk-btn mk-btn-sm" onClick={() => setSel(null)} aria-label="詳細パネルを閉じる">
@@ -478,7 +597,7 @@ export function DetailPanel() {
             </button>
           )}
         </div>
-        {!sel ? <EmptyPanel /> : sel.type === "kr" ? <KrPanel krId={sel.id} /> : <TaskPanel taskId={sel.id} />}
+        {!sel ? <EmptyPanel /> : sel.type === "kr" ? <KrPanel krId={sel.id} /> : sel.type === "tf" ? <TfPanel tfId={sel.id} /> : sel.type === "pj" ? <PjPanel pjId={sel.id} /> : <TaskPanel taskId={sel.id} />}
       </aside>
     </>
   );

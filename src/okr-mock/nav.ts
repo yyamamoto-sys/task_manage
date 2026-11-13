@@ -36,9 +36,14 @@ export function setFlowAllFor(flow: FlowAll, page: ViewMode, on: boolean): FlowA
 
 export const flowViewOf = (page: ViewMode, flow: FlowAll): FlowView => (flow[page] ? "all" : page);
 
-/** 図を切り替えたときの選択。KRはどの図にもある。仕事は切り替え先の図に出ているときだけ残す */
-export function selectionAfterFlowSwitch(sel: Selection, visibleTaskIds: ReadonlySet<string>): Selection {
+/**
+ * 図を切り替えたときの選択。KRはどの図にもある。仕事・TF・PJは切り替え先の図に出ているときだけ残す
+ * （visibleTfIds／visiblePjIds を渡さないときは、TF・PJの選択はそのまま残す）
+ */
+export function selectionAfterFlowSwitch(sel: Selection, visibleTaskIds: ReadonlySet<string>, visibleTfIds?: ReadonlySet<string>, visiblePjIds?: ReadonlySet<string>): Selection {
   if (sel?.type === "task" && !visibleTaskIds.has(sel.id)) return null;
+  if (sel?.type === "tf" && visibleTfIds && !visibleTfIds.has(sel.id)) return null;
+  if (sel?.type === "pj" && visiblePjIds && !visiblePjIds.has(sel.id)) return null;
   return sel;
 }
 

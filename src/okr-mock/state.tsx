@@ -28,7 +28,7 @@ import { addHistory, registeredTasks, type History, type Reach } from "./reach";
 import * as U from "./userState";
 
 export type ViewMode = "team" | "self";
-export type Selection = { type: "kr"; id: string } | { type: "task"; id: string } | null;
+export type Selection = { type: "kr"; id: string } | { type: "tf"; id: string } | { type: "pj"; id: string } | { type: "task"; id: string } | null;
 export type ModalId = "goals" | "table" | null;
 export interface Celebration {
   id: number;
