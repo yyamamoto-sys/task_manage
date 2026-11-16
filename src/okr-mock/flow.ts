@@ -336,10 +336,12 @@ export function layoutFlow(args: {
   // TFの定義はKRの並び順にそろえる（KR内の並びは渡された順）
   const tfDefs = args.tf.tfs.filter((t) => krIndex(t.krId) >= 0).sort((a, b) => krIndex(a.krId) - krIndex(b.krId));
   const tfIndex = (id: string) => tfDefs.findIndex((t) => t.id === id);
-  // 全体の幅（WIDTH）は変えず、TFの列の分だけ各列を詰める
+  // 全体の幅（WIDTH）は変えず、TFの列の分だけ各列を詰める。
+  // TFの列は、PJとの間・KRとの間の余白がつり合う位置に置く（TF–KR間は LABEL_GAP を下回らない範囲で）。
+  // 個人OKRなし：PJ–TF 145／TF–KR 160。個人OKRあり：PJ–TF 85／TF–KR 140（LABEL_GAP の下限）
   const cols = withPersonal
-    ? { personal: { x: 0, w: 120 }, pj: { x: 140, w: 150 }, tf: { x: 330, w: 115 }, kr: { x: 630, w: 240 }, o: { x: 900, w: 100 } }
-    : { personal: { x: 0, w: 120 }, pj: { x: 0, w: 190 }, tf: { x: 235, w: 125 }, kr: { x: 620, w: 250 }, o: { x: 900, w: 100 } };
+    ? { personal: { x: 0, w: 120 }, pj: { x: 140, w: 150 }, tf: { x: 375, w: 115 }, kr: { x: 630, w: 240 }, o: { x: 900, w: 100 } }
+    : { personal: { x: 0, w: 120 }, pj: { x: 0, w: 190 }, tf: { x: 335, w: 125 }, kr: { x: 620, w: 250 }, o: { x: 900, w: 100 } };
 
   // PJ：件数の多い順に maxPj 個まで。9以上のときは残りを「ほか◯PJ」にまとめる
   const total = (pjId: string) => (counts.linkedByPj[pjId] ?? []).length;
