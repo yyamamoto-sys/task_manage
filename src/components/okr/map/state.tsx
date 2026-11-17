@@ -9,7 +9,7 @@ import { crossedStep, currentAssessment, deltaText, type CurrentAssessment } fro
 import { KrDefConflictError, memoryRepository, type HintDef, type OkrMapRepository } from "./repository";
 import type { AiCandidate, AssessEntry, Checkin, ClaimStatus, Decision, KintoneRow, KrAnswer, KrDef, KrRecord, Learning, OkrItem, OutcomeNote, Resource, Task } from "./types";
 import type { OkrMapAi } from "./aiClient";
-import { orderTasksForAi, resourceKindOf, type CheckinAiContext } from "./checkinAi";
+import { orderTasksForAi, resourceKindOf, withSplitHint, type CheckinAiContext } from "./checkinAi";
 import { planKintoneApply, readingFromImport, type KintoneApplyPlan, type KintoneReading } from "./kintone";
 import type { SuggestKr } from "./suggestAi";
 import { addHistory, registeredTasks, type History, type Reach } from "./reach";
@@ -80,7 +80,7 @@ interface MockState {
   /** 資料を読ませただけで、まだ確定していない回 */
   openCheckins: Checkin[];
   /** 資料を1件ずつ AI に読ませて保存する。読めなかった資料の理由を返す */
-  readResources: (files: File[], checkin: Checkin, onProgress?: (done: number) => void) => Promise<string[]>;
+  readResources: (files: File[], checkin: Checkin, onProgress?: (done: number) => void) => Promise<{ errors: string[]; notices: string[] }>;
   /** どのKRにもつながらない仕事の、つなぎ先の候補を AI に出させる（PJごと・保存しない） */
   suggestCandidates: (task: Task) => Promise<void>;
   /** 仕事がKRにどう役立つかの案を AI に出させる（保存しない） */
@@ -397,8 +397,9 @@ export function MockProvider({
       resources,
       openCheckins,
       readResources: async (files, checkin, onProgress) => {
-        if (!ai) return [];
+        if (!ai) return { errors: [], notices: [] };
         const errors: string[] = [];
+        const notices: string[] = [];
         const krItems = items.filter((i) => i.kind === "kr");
         const nameOfId = (id: string | null) => (id ? (data.members.find((m) => m.id === id)?.name ?? "") : "");
         const pjName = (id: string) => (id === PERSONAL_PJ ? PERSONAL_NAME : (data.pjs.find((p) => p.id === id)?.name ?? ""));
@@ -413,17 +414,18 @@ export function MockProvider({
         for (const file of files) {
           try {
             const id = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `res-${Date.now()}-${done}`;
-            const res = await ai.readResource(file, ctx, { id, name: file.name, kind: resourceKindOf(file.name), checkinId: checkin.id });
+            const { resource: res, notice } = await ai.readResource(file, ctx, { id, name: file.name, kind: resourceKindOf(file.name), checkinId: checkin.id });
             await repository.saveResource({ groupId: data.groupId, viewerId, checkin, resource: res });
             setResources((p) => [...p, res]);
             setOpenCheckins((p) => (p.some((c) => c.id === checkin.id) || checkins.some((c) => c.id === checkin.id) ? p : [...p, checkin]));
+            if (notice) notices.push(notice);
           } catch (e) {
-            errors.push(formatErrorForUser(`${file.name} を読めませんでした`, e));
+            errors.push(withSplitHint(formatErrorForUser(`${file.name} を読めませんでした`, e)));
           }
           done += 1;
           onProgress?.(done);
         }
-        return errors;
+        return { errors, notices };
       },
       suggestCandidates: async (task) => {
         if (!ai) return;

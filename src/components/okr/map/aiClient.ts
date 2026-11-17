@@ -6,7 +6,7 @@ import { checkConsultAttachFile, loadConsultAttachment } from "../../../lib/ai/c
 import { DEFAULT_CONSULT_MODEL } from "../../../lib/ai/consultModels";
 import { buildMessageContent, invokeAI } from "../../../lib/ai/invokeAI";
 import { extractOkrImportData, type OkrImportAnalysis } from "../../../lib/ai/okrImportExtractor";
-import { buildCheckinUserText, CHECKIN_SCHEMA, CHECKIN_SYSTEM_PROMPT, checkReadable, parseCheckinReading, type CheckinAiContext, type CheckinResourceMeta } from "./checkinAi";
+import { buildCheckinUserText, CHECKIN_SCHEMA, CHECKIN_SYSTEM_PROMPT, checkReadable, longResourceNotice, parseCheckinReading, type CheckinAiContext, type CheckinResourceMeta } from "./checkinAi";
 import { buildCandidatesText, buildHowText, CANDIDATES_SCHEMA, HOW_SCHEMA, parseCandidates, parseHowOptions, SUGGEST_SYSTEM_PROMPT, type SuggestKr } from "./suggestAi";
 import type { AiCandidate, Resource } from "./types";
 
@@ -16,8 +16,8 @@ export const OKR_MAP_MODEL = DEFAULT_CONSULT_MODEL;
 export const TRUNCATED_CHECKIN_MESSAGE = "資料の読み取り結果が長すぎて途中で切れました。資料を分けて（例：前半と後半）読ませてください。";
 
 export interface OkrMapAi {
-  /** 資料1件を読む（文字の抽出 → AI）。結果は保存しない（保存は呼び出し側が repository で行う） */
-  readResource(file: File, ctx: CheckinAiContext, meta: CheckinResourceMeta): Promise<Resource>;
+  /** 資料1件を読む（文字の抽出 → AI）。結果は保存しない（保存は呼び出し側が repository で行う）。notice＝長い資料・先頭だけ読んだ等の案内 */
+  readResource(file: File, ctx: CheckinAiContext, meta: CheckinResourceMeta): Promise<{ resource: Resource; notice: string | null }>;
   suggestCandidates(krs: SuggestKr[], pjName: string, taskTitles: string[]): Promise<AiCandidate[]>;
   suggestHow(kr: SuggestKr, pjName: string, taskTitle: string): Promise<string[]>;
   /** Kintone の OKR（PDF・テキスト）から O・KR・TF と段の基準文を読む */
@@ -43,7 +43,7 @@ export function createOkrMapAi(): OkrMapAi {
         effort: "low",
       });
       assertNotTruncated(res, TRUNCATED_CHECKIN_MESSAGE);
-      return parseCheckinReading(res.content[0].text, ctx, meta);
+      return { resource: parseCheckinReading(res.content[0].text, ctx, meta), notice: longResourceNotice(meta.name, att.isText ? att.data.length : 0, att.note) };
     },
     async suggestCandidates(krs, pjName, taskTitles) {
       const res = await invokeAI(SUGGEST_SYSTEM_PROMPT, [{ role: "user", content: buildCandidatesText(krs, pjName, taskTitles) }], 4096, "okr-map-suggest", OKR_MAP_MODEL, {

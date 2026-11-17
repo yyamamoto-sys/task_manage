@@ -31,7 +31,7 @@ vi.mock("../../guestAiQuotaCounter", () => ({
   recordGuestAiUse: (...args: unknown[]) => mockRecordGuestAiUse(...args),
 }));
 
-import { invokeAI } from "../invokeAI";
+import { invokeAI, type AIIntent } from "../invokeAI";
 import { setGuestMode } from "../../guestMode";
 
 beforeEach(() => {
@@ -209,6 +209,36 @@ describe("invokeAI：ゲストのAI利用回数表示（参考値）の加算（
     expect(body.output_config).toEqual({ format: { type: "json_schema", schema: { type: "object" } }, effort: "low" });
     expect(body.model).toBe("claude-sonnet-5-5");
   });
+
+  // text ブロックだけを残す処理は全AI機能の共通部分。既存の intent すべてで、従来の返答の形（type つき・type なし）と
+  // Sonnet 5.5 の形（先頭に thinking）のどれでも content[0].text が本文になり、使用量がその intent で記録されることを見る
+  const ALL_INTENTS = [
+    "task-management", "kr-report", "kr-quarter-plan", "kr-session-extract", "kr-why", "okr-analysis", "meeting-extract",
+    "project-plan", "project-analysis", "all-projects-analysis", "todo-decompose", "okr-import", "okr-personal-import",
+    "okr-personal-outlook", "okr-personal-chat", "okr-personal-review-draft", "okr-personal-plan-draft",
+    "okr-personal-period-review-draft", "okr-checkin-extract", "okr-map-suggest",
+  ] as const satisfies readonly AIIntent[];
+  // intent を足したのにここへ足し忘れると型エラーになる
+  const everyIntentListed: Exclude<AIIntent, (typeof ALL_INTENTS)[number]> extends never ? true : false = true;
+  const shapes: [string, unknown[]][] = [
+    ["従来（type: text）", [{ type: "text", text: "本文" }]],
+    ["type なし", [{ text: "本文" }]],
+    ["先頭に thinking", [{ type: "thinking", thinking: "", signature: "s" }, { type: "text", text: "本文" }]],
+  ];
+  it.each(ALL_INTENTS.flatMap((intent) => shapes.map(([name, content]) => [intent, name, content] as const)))(
+    "%s：%s の返答でも content[0].text が本文",
+    async (intent, _name, content) => {
+      expect(everyIntentListed).toBe(true);
+      setGuestMode(false);
+      mockInsert.mockClear();
+      mockInvoke.mockResolvedValue({ data: { content, usage: { input_tokens: 3, output_tokens: 2 }, stop_reason: "end_turn" }, error: null });
+      const res = await invokeAI("s", [{ role: "user", content: "hi" }], 1000, intent);
+      expect(res.content).toEqual([{ type: "text", text: "本文" }]);
+      expect(res.stop_reason).toBe("end_turn");
+      expect(mockInsert.mock.calls[0][0]).toMatchObject({ consultation_type: intent, input_tokens: 3, output_tokens: 2 });
+      expect(mockInvoke.mock.calls[mockInvoke.mock.calls.length - 1][1].body).not.toHaveProperty("output_config");
+    },
+  );
 
   it("output_config を指定しないときは送らない（旧来の呼び出しは変わらない）", async () => {
     setGuestMode(false);

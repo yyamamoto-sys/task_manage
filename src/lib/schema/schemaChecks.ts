@@ -769,4 +769,12 @@ export const SCHEMA_HEALTH_CHECKS: SchemaCheckDescriptor[] = [
     label: "OKRモードの担当者判定の関数（okr_task_assignee_ids）が見つかりません",
     migration: "20261117_okr_map_records.sql",
   },
+  // 資料の確定は1トランザクションの RPC で保存する（段階3）。無いと「まとめて確定」が失敗する
+  {
+    id: "fn_okr_confirm_checkin",
+    kind: "function",
+    name: "okr_confirm_checkin",
+    label: "OKRモードの資料の確定を保存する関数（okr_confirm_checkin）が見つかりません",
+    migration: "20261117_okr_map_records.sql",
+  },
 ];

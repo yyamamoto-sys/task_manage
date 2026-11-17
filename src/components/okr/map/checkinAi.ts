@@ -237,7 +237,28 @@ export function parseCheckinReading(text: string, ctx: CheckinAiContext, meta: C
   return { id: meta.id, name: meta.name, kind: meta.kind, checkinId: meta.checkinId, drafts, assessments, learnings, notes, decisions };
 }
 
-export const emptyResourceMessage = (name: string) => `${name}：文字を読み取れませんでした（空の資料か、画像だけの資料です）。文字を選択できる形で保存し直してから読ませてください。`;
+/**
+ * これを超える長さの資料は、読み取りに時間がかかり Edge Function の実行時間の上限に掛かりうる（実測前の目安）。
+ * 読ませる前に止めはせず、分けて読ませる案内を出す
+ */
+export const LONG_RESOURCE_CHARS = 15000;
+
+export function longResourceNotice(name: string, chars: number, truncatedNote?: string): string | null {
+  const notes: string[] = [];
+  if (truncatedNote) notes.push(truncatedNote);
+  if (chars > LONG_RESOURCE_CHARS) notes.push(`長い資料です（約${Math.round(chars / 1000)}千字）。読み取りが途中で止まる・抜けがあるときは、前半と後半など${LONG_RESOURCE_CHARS / 1000}千字くらいずつに分けて読ませてください`);
+  return notes.length > 0 ? `${name}：${notes.join("。")}` : null;
+}
+
+const SPLIT_HINT_RE = /546|WORKER_RESOURCE_LIMIT|WORKER_LIMIT|504|timeout|timed out|タイムアウト|途中で切れました/i;
+
+/** 時間切れ・出力切れらしいエラーには、資料を分ける案内を添える */
+export function withSplitHint(message: string): string {
+  if (!SPLIT_HINT_RE.test(message) || message.includes("分けて")) return message;
+  return `${message}\n資料が長いと時間切れになることがあります。前半と後半などに分けて、1件ずつ読ませてください。`;
+}
+
+export const emptyResourceMessage =(name: string) => `${name}：文字を読み取れませんでした（空の資料か、画像だけの資料です）。文字を選択できる形で保存し直してから読ませてください。`;
 export const NO_KR_MESSAGE = "地図にKRがまだ無いため、資料を読ませられません。先に O・KR を登録してください。";
 
 /** 読ませる前の確認。KRが無い・本文が空なら AI を呼ばずに止める（呼ぶと課金だけが発生する） */

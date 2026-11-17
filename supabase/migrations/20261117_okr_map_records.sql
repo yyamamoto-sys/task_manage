@@ -1,18 +1,28 @@
--- 想定クエリ名：OKRモード（地図）の記録用の表（段階2）
+-- 想定クエリ名：OKRモード（地図）の記録用の表（段階2・段階3のレビュー指摘を反映）
 -- ============================================================
 -- 2026-11-17（feature/okr-v2・版は上げない）。冪等（何度流しても同じ状態になる）
 --
--- 正本：docs/dev/sections/s91_okr-map-stage1.md（段階2の節）
--- 前提：次の関数が本番にあること（適用前の確認 SQL は s91 の段階2の節）
+-- 正本：docs/dev/sections/s91_okr-map-stage1.md（91-2・91-3・91-4）
+-- 前提：次の関数が本番にあること（適用前の確認 SQL は s91 の 91-2・91-4）
 --   current_member_id() / current_member_group_ids() / current_member_is_super_admin()
 --   task_group_ids(text) / personal_kr_owner_member_id(uuid) / update_updated_at()
+--
+-- 🔴【未適用の前提】このファイルは「15本の表がまだどこにも無い」状態に流す前提で書いてある。
+--   表は CREATE TABLE IF NOT EXISTS なので、前の版をすでに流した環境（dev 等）に流し直しても、
+--   列・制約の変更は反映されない（関数・トリガー・ポリシーは作り直される）。
+--   前の版が残っている環境に流し直すときは、先に15本の表を作り直すこと（中身は捨ててよい試験データだけのはず）：
+--     DROP TABLE IF EXISTS public.okr_outcome_claims, public.okr_kr_assessments, public.okr_learnings,
+--       public.okr_decisions, public.okr_resources, public.okr_outcome_notes, public.okr_checkins,
+--       public.okr_kr_defs, public.okr_task_kr_links, public.okr_task_kr_how, public.okr_proposal_choices,
+--       public.okr_personal_kr_links, public.okr_weekly_answers, public.okr_weekly_picks, public.okr_tf_locks;
+--   本番に一度流したあとで表の形を変えるときは、このファイルを直さず新しいマイグレーションにする。
 --
 -- 【何をするか】地図の画面の「記録」を保存する表を15本作る。AI の候補は保存しない（段階3で都度作る）。
 --   〔全員〕＝同じ部署（group）のメンバー全員が読める・書ける（＋全社スーパー管理者）
 --   〔本人〕＝member_id が本人の行だけ読める・書ける
 --    1. okr_kr_defs            KRごとの段の基準文・証拠として見るもの・手がかりの単位/期首/目標/向き〔全員〕
 --    2. okr_checkins           チェックインの回〔全員〕
---    3. okr_resources          読ませた資料と読み取り結果〔全員〕（表だけ。書き込みは段階3）
+--    3. okr_resources          読ませた資料と読み取り結果〔全員〕
 --    4. okr_kr_assessments     回×KR×資料の見立て・手がかりの値〔全員〕
 --    5. okr_learnings          学び・気づき〔全員〕
 --    6. okr_decisions          決定事項と宿題〔全員〕
@@ -31,12 +41,21 @@
 --   回を持つ表（resources・decisions）は okr_checkins から、claims は outcome_notes から、
 --   BEFORE INSERT OR UPDATE のトリガーで入れる（kr_quarter_plans と同じ流儀）。
 --   okr_checkins・okr_tf_locks だけは画面が送り、RLS が「自分の部署か」を確かめる。
+--   KR の部署が変わったら、KR を持つ表と claims の group_id も追随させる（key_results の AFTER UPDATE）。
+--   回の部署は画面からは変えられない（ガードのトリガー）。管理者が変えたときは資料・決定事項が追随する。
+--   回を持つ表に入れる KR（見立て・学び・決定事項の kr_ids）は、回と同じ部署の KR に限る（トリガーで例外）。
+--
+-- 【誰が書いたか】updated_by（と confirmed_by・locked_by・deleted_by）は画面が送る値を使わず、
+--   トリガーで current_member_id() に上書きする（メンバーとして解決できないとき＝サービスロール等は送られた値のまま）。
 --
 -- 【RLS】Section 39：SECURITY DEFINER 関数は (SELECT ...) で包み、単数の部署は @> ARRAY[group_id] で比べる。
 --   物理削除はしない（Section 4）ので DELETE のポリシーは作らない（GRANT はあるが RLS で全件拒否される）。
---   取り消しは is_deleted（または claims の status）で行う。
+--   取り消しは is_deleted（または claims の status）で行う。claims は答え（status）以外の列を変えられない（トリガー）。
 --
--- 【MIN_CLIENT_VERSION は上げない】新しい表の追加だけ。既存の表・関数は変えない。
+-- 【確定の保存】okr_confirm_checkin(jsonb)（SECURITY INVOKER＝RLS が効く）が1トランザクションで書く。
+--   途中で失敗したら何も書かれない（旧い行を取り消したまま新しい行が無い、にならない）。
+--
+-- 【MIN_CLIENT_VERSION は上げない】新しい表の追加だけ。既存の表・関数は変えない（key_results にトリガーを1本足す）。
 -- 【適用方法】Supabase SQL Editor に全文を貼って実行する（dev → prod の順）。
 --   末尾の確認は DO ブロック1本。全行が OK ならよい。NG があれば例外メッセージにその行が出る。
 -- ============================================================
@@ -46,7 +65,8 @@ BEGIN;
 -- ------------------------------------------------------------
 -- 0) 判定用のヘルパー（SECURITY DEFINER。RLS の中から呼ぶ）
 -- ------------------------------------------------------------
--- 仕事の担当者（主担当＋副担当）の member_id の配列。削除済みの仕事は空
+-- 仕事の担当者（主担当＋副担当）の member_id の配列。削除済みの仕事・自分の部署に無い仕事は NULL
+-- （rpc で直接呼んで他部署の仕事の担当者を調べられないように、呼んだ人の部署で絞る。スーパー管理者は全部）
 CREATE OR REPLACE FUNCTION public.okr_task_assignee_ids(p_task_id text)
 RETURNS text[]
 LANGUAGE sql
@@ -59,6 +79,8 @@ AS $fn_okr_task_assignee_ids$
     FROM public.tasks t
    WHERE t.id = p_task_id
      AND t.is_deleted = false
+     AND (t.group_ids && (SELECT public.current_member_group_ids())
+          OR (SELECT public.current_member_is_super_admin()))
 $fn_okr_task_assignee_ids$;
 
 REVOKE ALL ON FUNCTION public.okr_task_assignee_ids(text) FROM PUBLIC, anon;
@@ -103,9 +125,190 @@ BEGIN
 END;
 $fn_okr_sync_group_from_note$;
 
+-- updated_by（と confirmed_by・locked_by・deleted_by）を書いた本人にする。画面が送った値は使わない。
+-- メンバーとして解決できない（サービスロール等）ときは送られた値のまま
+CREATE OR REPLACE FUNCTION public.okr_stamp_member()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = ''
+AS $fn_okr_stamp_member$
+DECLARE
+  v_me text := (SELECT public.current_member_id());
+BEGIN
+  IF v_me IS NULL THEN
+    RETURN NEW;
+  END IF;
+  NEW.updated_by := v_me;
+  IF TG_TABLE_NAME = 'okr_checkins' AND NEW.confirmed_by IS NOT NULL
+     AND (TG_OP = 'INSERT' OR NEW.confirmed_by IS DISTINCT FROM OLD.confirmed_by OR NEW.confirmed_at IS DISTINCT FROM OLD.confirmed_at) THEN
+    NEW.confirmed_by := v_me;
+  END IF;
+  IF TG_TABLE_NAME = 'okr_tf_locks' AND NEW.locked_by IS NOT NULL THEN
+    NEW.locked_by := v_me;
+  END IF;
+  IF TG_TABLE_NAME NOT IN ('okr_outcome_claims', 'okr_weekly_answers') AND NEW.deleted_by IS NOT NULL
+     AND (TG_OP = 'INSERT' OR NEW.deleted_by IS DISTINCT FROM OLD.deleted_by OR NEW.is_deleted IS DISTINCT FROM OLD.is_deleted) THEN
+    NEW.deleted_by := v_me;
+  END IF;
+  RETURN NEW;
+END;
+$fn_okr_stamp_member$;
+
+-- claims は答え（status・answered_at）だけを変えられる。対象（成果の記述・仕事・担当者・部署）を付け替えて
+-- 他部署の成果に yes を差し込めないように、画面（authenticated）からの付け替えは例外にする。
+-- KR の部署が変わったときの追随（SECURITY DEFINER の関数の中＝current_user が所有者）は通す
+CREATE OR REPLACE FUNCTION public.okr_claims_guard()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = ''
+AS $fn_okr_claims_guard$
+BEGIN
+  IF current_user IN ('authenticated', 'anon')
+     AND (NEW.note_id IS DISTINCT FROM OLD.note_id
+          OR NEW.task_id IS DISTINCT FROM OLD.task_id
+          OR NEW.member_id IS DISTINCT FROM OLD.member_id
+          OR NEW.group_id IS DISTINCT FROM OLD.group_id) THEN
+    RAISE EXCEPTION '結びつきの対象（成果の記述・仕事・担当者・部署）は変えられません。変えられるのは答えだけです'
+      USING ERRCODE = '42501';
+  END IF;
+  RETURN NEW;
+END;
+$fn_okr_claims_guard$;
+
+-- 回の部署は画面からは変えられない（回に入っている見立て・学び・決定事項の KR の部署と食い違うため）
+CREATE OR REPLACE FUNCTION public.okr_checkins_guard()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = ''
+AS $fn_okr_checkins_guard$
+BEGIN
+  IF current_user IN ('authenticated', 'anon') AND NEW.group_id IS DISTINCT FROM OLD.group_id THEN
+    RAISE EXCEPTION 'チェックインの回の部署は変えられません' USING ERRCODE = '42501';
+  END IF;
+  RETURN NEW;
+END;
+$fn_okr_checkins_guard$;
+
+-- 見立て・学び：KR と回の部署が同じであること。資料はその回のものであること（入れたとき・付け替えたときだけ見る）
+CREATE OR REPLACE FUNCTION public.okr_check_kr_in_checkin()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $fn_okr_check_kr_in_checkin$
+DECLARE
+  v_ci text;
+  v_kr text;
+BEGIN
+  IF TG_OP = 'UPDATE' AND NEW.kr_id IS NOT DISTINCT FROM OLD.kr_id
+     AND NEW.checkin_id IS NOT DISTINCT FROM OLD.checkin_id
+     AND NEW.resource_id IS NOT DISTINCT FROM OLD.resource_id THEN
+    RETURN NEW;
+  END IF;
+  SELECT c.group_id INTO v_ci FROM public.okr_checkins c WHERE c.id = NEW.checkin_id;
+  SELECT kr.group_id INTO v_kr FROM public.key_results kr WHERE kr.id = NEW.kr_id;
+  IF v_ci IS NULL OR v_kr IS DISTINCT FROM v_ci THEN
+    RAISE EXCEPTION 'KR とチェックインの回の部署が一致しません（%）', TG_TABLE_NAME USING ERRCODE = '23514';
+  END IF;
+  IF NEW.resource_id IS NOT NULL
+     AND NOT EXISTS (SELECT 1 FROM public.okr_resources r WHERE r.id = NEW.resource_id AND r.checkin_id = NEW.checkin_id) THEN
+    RAISE EXCEPTION '資料がこの回のものではありません（%）', TG_TABLE_NAME USING ERRCODE = '23514';
+  END IF;
+  RETURN NEW;
+END;
+$fn_okr_check_kr_in_checkin$;
+
+-- 決定事項：kr_ids はすべて回と同じ部署の KR。資料はその回のもの
+CREATE OR REPLACE FUNCTION public.okr_check_decision_krs()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $fn_okr_check_decision_krs$
+DECLARE
+  v_ci text;
+BEGIN
+  IF TG_OP = 'UPDATE' AND NEW.kr_ids IS NOT DISTINCT FROM OLD.kr_ids
+     AND NEW.checkin_id IS NOT DISTINCT FROM OLD.checkin_id
+     AND NEW.resource_id IS NOT DISTINCT FROM OLD.resource_id THEN
+    RETURN NEW;
+  END IF;
+  SELECT c.group_id INTO v_ci FROM public.okr_checkins c WHERE c.id = NEW.checkin_id;
+  IF v_ci IS NULL
+     OR EXISTS (SELECT 1 FROM unnest(NEW.kr_ids) AS k(id)
+                 WHERE NOT EXISTS (SELECT 1 FROM public.key_results kr WHERE kr.id = k.id AND kr.group_id = v_ci)) THEN
+    RAISE EXCEPTION '決定事項の KR がチェックインの回の部署のものではありません' USING ERRCODE = '23514';
+  END IF;
+  IF NEW.resource_id IS NOT NULL
+     AND NOT EXISTS (SELECT 1 FROM public.okr_resources r WHERE r.id = NEW.resource_id AND r.checkin_id = NEW.checkin_id) THEN
+    RAISE EXCEPTION '資料がこの回のものではありません（okr_decisions）' USING ERRCODE = '23514';
+  END IF;
+  RETURN NEW;
+END;
+$fn_okr_check_decision_krs$;
+
+-- KR の部署が変わったら、KR を持つ表と claims の group_id を追随させる（既存の trg_key_results_cascade_group_id とは別の1本）
+CREATE OR REPLACE FUNCTION public.okr_cascade_kr_group()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $fn_okr_cascade_kr_group$
+BEGIN
+  IF NEW.group_id IS DISTINCT FROM OLD.group_id THEN
+    UPDATE public.okr_kr_defs        SET group_id = NEW.group_id WHERE kr_id = NEW.id AND group_id IS DISTINCT FROM NEW.group_id;
+    UPDATE public.okr_kr_assessments SET group_id = NEW.group_id WHERE kr_id = NEW.id AND group_id IS DISTINCT FROM NEW.group_id;
+    UPDATE public.okr_learnings      SET group_id = NEW.group_id WHERE kr_id = NEW.id AND group_id IS DISTINCT FROM NEW.group_id;
+    UPDATE public.okr_outcome_notes  SET group_id = NEW.group_id WHERE kr_id = NEW.id AND group_id IS DISTINCT FROM NEW.group_id;
+    UPDATE public.okr_outcome_claims c SET group_id = NEW.group_id
+      FROM public.okr_outcome_notes n
+     WHERE n.id = c.note_id AND n.kr_id = NEW.id AND c.group_id IS DISTINCT FROM NEW.group_id;
+  END IF;
+  RETURN NEW;
+END;
+$fn_okr_cascade_kr_group$;
+
+-- 回の部署が（管理者の操作で）変わったら、回を持つ表の group_id を追随させる
+CREATE OR REPLACE FUNCTION public.okr_cascade_checkin_group()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $fn_okr_cascade_checkin_group$
+BEGIN
+  IF NEW.group_id IS DISTINCT FROM OLD.group_id THEN
+    UPDATE public.okr_resources SET group_id = NEW.group_id WHERE checkin_id = NEW.id AND group_id IS DISTINCT FROM NEW.group_id;
+    UPDATE public.okr_decisions SET group_id = NEW.group_id WHERE checkin_id = NEW.id AND group_id IS DISTINCT FROM NEW.group_id;
+  END IF;
+  RETURN NEW;
+END;
+$fn_okr_cascade_checkin_group$;
+
+-- jsonb 配列の和集合（先に入っている順を保つ）。p_key があればその項目で、無ければ要素まるごとで重複を除く
+CREATE OR REPLACE FUNCTION public.okr_jsonb_union(p_a jsonb, p_b jsonb, p_key text)
+RETURNS jsonb
+LANGUAGE sql
+IMMUTABLE
+SET search_path = ''
+AS $fn_okr_jsonb_union$
+  SELECT coalesce(jsonb_agg(s.e ORDER BY s.ord), '[]'::jsonb)
+    FROM (SELECT DISTINCT ON (CASE WHEN p_key IS NULL THEN x.e ELSE x.e -> p_key END) x.e, x.ord
+            FROM jsonb_array_elements(coalesce(p_a, '[]'::jsonb) || coalesce(p_b, '[]'::jsonb)) WITH ORDINALITY AS x(e, ord)
+           ORDER BY CASE WHEN p_key IS NULL THEN x.e ELSE x.e -> p_key END, x.ord) s
+$fn_okr_jsonb_union$;
+
 REVOKE ALL ON FUNCTION public.okr_sync_group_from_kr()      FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.okr_sync_group_from_checkin() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.okr_sync_group_from_note()    FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.okr_stamp_member()            FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.okr_claims_guard()            FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.okr_checkins_guard()          FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.okr_check_kr_in_checkin()     FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.okr_check_decision_krs()      FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.okr_cascade_kr_group()        FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.okr_cascade_checkin_group()   FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.okr_jsonb_union(jsonb, jsonb, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.okr_jsonb_union(jsonb, jsonb, text) TO authenticated;
 
 -- ------------------------------------------------------------
 -- 1) 表
@@ -373,7 +576,8 @@ CREATE INDEX IF NOT EXISTS idx_okr_weekly_answers_member ON public.okr_weekly_an
 CREATE INDEX IF NOT EXISTS idx_okr_weekly_picks_member   ON public.okr_weekly_picks (member_id, week_start) WHERE is_deleted = false;
 
 -- ------------------------------------------------------------
--- 3) トリガー（updated_at・group_id）
+-- 3) トリガー（updated_at・書いた本人・group_id・付け替えの禁止・部署の一致・部署の追随）
+--    BEFORE トリガーは名前の順に動く：check → guard → stamp → sync_group → updated_at
 -- ------------------------------------------------------------
 DO $okr_updated_at_triggers$
 DECLARE t text;
@@ -385,6 +589,8 @@ BEGIN
   ] LOOP
     EXECUTE format('DROP TRIGGER IF EXISTS trg_%s_updated_at ON public.%I', t, t);
     EXECUTE format('CREATE TRIGGER trg_%s_updated_at BEFORE UPDATE ON public.%I FOR EACH ROW EXECUTE FUNCTION public.update_updated_at()', t, t);
+    EXECUTE format('DROP TRIGGER IF EXISTS trg_%s_stamp ON public.%I', t, t);
+    EXECUTE format('CREATE TRIGGER trg_%s_stamp BEFORE INSERT OR UPDATE ON public.%I FOR EACH ROW EXECUTE FUNCTION public.okr_stamp_member()', t, t);
   END LOOP;
 END;
 $okr_updated_at_triggers$;
@@ -403,6 +609,31 @@ BEGIN
   DROP TRIGGER IF EXISTS trg_okr_outcome_claims_sync_group ON public.okr_outcome_claims;
   CREATE TRIGGER trg_okr_outcome_claims_sync_group BEFORE INSERT OR UPDATE ON public.okr_outcome_claims
     FOR EACH ROW EXECUTE FUNCTION public.okr_sync_group_from_note();
+
+  -- 付け替えの禁止（claims は答えだけ・回は部署を変えない）
+  DROP TRIGGER IF EXISTS trg_okr_outcome_claims_guard ON public.okr_outcome_claims;
+  CREATE TRIGGER trg_okr_outcome_claims_guard BEFORE UPDATE ON public.okr_outcome_claims
+    FOR EACH ROW EXECUTE FUNCTION public.okr_claims_guard();
+  DROP TRIGGER IF EXISTS trg_okr_checkins_guard ON public.okr_checkins;
+  CREATE TRIGGER trg_okr_checkins_guard BEFORE UPDATE ON public.okr_checkins
+    FOR EACH ROW EXECUTE FUNCTION public.okr_checkins_guard();
+
+  -- KR と回の部署の一致
+  FOREACH t IN ARRAY ARRAY['okr_kr_assessments', 'okr_learnings'] LOOP
+    EXECUTE format('DROP TRIGGER IF EXISTS trg_%s_check ON public.%I', t, t);
+    EXECUTE format('CREATE TRIGGER trg_%s_check BEFORE INSERT OR UPDATE ON public.%I FOR EACH ROW EXECUTE FUNCTION public.okr_check_kr_in_checkin()', t, t);
+  END LOOP;
+  DROP TRIGGER IF EXISTS trg_okr_decisions_check ON public.okr_decisions;
+  CREATE TRIGGER trg_okr_decisions_check BEFORE INSERT OR UPDATE ON public.okr_decisions
+    FOR EACH ROW EXECUTE FUNCTION public.okr_check_decision_krs();
+
+  -- 部署の追随
+  DROP TRIGGER IF EXISTS trg_key_results_cascade_okr_map ON public.key_results;
+  CREATE TRIGGER trg_key_results_cascade_okr_map AFTER UPDATE ON public.key_results
+    FOR EACH ROW EXECUTE FUNCTION public.okr_cascade_kr_group();
+  DROP TRIGGER IF EXISTS trg_okr_checkins_cascade_group ON public.okr_checkins;
+  CREATE TRIGGER trg_okr_checkins_cascade_group AFTER UPDATE ON public.okr_checkins
+    FOR EACH ROW EXECUTE FUNCTION public.okr_cascade_checkin_group();
 END;
 $okr_group_triggers$;
 
@@ -486,7 +717,8 @@ CREATE POLICY "okr_task_kr_links_update" ON public.okr_task_kr_links
 -- 成果の記述との結びつき：
 --   読み＝本人の行は全件、他人の行は yes だけ（同じ部署）。
 --   作る＝同じ部署の人が、その仕事の担当者あてに pending でだけ作れる（確定した人が届ける）。
---   答える（UPDATE）＝member_id の本人だけ。DELETE なし
+--   答える（UPDATE）＝member_id の本人だけ。変えられるのは答え（status・answered_at）だけで、
+--   成果の記述・仕事・担当者・部署の付け替えは trg_okr_outcome_claims_guard が例外にする。DELETE なし
 ALTER TABLE public.okr_outcome_claims ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "okr_outcome_claims_select" ON public.okr_outcome_claims;
 DROP POLICY IF EXISTS "okr_outcome_claims_insert" ON public.okr_outcome_claims;
@@ -507,6 +739,97 @@ CREATE POLICY "okr_outcome_claims_update" ON public.okr_outcome_claims
   FOR UPDATE TO authenticated
   USING (member_id = (SELECT public.current_member_id()))
   WITH CHECK (member_id = (SELECT public.current_member_id()));
+
+
+-- ------------------------------------------------------------
+-- 4b) 資料の確定の保存（1トランザクション）。SECURITY INVOKER なので RLS とトリガーがそのまま効く
+--   p = {checkin:{id,group_id,date,title}, resource_ids:[uuid], hint_kr_ids:[text],
+--        assessments:[{kr_id,resource_id,value,summary,basis,source,hint_value}],
+--        learnings:[{kr_id,resource_id,kind,body,source}],
+--        decisions:[{resource_id,kind,body,owner_member_id,kr_ids,source}],
+--        notes:[{kr_id,note_key,change_text,excerpt,sources,links}],
+--        claims:[{kr_id,note_key,task_id,member_id}]}
+--   同じ資料を確定し直したときは、その回のその資料の分を取り消してから入れ直す。
+--   成果の記述は (kr_id, note_key) で1行。すでにあれば、原文・増減・最初の回は変えず、出典と関連の仕事を DB 側で和集合にする
+--   （同時に確定しても先の人の出典が消えない）。結びつきは担当者あてに pending で作る（すでにあれば何もしない）
+-- ------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.okr_confirm_checkin(p jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = ''
+AS $fn_okr_confirm_checkin$
+DECLARE
+  v_me    text := (SELECT public.current_member_id());
+  v_ci    uuid := (p -> 'checkin' ->> 'id')::uuid;
+  v_res   uuid[] := ARRAY(SELECT x::uuid FROM jsonb_array_elements_text(coalesce(p -> 'resource_ids', '[]'::jsonb)) AS x);
+  v_hint  text[] := ARRAY(SELECT x FROM jsonb_array_elements_text(coalesce(p -> 'hint_kr_ids', '[]'::jsonb)) AS x);
+  v_now   timestamptz := now();
+  v_notes jsonb;
+BEGIN
+  IF v_me IS NULL THEN
+    RAISE EXCEPTION 'メンバーとして登録されていないため、確定を保存できません' USING ERRCODE = '42501';
+  END IF;
+
+  INSERT INTO public.okr_checkins (id, group_id, checkin_date, title, confirmed_by, confirmed_at, updated_by)
+  VALUES (v_ci, p -> 'checkin' ->> 'group_id', (p -> 'checkin' ->> 'date')::date, coalesce(p -> 'checkin' ->> 'title', ''), v_me, v_now, v_me)
+  ON CONFLICT (id) DO UPDATE
+    SET checkin_date = EXCLUDED.checkin_date, title = EXCLUDED.title,
+        confirmed_by = EXCLUDED.confirmed_by, confirmed_at = EXCLUDED.confirmed_at;
+
+  IF cardinality(v_res) > 0 THEN
+    UPDATE public.okr_kr_assessments SET is_deleted = true, deleted_at = v_now, deleted_by = v_me
+     WHERE checkin_id = v_ci AND resource_id = ANY (v_res) AND is_deleted = false;
+    UPDATE public.okr_learnings SET is_deleted = true, deleted_at = v_now, deleted_by = v_me
+     WHERE checkin_id = v_ci AND resource_id = ANY (v_res) AND is_deleted = false;
+    UPDATE public.okr_decisions SET is_deleted = true, deleted_at = v_now, deleted_by = v_me
+     WHERE checkin_id = v_ci AND resource_id = ANY (v_res) AND is_deleted = false;
+  END IF;
+  IF cardinality(v_hint) > 0 THEN
+    UPDATE public.okr_kr_assessments SET is_deleted = true, deleted_at = v_now, deleted_by = v_me
+     WHERE checkin_id = v_ci AND kr_id = ANY (v_hint) AND resource_id IS NULL AND is_deleted = false;
+  END IF;
+
+  INSERT INTO public.okr_kr_assessments (checkin_id, kr_id, resource_id, value, summary, basis, source, hint_value, updated_by)
+  SELECT v_ci, a ->> 'kr_id', (a ->> 'resource_id')::uuid, (a ->> 'value')::integer, coalesce(a ->> 'summary', ''),
+         coalesce(nullif(a -> 'basis', 'null'::jsonb), '[]'::jsonb), nullif(a -> 'source', 'null'::jsonb), (a ->> 'hint_value')::numeric, v_me
+    FROM jsonb_array_elements(coalesce(p -> 'assessments', '[]'::jsonb)) AS a;
+
+  INSERT INTO public.okr_learnings (checkin_id, kr_id, resource_id, kind, body, source, updated_by)
+  SELECT v_ci, l ->> 'kr_id', (l ->> 'resource_id')::uuid, l ->> 'kind', l ->> 'body', nullif(l -> 'source', 'null'::jsonb), v_me
+    FROM jsonb_array_elements(coalesce(p -> 'learnings', '[]'::jsonb)) AS l;
+
+  INSERT INTO public.okr_decisions (checkin_id, resource_id, kind, body, owner_member_id, kr_ids, source, updated_by)
+  SELECT v_ci, (d ->> 'resource_id')::uuid, d ->> 'kind', d ->> 'body', d ->> 'owner_member_id',
+         ARRAY(SELECT jsonb_array_elements_text(coalesce(d -> 'kr_ids', '[]'::jsonb))), nullif(d -> 'source', 'null'::jsonb), v_me
+    FROM jsonb_array_elements(coalesce(p -> 'decisions', '[]'::jsonb)) AS d;
+
+  WITH up AS (
+    INSERT INTO public.okr_outcome_notes AS n (kr_id, note_key, checkin_id, change_text, excerpt, sources, links, updated_by)
+    SELECT x ->> 'kr_id', x ->> 'note_key', v_ci, coalesce(x ->> 'change_text', ''), coalesce(x ->> 'excerpt', ''),
+           coalesce(nullif(x -> 'sources', 'null'::jsonb), '[]'::jsonb), coalesce(nullif(x -> 'links', 'null'::jsonb), '[]'::jsonb), v_me
+      FROM jsonb_array_elements(coalesce(p -> 'notes', '[]'::jsonb)) AS x
+    ON CONFLICT (kr_id, note_key) DO UPDATE
+      SET sources    = public.okr_jsonb_union(n.sources, EXCLUDED.sources, NULL),
+          links      = public.okr_jsonb_union(n.links, EXCLUDED.links, 'taskId'),
+          is_deleted = false, deleted_at = NULL, deleted_by = NULL
+    RETURNING n.id, n.kr_id, n.note_key
+  )
+  SELECT coalesce(jsonb_agg(jsonb_build_object('id', up.id, 'kr_id', up.kr_id, 'note_key', up.note_key)), '[]'::jsonb)
+    INTO v_notes FROM up;
+
+  INSERT INTO public.okr_outcome_claims (note_id, task_id, member_id, status, updated_by)
+  SELECT n.id, c ->> 'task_id', c ->> 'member_id', 'pending', v_me
+    FROM jsonb_array_elements(coalesce(p -> 'claims', '[]'::jsonb)) AS c
+    JOIN public.okr_outcome_notes n ON n.kr_id = c ->> 'kr_id' AND n.note_key = c ->> 'note_key'
+  ON CONFLICT (note_id, task_id, member_id) DO NOTHING;
+
+  RETURN jsonb_build_object('notes', v_notes);
+END;
+$fn_okr_confirm_checkin$;
+
+REVOKE ALL ON FUNCTION public.okr_confirm_checkin(jsonb) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.okr_confirm_checkin(jsonb) TO authenticated;
 
 -- ------------------------------------------------------------
 -- 5) GRANT（Section 39：2026-10-30以降は自動付与されない。anon には付けない）
@@ -542,25 +865,52 @@ DECLARE
   t        text;
 BEGIN
   FOREACH t IN ARRAY v_tables LOOP
+    -- has_table_privilege に 'SELECT,INSERT,UPDATE' と並べると「どれか1つ」で真になるので、権限ごとに AND で見る
     v_ok := to_regclass('public.' || t) IS NOT NULL
         AND (SELECT c.relrowsecurity FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
               WHERE n.nspname = 'public' AND c.relname = t)
         AND (SELECT count(*) FROM pg_policies WHERE schemaname = 'public' AND tablename = t) = 3
         AND NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = t AND cmd IN ('DELETE', 'ALL'))
-        AND has_table_privilege('authenticated', 'public.' || t, 'SELECT,INSERT,UPDATE')
-        AND NOT has_table_privilege('anon', 'public.' || t, 'SELECT');
-    v_lines := v_lines || (CASE WHEN coalesce(v_ok, false) THEN 'OK ' ELSE 'NG ' END || t || '（表・RLS・ポリシー3本・DELETEなし・GRANT）');
+        AND has_table_privilege('authenticated', 'public.' || t, 'SELECT')
+        AND has_table_privilege('authenticated', 'public.' || t, 'INSERT')
+        AND has_table_privilege('authenticated', 'public.' || t, 'UPDATE')
+        AND NOT has_table_privilege('anon', 'public.' || t, 'SELECT')
+        AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_' || t || '_stamp' AND NOT tgisinternal);
+    v_lines := v_lines || (CASE WHEN coalesce(v_ok, false) THEN 'OK ' ELSE 'NG ' END || t || '（表・RLS・ポリシー3本・DELETEなし・GRANT 3種・書いた本人のトリガー）');
   END LOOP;
 
   v_ok := to_regprocedure('public.okr_task_assignee_ids(text)') IS NOT NULL
       AND to_regprocedure('public.okr_sync_group_from_kr()') IS NOT NULL
       AND to_regprocedure('public.okr_sync_group_from_checkin()') IS NOT NULL
       AND to_regprocedure('public.okr_sync_group_from_note()') IS NOT NULL
-      AND NOT has_function_privilege('anon', 'public.okr_task_assignee_ids(text)', 'EXECUTE');
-  v_lines := v_lines || (CASE WHEN v_ok THEN 'OK ' ELSE 'NG ' END || '関数4本（anon は okr_task_assignee_ids を呼べない）');
+      AND to_regprocedure('public.okr_stamp_member()') IS NOT NULL
+      AND to_regprocedure('public.okr_claims_guard()') IS NOT NULL
+      AND to_regprocedure('public.okr_checkins_guard()') IS NOT NULL
+      AND to_regprocedure('public.okr_check_kr_in_checkin()') IS NOT NULL
+      AND to_regprocedure('public.okr_check_decision_krs()') IS NOT NULL
+      AND to_regprocedure('public.okr_cascade_kr_group()') IS NOT NULL
+      AND to_regprocedure('public.okr_cascade_checkin_group()') IS NOT NULL
+      AND to_regprocedure('public.okr_jsonb_union(jsonb,jsonb,text)') IS NOT NULL;
+  IF v_ok THEN
+    v_ok := NOT has_function_privilege('anon', 'public.okr_task_assignee_ids(text)', 'EXECUTE');
+  END IF;
+  v_lines := v_lines || (CASE WHEN v_ok THEN 'OK ' ELSE 'NG ' END || '関数12本（anon は okr_task_assignee_ids を呼べない）');
 
-  v_ok := (SELECT count(*) FROM pg_trigger WHERE tgname LIKE 'trg_okr_%_sync_group' AND NOT tgisinternal) = 7;
-  v_lines := v_lines || (CASE WHEN v_ok THEN 'OK ' ELSE 'NG ' END || 'group_id のトリガー7本');
+  -- 関数が無いと has_function_privilege が例外になるので、あるときだけ権限を見る
+  IF to_regprocedure('public.okr_confirm_checkin(jsonb)') IS NULL THEN
+    v_ok := false;
+  ELSE
+    v_ok := NOT (SELECT p.prosecdef FROM pg_proc p WHERE p.oid = to_regprocedure('public.okr_confirm_checkin(jsonb)'))
+        AND has_function_privilege('authenticated', 'public.okr_confirm_checkin(jsonb)', 'EXECUTE')
+        AND NOT has_function_privilege('anon', 'public.okr_confirm_checkin(jsonb)', 'EXECUTE');
+  END IF;
+  v_lines := v_lines || (CASE WHEN coalesce(v_ok, false) THEN 'OK ' ELSE 'NG ' END || '確定の保存 okr_confirm_checkin（SECURITY INVOKER・authenticated だけが呼べる）');
+
+  v_ok := (SELECT count(*) FROM pg_trigger WHERE tgname LIKE 'trg_okr_%_sync_group' AND NOT tgisinternal) = 7
+      AND (SELECT count(*) FROM pg_trigger WHERE tgname IN ('trg_okr_outcome_claims_guard', 'trg_okr_checkins_guard',
+             'trg_okr_kr_assessments_check', 'trg_okr_learnings_check', 'trg_okr_decisions_check',
+             'trg_key_results_cascade_okr_map', 'trg_okr_checkins_cascade_group') AND NOT tgisinternal) = 7;
+  v_lines := v_lines || (CASE WHEN v_ok THEN 'OK ' ELSE 'NG ' END || 'group_id のトリガー7本・付け替えの禁止2本・部署の一致3本・部署の追随2本');
 
   RAISE EXCEPTION E'確認結果（全行が OK ならよい。この例外は結果の表示用で、何も書き込んでいない）:\n%', array_to_string(v_lines, E'\n');
 END;

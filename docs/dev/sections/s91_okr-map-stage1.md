@@ -168,7 +168,7 @@ SELECT column_name, udt_name FROM information_schema.columns
 ### 保存（マイグレーションの追加なし。段階2の表で足りた）
 
 - **`okr_resources.reading`** ＝ `{ version: 1, drafts, assessments, learnings, notes, decisions }`（画面の `Resource` から id・name・kind・checkinId を除いたもの。KR・仕事・担当者は本番の ID）。読み込み（`resourceOf`）は形が崩れていても落ちず、地図に無い KR の分を捨てる。
-- 資料を読ませると `saveResource` が、回（`okr_checkins`）が無ければ未確定の回として作り（`ignoreDuplicates`・確定した人は空）、資料の行を入れる。**読ませただけで何も確定していない回は `checkins` に数えない**（`openCheckins` として別に返す。最新の回の日付・「未更新」の判定を動かさない）。確定は段階2の `confirmImport`→`saveConfirm` のまま（食い違いを選ぶまで確定できない）。
+- 資料を読ませると `saveResource` が、回（`okr_checkins`）が無ければ未確定の回として作り（`ignoreDuplicates`・確定した人は空）、資料の行を入れる。**読ませただけで何も確定していない回は `checkins` に数えない**（`openCheckins` として別に返す。最新の回の日付・「未更新」の判定を動かさない）。確定は段階2の `confirmImport`→`saveConfirm`（食い違いを選ぶまで確定できない）。保存は 91-4 で RPC 1本（1トランザクション）にした。
 - 候補・案は保存しない（画面を開き直すと消える）。選んだ「どう役立つか」は段階2の表に残るので、案が無いときも選んだ文は出す。案は `howOptions[howKey(仕事, KR)]`（モックの KR 単位の固定データも読める）。
 
 ### 画面
@@ -191,7 +191,65 @@ SELECT column_name, udt_name FROM information_schema.columns
 
 ### 未解決・判断待ち
 
-- Sonnet 5.5（effort=low）で資料1件の読み取りが Edge Function の実行時間の上限に収まるかは、実機で確かめていない。長い資料で 546／タイムアウトが出るなら、資料を分けて読ませる案内か、モデルを Haiku 5.5 に下げる。
-- アプリにだけある TF を「合わせる」で消さない判断（上記）。消すなら `deleteTaskForce`（論理削除）を足す。
-- Kintone にあってアプリに無い KR は作らない（半期固定の前提）。
+- Sonnet 5.5（effort=low）で資料1件の読み取りが Edge Function の実行時間の上限に収まるかは、実機で確かめていない（山本さんの実機確認で測る）。長い資料の分割の案内は 91-4 で先に入れた。
+- ~~アプリにだけある TF を「合わせる」で消さない判断~~ → 確定（消さない）。
+- ~~Kintone にあってアプリに無い KR は作らない~~ → 確定（作らない）。
+- ~~見立ての 70 以上を段の値に切りそろえる~~ → 確定（60〜70 は AI の整数・70 以上は満たした段）。
 - 成果の記述を資料をまたいで1つにまとめる（同じ出来事の `key` をそろえる）仕組みは無い。
+
+---
+
+## 91-4. 段階3の独立レビューの指摘11件（2026-11-17・feature/okr-v2・版は上げない）
+
+`20261117_okr_map_records.sql` は**まだどこにも適用されていない**ので、別ファイルにせずこのファイルを直した（`schema.sql` の 0)〜4b) も同じ文面にした。`stage3Migration.test.ts` が一致を見る）。**前の版をすでに流した環境（dev 等）では、表を作り直してから流す**（`CREATE TABLE IF NOT EXISTS` なので列・制約の変更が反映されない。DROP の文はマイグレーションの冒頭にある）。本番に一度流したあとは、このファイルを直さず新しいマイグレーションにする。
+
+| # | 指摘 | 対応 |
+|---|---|---|
+| 1 | claims の UPDATE で note_id・task_id を付け替えて他部署の成果に yes を差し込める | `trg_okr_outcome_claims_guard`（BEFORE UPDATE）：画面（authenticated）から note_id・task_id・member_id・group_id を変えたら例外。変えられるのは status・answered_at だけ |
+| 2 | `okr_task_assignee_ids` を rpc で直に呼ぶと他部署の仕事の担当者が取れる | 関数の中で `t.group_ids && current_member_group_ids()` またはスーパー管理者に絞った（他部署の仕事は NULL） |
+| 3 | KR・回の部署が変わっても新しい表の group_id が追随しない | `trg_key_results_cascade_okr_map`（key_results の AFTER UPDATE）が kr_defs・assessments・learnings・outcome_notes・claims を追随。回は画面から部署を変えられない（`trg_okr_checkins_guard`）。管理者が変えたときは `trg_okr_checkins_cascade_group` が resources・decisions を追随 |
+| 4 | 見立て・学び・決定事項で KR と回の部署の一致を見ていない | `trg_okr_kr_assessments_check`・`trg_okr_learnings_check`（KR と回の部署が同じ・資料がその回のもの）、`trg_okr_decisions_check`（kr_ids がすべて回の部署の KR）。入れたとき・付け替えたときだけ見る（KR が後で部署を移っても既存の行は止めない） |
+| 5 | 確認ブロックの `has_table_privilege(…,'SELECT,INSERT,UPDATE')` は「どれか1つ」で真 | 権限ごとに AND。関数が無いときは権限を見ずに NG（例外にしない） |
+| 6 | 前の版が残っていると変更が反映されない | 冒頭と本節に「未適用の前提・再適用時は表を作り直す」を書いた |
+| 7 | 確定の保存が「取り消し → 入れ直し」を別々に書き、途中で失敗すると旧い行が消えたまま | `okr_confirm_checkin(jsonb)`（plpgsql・**SECURITY INVOKER**＝RLS とトリガーが効く）1本にした。途中で失敗すると何も書かれない。画面は `supabase.rpc` を1回呼ぶだけ（`confirmPayloadOf` が形を作る） |
+| 8 | claims の答えが0件更新でも成功扱い・noteId が無いと黙って捨てる・pending への戻しを書かない | `.select('id')` で0件なら失敗、noteId が無ければ失敗（開き直しを案内）、yes／no → pending の戻しも書く（届いたばかりの pending は書かない） |
+| 9 | 担当でない仕事のつなぎ先が RLS で拒否されると、以降の表がすべて保存されない | 画面は担当者本人にしか変更の欄を出さない（`userState.setOverride`／`takeProposal` も担当者以外は何もしない）。保存は表ごとに try し、書けなかった表の名前をまとめて知らせる（`SaveUserError`。残りの表は書く） |
+| 10 | 成果の記述の upsert が checkin_id を毎回上書き・sources／links を丸ごと上書き | RPC の中で `ON CONFLICT (kr_id, note_key) DO UPDATE` は sources・links を `okr_jsonb_union`（先の順を保った和集合。links は taskId で重複を除く）にし、checkin_id・原文・増減は insert のときだけ |
+| 11 | updated_by を画面が送る値で決めている | `trg_okr_*_stamp`（15本・BEFORE INSERT OR UPDATE）が updated_by を `current_member_id()` で上書き。confirmed_by・locked_by・deleted_by も、値が入るときは本人にする。メンバーとして解決できない（サービスロール等）ときは送られた値のまま |
+
+BEFORE トリガーは名前の順に動く：`check` → `guard` → `stamp` → `sync_group` → `updated_at`。
+
+### RLS とトリガーで拒否される操作（画面＝authenticated から）
+
+| 表 | 操作 | 拒否される条件 | 何が拒否するか |
+|---|---|---|---|
+| 〔全員〕の8表 | 読む・入れる・直す | 行の部署が自分の部署（兼務込み）でない（スーパー管理者を除く）。group_id は親（KR・回・成果の記述）から入るので、送った値では偽れない | RLS |
+| 〔全員〕の8表・claims・links ほか全表 | 消す（DELETE） | いつでも | RLS（ポリシーなし） |
+| okr_checkins | 直す | group_id を変える | `trg_okr_checkins_guard` |
+| okr_kr_assessments・okr_learnings | 入れる・KR／回／資料を付け替える | KR の部署と回の部署が違う／資料がその回のものでない | `trg_*_check` |
+| okr_decisions | 入れる・kr_ids／回／資料を付け替える | kr_ids に回の部署でない KR がある／資料がその回のものでない | `trg_okr_decisions_check` |
+| okr_outcome_claims | 読む | 他人の行で、status が yes でない（または yes でも自分の部署でない） | RLS |
+| okr_outcome_claims | 入れる | status が pending でない／member_id がその仕事の担当者でない／仕事が自分の部署にない／成果の記述が自分の部署にない | RLS（`okr_task_assignee_ids` は自分の部署の仕事だけ返す） |
+| okr_outcome_claims | 直す | 本人の行でない（RLS）／note_id・task_id・member_id・group_id を変える（トリガー） | RLS＋`trg_okr_outcome_claims_guard` |
+| okr_task_kr_links | 入れる・直す | 自分がその仕事の担当者（主担当・副担当）でない／仕事が自分の部署にない | RLS |
+| 〔本人〕の4表・okr_personal_kr_links | 読む・入れる・直す | member_id が本人でない（矢印は元の個人OKRも本人のもの） | RLS |
+| 関数 `okr_task_assignee_ids` | rpc で直に呼ぶ | 自分の部署にない仕事は NULL（担当者は見えない） | 関数の中の条件 |
+| 関数 `okr_confirm_checkin` | 呼ぶ | anon は呼べない。中の書き込みは上の各行の規則がそのまま効く（INVOKER）。メンバーとして解決できなければ例外 | GRANT＋RLS |
+
+### 適用前に本番で確かめること（91-2 の3本に加えて）
+
+```sql
+-- 4) 部署の判定に使う列（2行：key_results.group_id と tasks.group_ids）
+SELECT table_name, column_name, udt_name FROM information_schema.columns
+ WHERE table_schema = 'public' AND ((table_name = 'key_results' AND column_name = 'group_id') OR (table_name = 'tasks' AND column_name = 'group_ids'));
+-- 5) key_results に同じ名前のトリガーがまだ無いこと（0行）
+SELECT tgname FROM pg_trigger WHERE tgrelid = 'public.key_results'::regclass AND tgname = 'trg_key_results_cascade_okr_map';
+```
+
+`tasks.group_ids` は `_text`（text[]）であること（`current_member_group_ids()` と `&&` で比べる）。
+
+### 画面・AI まわり（段階3の判断待ちへの答えの反映）
+
+- 見立ての切りそろえ・Kintone の動き（アプリだけの TF は消さない・KR は作らない）は 91-3 のとおりで確定。画面の文言は「合わせても、アプリからは消しません」「アプリにはありません。合わせても追加しません」。
+- 長い資料：引き出しに「目安 1万5千字を超える資料は分けると確実」と出す。読み取った資料が目安を超える・先頭だけ読んだときは読み取りのあとに案内（`longResourceNotice`）。時間切れ・出力切れらしいエラー（546・504・timeout 等）には「前半と後半に分けて」を添える（`withSplitHint`）。目安の 15000 字は実測前の値。
+- `invokeAI` の text ブロックの取り出しは全 AI 機能の共通部分なので、既存の intent すべて（20個）× 返答の形3種（type つき・type なし・先頭に thinking）で `content[0].text` が本文になり、使用量がその intent で記録されることを `invokeAI.test.ts` で確かめる。intent を足してテストの一覧に足し忘れると型エラーになる。

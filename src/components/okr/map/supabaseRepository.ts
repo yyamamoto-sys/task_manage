@@ -401,7 +401,7 @@ export interface UserDiff {
   personalLinks: { personalId: string; krId: string; deleted: boolean }[];
   answers: { weekStart: string; krId: string; effect: Effect | null; match: Match | null }[];
   picks: { weekStart: string; taskId: string; deleted: boolean }[];
-  claims: { noteKey: string; taskId: string; status: "yes" | "no" }[];
+  claims: { noteKey: string; taskId: string; status: ClaimStatus }[];
 }
 
 /** 本人の状態の before → after から、書くべき行を出す。links の krIds=null は「既定に戻す」 */
@@ -446,13 +446,59 @@ export function diffUser(b: UserState, a: UserState): UserDiff {
     for (const t of y) if (!x.includes(t)) d.picks.push({ weekStart: w, taskId: t, deleted: false });
     for (const t of x) if (!y.includes(t)) d.picks.push({ weekStart: w, taskId: t, deleted: true });
   }
-  for (const k of Object.keys(a.claims)) {
+  for (const k of new Set([...Object.keys(b.claims), ...Object.keys(a.claims)])) {
     const v = a.claims[k];
-    if (v === b.claims[k] || v === "pending") continue;
+    const was = b.claims[k];
+    if (v === undefined || v === was) continue;
+    // 届いたばかり（無い → pending）は確定した人が作るので書かない。答えを取り消して pending に戻すのは書く
+    if (v === "pending" && (was === undefined || was === "pending")) continue;
     const [noteKey, taskId] = splitLast(k);
     d.claims.push({ noteKey, taskId, status: v });
   }
   return d;
+}
+
+/** 本人の状態の保存で、いくつかの表が書けなかった（失敗した表の名前と最初の原因） */
+export class SaveUserError extends Error {
+  failed: string[];
+  cause: unknown;
+  constructor(failed: string[], cause: unknown) {
+    const why = cause && typeof cause === "object" && typeof (cause as { message?: unknown }).message === "string" ? `（${(cause as { message: string }).message}）` : "";
+    super(`${failed.join("・")}を保存できませんでした${why}`);
+    this.name = "SaveUserError";
+    this.failed = failed;
+    this.cause = cause;
+  }
+}
+
+/** 確定の保存の RPC（okr_confirm_checkin）に渡す形 */
+export function confirmPayloadOf(c: ConfirmSave) {
+  const hintKrs = Object.keys(c.hintValues);
+  const krOfNote = new Map(c.notes.map((n) => [n.key, n.krId]));
+  return {
+    checkin: { id: c.checkin.id, group_id: c.groupId, date: c.checkin.date, title: c.checkin.title },
+    resource_ids: c.resourceIds,
+    hint_kr_ids: hintKrs,
+    assessments: [
+      ...c.assessments.map(({ krId, entry }) => ({
+        kr_id: krId,
+        resource_id: entry.resourceId,
+        value: entry.assessment.value,
+        summary: entry.assessment.summary,
+        basis: entry.assessment.basis,
+        source: entry.source,
+        hint_value: null,
+      })),
+      ...hintKrs.map((krId) => ({ kr_id: krId, resource_id: null, value: null, summary: "", basis: [], source: c.hintValues[krId].source, hint_value: c.hintValues[krId].value })),
+    ],
+    learnings: c.learnings.map((l) => ({ kr_id: l.krId, resource_id: l.resourceId || null, kind: l.kind, body: l.text, source: l.source })),
+    decisions: c.decisions.map((x) => ({ resource_id: x.resourceId ?? null, kind: x.kind, body: x.text, owner_member_id: x.ownerId, kr_ids: x.krIds, source: x.source })),
+    notes: c.notes.map((n) => ({ kr_id: n.krId, note_key: n.key, change_text: n.change, excerpt: n.excerpt, sources: n.sources, links: n.links })),
+    claims: c.claims.flatMap((x) => {
+      const krId = krOfNote.get(x.noteKey);
+      return krId ? [{ kr_id: krId, note_key: x.noteKey, task_id: x.taskId, member_id: x.memberId }] : [];
+    }),
+  };
 }
 
 // ---------- 入出力 ----------
@@ -515,133 +561,91 @@ export function createSupabaseRepository(): OkrMapRepository {
     async saveUser(viewerId, before, after) {
       const d = diffUser(before, after);
       const by = viewerId;
-      if (d.links.length > 0) {
-        await must(
+      // 表ごとに保存する。1つの表が拒否されても（例：担当でない仕事のつなぎ先）残りの表は書き、失敗した表をまとめて知らせる
+      const failed: string[] = [];
+      let cause: unknown = null;
+      const step = async (label: string, n: number, run: () => Promise<unknown>) => {
+        if (n === 0) return;
+        try {
+          await run();
+        } catch (e) {
+          failed.push(label);
+          cause ??= e;
+        }
+      };
+      await step("仕事のつなぎ先", d.links.length, () =>
+        must(
           supabase.from("okr_task_kr_links").upsert(
             d.links.map((l) => ({ task_id: l.taskId, kr_ids: l.krIds ?? [], updated_by: by, ...deletedCols(l.krIds === null, by) })),
             { onConflict: "task_id" },
           ),
-        );
-      }
-      if (d.proposals.length > 0) {
-        await must(
+        ),
+      );
+      await step("提案の採否", d.proposals.length, () =>
+        must(
           supabase.from("okr_proposal_choices").upsert(
             d.proposals.map((p) => ({ member_id: viewerId, task_id: p.taskId, kr_id: p.krId, choice: p.choice, updated_by: by, ...deletedCols(p.deleted, by) })),
             { onConflict: "member_id,task_id,kr_id" },
           ),
-        );
-      }
-      if (d.how.length > 0) {
-        await must(
+        ),
+      );
+      await step("どう役立つか", d.how.length, () =>
+        must(
           supabase.from("okr_task_kr_how").upsert(
             d.how.map((h) => ({ member_id: viewerId, task_id: h.taskId, kr_id: h.krId, body: h.body, updated_by: by, ...deletedCols(h.deleted, by) })),
             { onConflict: "member_id,task_id,kr_id" },
           ),
-        );
-      }
-      if (d.personalLinks.length > 0) {
-        await must(
+        ),
+      );
+      await step("個人OKRの矢印", d.personalLinks.length, () =>
+        must(
           supabase.from("okr_personal_kr_links").upsert(
             d.personalLinks.map((l) => ({ member_id: viewerId, personal_kr_id: l.personalId, kr_id: l.krId, updated_by: by, ...deletedCols(l.deleted, by) })),
             { onConflict: "member_id,personal_kr_id,kr_id" },
           ),
-        );
-      }
-      if (d.answers.length > 0) {
-        await must(
+        ),
+      );
+      await step("振り返りの答え", d.answers.length, () =>
+        must(
           supabase.from("okr_weekly_answers").upsert(
             d.answers.map((a) => ({ member_id: viewerId, week_start: a.weekStart, kr_id: a.krId, effect: a.effect, match_answer: a.match, updated_by: by })),
             { onConflict: "member_id,week_start,kr_id" },
           ),
-        );
-      }
-      if (d.picks.length > 0) {
-        await must(
+        ),
+      );
+      await step("今週やる仕事", d.picks.length, () =>
+        must(
           supabase.from("okr_weekly_picks").upsert(
             d.picks.map((p) => ({ member_id: viewerId, week_start: p.weekStart, task_id: p.taskId, updated_by: by, ...deletedCols(p.deleted, by) })),
             { onConflict: "member_id,week_start,task_id" },
           ),
-        );
-      }
-      for (const c of d.claims) {
-        const noteId = noteIds.get(c.noteKey);
-        if (!noteId) continue;
-        await must(
-          supabase
-            .from("okr_outcome_claims")
-            .update({ status: c.status, answered_at: new Date().toISOString(), updated_by: by })
-            .eq("note_id", noteId)
-            .eq("task_id", c.taskId)
-            .eq("member_id", viewerId),
-        );
-      }
+        ),
+      );
+      await step("結びつきへの答え", d.claims.length, async () => {
+        for (const c of d.claims) {
+          const noteId = noteIds.get(c.noteKey);
+          // 黙って捨てない（本人の答えが失われるため）
+          if (!noteId) throw new Error("答えた成果の記述が見つかりません。画面を開き直してから、もう一度答えてください");
+          const updated = await must<{ id: string }[]>(
+            supabase
+              .from("okr_outcome_claims")
+              .update({ status: c.status, answered_at: c.status === "pending" ? null : new Date().toISOString(), updated_by: by })
+              .eq("note_id", noteId)
+              .eq("task_id", c.taskId)
+              .eq("member_id", viewerId)
+              .select("id"),
+          );
+          if (!updated || updated.length === 0) throw new Error("答えを保存できませんでした（この結びつきが見つからないか、答えられるのは担当者本人だけです）");
+        }
+      });
+      if (failed.length > 0) throw new SaveUserError(failed, cause);
     },
 
     async saveConfirm(c: ConfirmSave) {
       if (!c.groupId) throw new Error("部署が選ばれていないため、確定を保存できません");
-      const by = c.viewerId;
-      const now = new Date().toISOString();
-      const ci = c.checkin.id;
-      await must(
-        supabase
-          .from("okr_checkins")
-          .upsert({ id: ci, group_id: c.groupId, checkin_date: c.checkin.date, title: c.checkin.title, confirmed_by: by, confirmed_at: now, updated_by: by }, { onConflict: "id" }),
-      );
-      // 同じ資料を確定し直したときは、その資料の分を取り消してから入れ直す（画面の足し合わせと同じ）
-      if (c.resourceIds.length > 0) {
-        for (const table of ["okr_kr_assessments", "okr_learnings", "okr_decisions"]) {
-          await must(supabase.from(table).update(deletedCols(true, by)).eq("checkin_id", ci).in("resource_id", c.resourceIds).eq("is_deleted", false));
-        }
-      }
-      const hintKrs = Object.keys(c.hintValues);
-      if (hintKrs.length > 0) {
-        await must(supabase.from("okr_kr_assessments").update(deletedCols(true, by)).eq("checkin_id", ci).in("kr_id", hintKrs).is("resource_id", null).eq("is_deleted", false));
-      }
-      const assessRows = [
-        ...c.assessments.map(({ krId, entry }) => ({
-          checkin_id: ci,
-          kr_id: krId,
-          resource_id: entry.resourceId,
-          value: entry.assessment.value,
-          summary: entry.assessment.summary,
-          basis: entry.assessment.basis,
-          source: entry.source,
-          updated_by: by,
-        })),
-        ...hintKrs.map((krId) => ({ checkin_id: ci, kr_id: krId, resource_id: null, value: null, summary: "", basis: [], source: c.hintValues[krId].source, hint_value: c.hintValues[krId].value, updated_by: by })),
-      ];
-      if (assessRows.length > 0) await must(supabase.from("okr_kr_assessments").insert(assessRows));
-      if (c.learnings.length > 0) {
-        await must(
-          supabase.from("okr_learnings").insert(c.learnings.map((l) => ({ checkin_id: ci, kr_id: l.krId, resource_id: l.resourceId || null, kind: l.kind, body: l.text, source: l.source, updated_by: by }))),
-        );
-      }
-      if (c.decisions.length > 0) {
-        await must(
-          supabase
-            .from("okr_decisions")
-            .insert(c.decisions.map((x) => ({ checkin_id: ci, resource_id: x.resourceId ?? null, kind: x.kind, body: x.text, owner_member_id: x.ownerId, kr_ids: x.krIds, source: x.source, updated_by: by }))),
-        );
-      }
-      if (c.notes.length > 0) {
-        const saved = await must<{ id: string; note_key: string }[]>(
-          supabase
-            .from("okr_outcome_notes")
-            .upsert(
-              c.notes.map((n) => ({ kr_id: n.krId, note_key: n.key, checkin_id: ci, change_text: n.change, excerpt: n.excerpt, sources: n.sources, links: n.links, updated_by: by, is_deleted: false })),
-              { onConflict: "kr_id,note_key" },
-            )
-            .select("id,note_key"),
-        );
-        for (const n of saved ?? []) noteIds.set(n.note_key, n.id);
-      }
-      const claimRows = c.claims.flatMap((x) => {
-        const noteId = noteIds.get(x.noteKey);
-        return noteId ? [{ note_id: noteId, task_id: x.taskId, member_id: x.memberId, status: "pending", updated_by: by }] : [];
-      });
-      if (claimRows.length > 0) {
-        await must(supabase.from("okr_outcome_claims").upsert(claimRows, { onConflict: "note_id,task_id,member_id", ignoreDuplicates: true }));
-      }
+      // 1トランザクションの RPC（SECURITY INVOKER）。途中で失敗すると何も書かれない
+      const res = await must<{ notes?: { id: string; note_key: string }[] }>(supabase.rpc("okr_confirm_checkin", { p: confirmPayloadOf(c) }));
+      for (const n of res?.notes ?? []) noteIds.set(n.note_key, n.id);
     },
 
     async saveResource({ groupId, viewerId, checkin, resource }) {

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CONSULT_ATTACHMENT_ACCEPT } from "../../../../lib/ai/consultationAttachmentLoader";
+import { LONG_RESOURCE_CHARS } from "../checkinAi";
 import { detectConflicts, mergeAssessments, mergeDrafts, notesOfResources, unresolved } from "../confirm";
 import { DEMO, krBands, nextCheckin, TODAY } from "../dataset";
 import { formatMd } from "../logic";
@@ -34,6 +35,7 @@ export function DocDrawer() {
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState<{ done: number; total: number } | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
+  const [notices, setNotices] = useState<string[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const selected = useMemo(() => listed.filter((r) => resIds.includes(r.id)), [listed, resIds]);
@@ -78,10 +80,12 @@ export function DocDrawer() {
     if (files.length === 0 || busy) return;
     const target = ci;
     setErrors([]);
+    setNotices([]);
     setBusy({ done: 0, total: files.length });
-    const errs = await readResources(files, target, (done) => setBusy({ done, total: files.length }));
+    const { errors: errs, notices: notes } = await readResources(files, target, (done) => setBusy({ done, total: files.length }));
     setBusy(null);
     setErrors(errs);
+    setNotices(notes);
     setFiles([]);
     if (fileRef.current) fileRef.current.value = "";
     // 新しい回に読ませたら、その回を選んだ状態にし、次の「新しい回」は別の回にする
@@ -153,7 +157,9 @@ export function DocDrawer() {
             </fieldset>
 
             <h3 className="mk-h3">2. 資料を加えて、AIに読ませる</h3>
-            <p className="mk-small mk-muted">PowerPoint・PDF・Word・議事録や文字起こしのテキストを、複数選べます。文字だけを取り出して送ります（画像・旧形式は読めません）。1件ずつ読むので、件数が多いと時間がかかります。</p>
+            <p className="mk-small mk-muted">
+              PowerPoint・PDF・Word・議事録や文字起こしのテキストを、複数選べます。文字だけを取り出して送ります（画像・旧形式は読めません）。1件ずつ読むので、件数が多いと時間がかかります。長い資料（目安：{LONG_RESOURCE_CHARS / 1000}千字を超えるもの）は、前半と後半などに分けて読ませると確実です。
+            </p>
             <div className="mk-row" style={{ flexWrap: "wrap" }}>
               <input
                 ref={fileRef}
@@ -168,6 +174,15 @@ export function DocDrawer() {
                 {busy ? `読み取り中…（${busy.done}／${busy.total}）` : "読み取る"}
               </button>
             </div>
+            {notices.length > 0 && (
+              <div className="mk-card mk-note" role="status">
+                {notices.map((n) => (
+                  <div key={n} className="mk-small">
+                    {n}
+                  </div>
+                ))}
+              </div>
+            )}
             {errors.length > 0 && (
               <div className="mk-card mk-note" role="alert">
                 {errors.map((e) => (
