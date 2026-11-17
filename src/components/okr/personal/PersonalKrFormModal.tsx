@@ -375,7 +375,7 @@ export function PersonalKrFormModal({
           )}
           <span style={{ flex: 1 }} />
           <button onClick={() => void requestClose()} disabled={saving || deleting} style={{ padding: "8px 14px", fontSize: "12px", background: "transparent", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", color: "var(--color-text-secondary)", cursor: "pointer" }}>キャンセル</button>
-          <button onClick={handleSave} disabled={saving || deleting} style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 700, background: "var(--color-brand)", color: "#fff", border: "none", borderRadius: "var(--radius-md)", cursor: "pointer" }}>
+          <button onClick={handleSave} disabled={saving || deleting} style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 700, background: "var(--color-brand)", color: "#fff", border: "none", borderRadius: "var(--radius-full)", cursor: "pointer" }}>
             {saving ? "保存中…" : "保存"}
           </button>
         </div>

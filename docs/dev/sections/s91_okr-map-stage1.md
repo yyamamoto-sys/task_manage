@@ -195,3 +195,32 @@ SELECT column_name, udt_name FROM information_schema.columns
 - アプリにだけある TF を「合わせる」で消さない判断（上記）。消すなら `deleteTaskForce`（論理削除）を足す。
 - Kintone にあってアプリに無い KR は作らない（半期固定の前提）。
 - 成果の記述を資料をまたいで1つにまとめる（同じ出来事の `key` をそろえる）仕組みは無い。
+
+## 91-4. 段階4：個人OKRの記録の見た目を地図に寄せる（2026-11-17・feature/okr-v2-stage4・版は上げない・見た目だけ）
+
+山本さんの要望：「『わたし』から開けるようにしたいが、雰囲気がかなり違って浮いてみえるので、これから実装するビジュアルに雰囲気・トーンは寄せてください。」機能・データ・保存の挙動（明示保存・未保存の確認・ツアーのサンプル差し込み）は変えていない。
+
+### 共通トークンの置き場所
+
+- `src/components/okr/okrTheme.css`：`.mk-app, .okr-personal` の上に `--okr-radius-card`（16px）・`--okr-radius-head`（18px）・`--okr-radius-inner`（12px）・`--okr-radius-small`（8px）・`--okr-head-bg`（地図の帯のグラデーション）を置く。`:root` に置かないのは、`--okr-head-bg` が `--color-bg-primary` を使い、使う場所で解決させたいため。
+- `src/components/okr/okrTheme.tsx`：`OKR_CARD_STYLE`（地図の `.mk-card` と同じカード）・`OKR_RULE_STYLE`（節の見出しの横線）・`OkrLogo`（地図の帯の左端の印）。
+- 地図側：`mock4.css` の `.mk-card` の角丸と `.mk-head` の角丸・背景を上の変数に置き換えた（値は同じ・フォールバック付き）。`App.tsx` の見出しの印を `OkrLogo` に置き換えた（SVG は同じ）。`OkrMapView.tsx` で `okrTheme.css` を読む。**地図の見た目は変えていない。**
+
+### 個人OKR側で寄せたもの
+
+- 上部：地図と同じ帯（`.mk-head`・グラデーション・角丸18px）に「← 地図へ戻る」（`.mk-btn .mk-btn-sm`＝丸い札）・地図の印・「OKRモード ／ わたし」・`.mk-h1` の見出し。戻るときの `confirmDiscardUnsavedEdits` はそのまま。`withBellReserve(24)`（Section 31・右上のベル）も地図と同じ。
+- 地の色：`.okr-personal` で地図と同じ `bg-secondary` にし、カードを `bg-primary`＋薄い影で浮かせる。KRの中身（`PersonalKrPanel`）・空の案内はタブに接した囲みをやめ、地の上にカードを並べる。
+- 角丸：子の部品は inline の `var(--radius-sm|md|lg)` を使っているので、`.okr-personal` の中だけ `--radius-sm`→8px・`--radius-md`→12px・`--radius-lg`→16px に差し替えて一括でそろえた（モーダルも Portal ではなく木の中にあるので同じ値になる。`CustomSelect` の選択肢は body への Portal なので従来どおり）。
+- KRの切替：下線のタブをやめ、地図のセグメント・「今週やる」と同じ丸い札（`.okr-krtab`。選択中はブランド色＋白文字、`aria-pressed`）。ウェイトは札の中に添える。「＋ KRを追加」「📥 Kintoneから取込」も丸い文字ボタン（`.okr-linkbtn`）。`data-tour-id` と、対象期の行・タブの帯の `flexShrink:0`／`overflowX:"auto"`（`personalOkrViewLayout.test.ts`）は残した。
+- 節の見出し：5ファイルで別々に持っていた `sectionHeadStyle`（11.5px・大文字・薄い色）を `className="okr-sec"` に統一。先頭の語を地図の見出しと同じ `--font-display`・15px・太字にし、添え書きは12px。`ruleStyle`・`cardStyle` は `okrTheme.tsx` の定数を参照する。
+- 主ボタン（ブランド色の塗り：今月の計画を保存・メモを追加・KRの保存など6か所）を地図の `.mk-btn-primary` と同じ丸い札（`--radius-full`）に。
+- 文字は小さくしていない（Section 60）。`--font-sans` は触っていない（Section 86）。ダークモードは地図と同じ組み合わせ（選択中の札はブランド色＋白、文字ボタンは `text-info`）。
+
+### KRの色について
+
+地図の KR の色（`palette.ts`）はグループの KR の並び順で決まる。個人OKRの KR はそれとは別物（ウェイトを持つ本人の KR）なので、色は付けていない（同じ色で別の物を指すと、地図と行き来したときに取り違える）。個人OKRと地図の KR を色でつなぐなら、`okr_personal_kr_links`（矢印）を読んで色を引く設計が要る。
+
+### 未解決・判断待ち
+
+- ブラウザでの見え方は確かめていない（山本さんの実機確認待ち）。
+- 個人OKRのモーダル・AIパネル・週のカードの中身は角丸と主ボタンだけが変わり、配置は今のまま。

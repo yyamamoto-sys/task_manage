@@ -15,6 +15,7 @@ import type { OkrMapData } from "./dataset";
 import { formatMd } from "./logic";
 import { fillRecords, memoryRepository, type OkrMapRecords, type OkrMapRepository } from "./repository";
 import { createSupabaseRepository } from "./supabaseRepository";
+import "../okrTheme.css";
 import "./mock.css";
 import "./mock4.css";
 

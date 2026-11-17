@@ -130,7 +130,7 @@ export function WeekCard({
             }}
           />
           <div style={{ display: "flex", gap: "6px", marginTop: "4px" }}>
-            <button onClick={handleSaveGoal} disabled={savingGoal} style={{ fontSize: "10px", padding: "3px 9px", background: "var(--color-brand)", color: "#fff", border: "none", borderRadius: "var(--radius-sm)", cursor: "pointer" }}>
+            <button onClick={handleSaveGoal} disabled={savingGoal} style={{ fontSize: "10px", padding: "3px 9px", background: "var(--color-brand)", color: "#fff", border: "none", borderRadius: "var(--radius-full)", cursor: "pointer" }}>
               {savingGoal ? "保存中…" : "保存"}
             </button>
             <button onClick={() => { setEditingGoal(false); setDraftGoal(goalState ?? ""); }} style={{ fontSize: "10px", padding: "3px 9px", background: "transparent", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-sm)", color: "var(--color-text-tertiary)", cursor: "pointer" }}>

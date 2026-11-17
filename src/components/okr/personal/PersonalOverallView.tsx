@@ -37,6 +37,7 @@ import {
 } from "../../../lib/personalOkr/periodReviewDraftContext";
 import type { ActualActivitiesAvailability } from "../../../lib/personalOkr/actualActivitiesAvailability";
 import { PersonalPeriodReviewBlock } from "./PersonalPeriodReviewBlock";
+import { OKR_CARD_STYLE } from "../okrTheme";
 
 interface Props {
   currentUser: Member;
@@ -247,7 +248,7 @@ export function PersonalOverallView({
 
   if (periodReviewsError) {
     return (
-      <div style={{ padding: "40px 20px", textAlign: "center", color: "var(--color-text-tertiary)", fontSize: "13px", background: "var(--color-bg-secondary)", border: "1px solid var(--color-border-primary)", borderTop: "none", borderRadius: "0 0 var(--radius-md) var(--radius-md)" }}>
+      <div style={{ ...OKR_CARD_STYLE, marginTop: "10px", padding: "40px 20px", textAlign: "center", color: "var(--color-text-secondary)", fontSize: "13px" }}>
         {periodReviewsErrorKind === "other" ? (
           <>
             <div style={{ color: "var(--color-text-danger)", marginBottom: "10px" }}>{periodReviewsError}</div>

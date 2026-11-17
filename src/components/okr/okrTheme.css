@@ -1,0 +1,45 @@
+/* OKRモード共通の見た目（Section 91-4）。地図（map/）と個人OKRの記録（personal/）が同じ値を参照する。
+   トークンは .mk-app と .okr-personal の上に置く（--okr-head-bg が --color-bg-primary を使うため、:root ではなく使う場所で解決させる） */
+.mk-app, .okr-personal {
+  --okr-radius-card: 16px;
+  --okr-radius-head: 18px;
+  --okr-radius-inner: 12px;
+  --okr-radius-small: 8px;
+  --okr-head-bg: linear-gradient(100deg, rgba(59, 111, 212, 0.14), rgba(26, 154, 107, 0.12) 55%, rgba(224, 120, 42, 0.14)), var(--color-bg-primary);
+}
+
+/* 個人OKRの記録。子の部品は inline の var(--radius-*) を使っているので、ここで値を差し替えて地図と同じ丸みにそろえる。
+   地の色は地図（.mk-app）と同じ bg-secondary にし、カードを bg-primary で浮かせる */
+.okr-personal {
+  --radius-sm: var(--okr-radius-small);
+  --radius-md: var(--okr-radius-inner);
+  --radius-lg: var(--okr-radius-card);
+  background: var(--color-bg-secondary);
+  color: var(--color-text-primary);
+}
+.okr-personal-top { flex-shrink: 0; padding: 20px 24px 0; }
+.okr-crumb { font-size: 12px; font-weight: 700; color: var(--color-text-secondary); letter-spacing: 0.04em; }
+
+/* 節の見出し：先頭の語を地図の見出し（.mk-h2-big）と同じ書体で。後ろの添え書きは小さく */
+.okr-sec { display: flex; align-items: center; gap: 9px; margin: 22px 0 10px; font-size: 12px; color: var(--color-text-secondary); }
+.okr-sec > :first-child { font-family: var(--font-display); font-size: 15px; font-weight: 700; color: var(--color-text-primary); white-space: nowrap; }
+
+/* KRの切替：地図のセグメント（.mk-seg-item.is-on）・今週やる（.mk-pickbtn）と同じ丸い札 */
+.okr-krtab {
+  display: inline-flex; align-items: baseline; gap: 6px; flex-shrink: 0; white-space: nowrap; cursor: pointer;
+  padding: 6px 14px; border-radius: var(--radius-full); border: 1px solid var(--color-border-secondary);
+  background: var(--color-bg-primary); color: var(--color-text-secondary); font: inherit; font-size: 13px;
+}
+.okr-krtab:hover:not(.is-on) { background: var(--color-bg-tertiary); }
+.okr-krtab.is-on { background: var(--color-brand); border-color: var(--color-brand); color: #fff; }
+.okr-krtab:focus-visible { outline: 3px solid var(--color-brand); outline-offset: 2px; }
+.okr-krtab-l { font-weight: 700; }
+.okr-krtab-w { font-size: 11px; }
+.okr-linkbtn {
+  flex-shrink: 0; white-space: nowrap; cursor: pointer; padding: 6px 12px; font: inherit; font-size: 12px;
+  border: none; background: transparent; color: var(--color-brand); border-radius: var(--radius-full);
+}
+.okr-linkbtn.is-muted { color: var(--color-text-secondary); }
+.okr-linkbtn:hover { background: var(--color-bg-tertiary); }
+.okr-linkbtn:focus-visible { outline: 3px solid var(--color-brand); outline-offset: 2px; }
+[data-theme="dark"] .okr-linkbtn:not(.is-muted) { color: var(--color-text-info); }

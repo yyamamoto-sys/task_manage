@@ -42,6 +42,7 @@ import { PersonalKrPanel } from "./PersonalKrPanel";
 import { PersonalOkrImportModal } from "./PersonalOkrImportModal";
 import { PersonalOkrAiPanel } from "./PersonalOkrAiPanel";
 import { PersonalOverallView } from "./PersonalOverallView";
+import { OKR_CARD_STYLE } from "../okrTheme";
 
 /** 「全体」タブの選択を表す sentinel（KRのidと衝突しない固定文字列）。v3.101・Section 24 Step Q。 */
 const OVERALL_TAB_ID = "__overall__";
@@ -315,19 +316,12 @@ export function PersonalOkrView({ currentUser }: Props) {
   // 四半期に書き込まれていた場合に利用者が詰まないための安全網。CLAUDE.md Section 24）
   const availablePeriods = useMemo(() => listAvailablePersonalKrPeriods(krs), [krs]);
 
-  const tabStyle = (active: boolean): React.CSSProperties => ({
-    fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap", textAlign: "left",
-    border: "1px solid transparent", borderBottom: "none",
-    background: active ? "var(--color-bg-secondary)" : "transparent",
-    borderColor: active ? "var(--color-border-primary)" : "transparent",
-    padding: "10px 15px 9px", borderRadius: "var(--radius-sm) var(--radius-sm) 0 0",
-    color: active ? "var(--color-text-primary)" : "var(--color-text-tertiary)",
-    marginBottom: "-1px",
-  });
+  // KRの切替は地図と同じ丸い札（okrTheme.css の .okr-krtab）。選択中は aria-pressed でも伝える
+  const tabClass = (active: boolean) => `okr-krtab${active ? " is-on" : ""}`;
 
   return (
     <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "auto", padding: "14px 20px 26px" }}>
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "auto", padding: "14px 24px 48px" }}>
       {/* 期の選択 */}
       {/* 🔴 flexShrink:0が必須（CLAUDE.md Section 21と同種の罠の裏返し）：この行はoverflow指定を
           持たないため元から潰れていなかったが、将来overflow系のスタイルを足す変更が入っても
@@ -335,7 +329,7 @@ export function PersonalOkrView({ currentUser }: Props) {
           なり、選択中KRの中身が縦に長いとタブの帯自体が高さ0まで潰れてタブが見えなくなる事故が
           実機で発生した。2026-08-12・v3.53で修正）と対称にする。 */}
       <div data-tour-id="okr-period" style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "10px", flexWrap: "wrap", flexShrink: 0 }}>
-        <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>対象期</span>
+        <span style={{ fontSize: "12px", fontWeight: 700, color: "var(--color-text-secondary)" }}>対象期</span>
         <input
           type="number"
           value={fiscalYear}
@@ -369,11 +363,10 @@ export function PersonalOkrView({ currentUser }: Props) {
           対象としてこの帯だけが真っ先に高さ0まで潰れ、「KRタブが1つも表示されない」ように見える
           （実機で発生・2026-08-12。「＋KRを追加」「📥 Kintoneから取込」ボタンも同じ帯の中にあり
           一緒に消えていたことから特定した）。 */}
-      <div data-tour-id="okr-kr-tabs" style={{ display: "flex", gap: "2px", overflowX: "auto", borderBottom: "1px solid var(--color-border-primary)", flexShrink: 0 }}>
+      <div data-tour-id="okr-kr-tabs" style={{ display: "flex", alignItems: "center", gap: "6px", overflowX: "auto", padding: "2px 2px 6px", flexShrink: 0 }}>
         {/* 🔴 v3.101：「全体」タブ。KRタブの並びは変えず、先頭に固定で追加する（仕様書§W3）。 */}
-        <button onClick={() => void guardedSwitch(() => setSelectedKrId(OVERALL_TAB_ID))} style={tabStyle(selectedKrId === OVERALL_TAB_ID)}>
-          <span style={{ display: "block", fontSize: "12.5px", fontWeight: 700 }}>全体</span>
-          <span style={{ display: "block", fontSize: "10px", marginTop: "1px" }}>&nbsp;</span>
+        <button type="button" aria-pressed={selectedKrId === OVERALL_TAB_ID} onClick={() => void guardedSwitch(() => setSelectedKrId(OVERALL_TAB_ID))} className={tabClass(selectedKrId === OVERALL_TAB_ID)}>
+          <span className="okr-krtab-l">全体</span>
         </button>
         {monthActiveDisplayKrs.map(kr => {
           // 🔴 v3.104：タブのウェイト表示は四半期共通値ではなくその月の実効ウェイトを出す
@@ -382,9 +375,9 @@ export function PersonalOkrView({ currentUser }: Props) {
           const effectiveWeight = resolveEffectiveWeightPct(kr, monthRecord, monthIndex) ?? kr.weight_pct;
           const overridden = monthRecord?.weight_override_pct != null;
           return (
-            <button key={kr.id} onClick={() => void guardedSwitch(() => setSelectedKrId(kr.id))} style={tabStyle(kr.id === selectedKrId)}>
-              <span style={{ display: "block", fontSize: "12.5px", fontWeight: 700 }}>{kr.label}</span>
-              <span style={{ display: "block", fontSize: "10px", marginTop: "1px" }}>
+            <button key={kr.id} type="button" aria-pressed={kr.id === selectedKrId} onClick={() => void guardedSwitch(() => setSelectedKrId(kr.id))} className={tabClass(kr.id === selectedKrId)}>
+              <span className="okr-krtab-l">{kr.label}</span>
+              <span className="okr-krtab-w">
                 {effectiveWeight}%{overridden && <span title="この月だけの上書きウェイトです">＊</span>}
               </span>
             </button>
@@ -392,15 +385,9 @@ export function PersonalOkrView({ currentUser }: Props) {
         })}
         {/* 🔴 ツアー最後の着地点（Section 24）。ここは常に実際の登録操作のまま
             （サンプル表示中でも、ここから作る新しいKRは実データとして保存される）。 */}
-        <div data-tour-id="okr-registration-actions" style={{ display: "flex", alignItems: "center" }}>
-          <button
-            onClick={() => setFormModal({ mode: "create", initial: null })}
-            style={{ fontFamily: "inherit", cursor: "pointer", fontSize: "12px", padding: "10px 14px", background: "transparent", border: "none", color: "var(--color-brand)", alignSelf: "center" }}
-          >＋ KRを追加</button>
-          <button
-            onClick={() => setImportModalOpen(true)}
-            style={{ fontFamily: "inherit", cursor: "pointer", fontSize: "12px", padding: "10px 14px", background: "transparent", border: "none", color: "var(--color-text-secondary)", alignSelf: "center", whiteSpace: "nowrap" }}
-          >📥 Kintoneから取込</button>
+        <div data-tour-id="okr-registration-actions" style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
+          <button type="button" className="okr-linkbtn" onClick={() => setFormModal({ mode: "create", initial: null })}>＋ KRを追加</button>
+          <button type="button" className="okr-linkbtn is-muted" onClick={() => setImportModalOpen(true)}>📥 Kintoneから取込</button>
         </div>
       </div>
 
@@ -485,7 +472,7 @@ export function PersonalOkrView({ currentUser }: Props) {
         />
       ) : (
         !krsLoading && (
-          <div style={{ padding: "40px 20px", textAlign: "center", color: "var(--color-text-tertiary)", fontSize: "13px", background: "var(--color-bg-secondary)", border: "1px solid var(--color-border-primary)", borderTop: "none", borderRadius: "0 0 var(--radius-md) var(--radius-md)" }}>
+          <div style={{ ...OKR_CARD_STYLE, marginTop: "10px", padding: "40px 20px", textAlign: "center", color: "var(--color-text-secondary)", fontSize: "13px" }}>
             {displayKrs.length === 0 ? (
               <>
                 <div>{fiscalYear}年{quarter}の個人KRがまだありません。</div>
