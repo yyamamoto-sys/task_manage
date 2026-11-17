@@ -7,6 +7,9 @@ export const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
 /** PJに属さない個人の仕事の置き場（図では1つのまとまりとして扱う） */
 export const PERSONAL_PJ = "personal";
 
+/** 担当者（主担当・副担当）か。「わたし」の仕事と、担当者本人だけができる操作の判定に使う */
+export const isAssignee = (t: Task, memberId: string): boolean => t.assigneeId === memberId || (t.assigneeIds?.includes(memberId) ?? false);
+
 function toUtc(s: string): number {
   const [y, m, d] = s.split("-").map(Number);
   return Date.UTC(y, m - 1, d);
@@ -183,7 +186,7 @@ export function tfIdsOfTask(task: Task, ctx: LinkCtx): string[] {
 /** 前回更新の翌日〜今回更新日に、その人が終えた、そのKRにつながる仕事 */
 export function tasksDoneBetween(tasks: Task[], memberId: string, krId: string, from: string, to: string, ctx: LinkCtx): Task[] {
   return tasksOfKr(
-    tasks.filter((t) => t.assigneeId === memberId && t.status === "完了" && t.updated > from && t.updated <= to),
+    tasks.filter((t) => isAssignee(t, memberId) && t.status === "完了" && t.updated > from && t.updated <= to),
     krId,
     ctx,
   );
@@ -206,7 +209,7 @@ export interface Buildup {
 /** 期の始めから週ごとの、KRにつながる仕事の累計完了件数 */
 export function buildup(tasks: Task[], memberId: string, krIds: string[], start: string, today: string, ctx: LinkCtx): Buildup {
   const weeks = weekStarts(start, today);
-  const done = tasks.filter((t) => t.assigneeId === memberId && t.status === "完了" && t.updated >= start && t.updated <= today);
+  const done = tasks.filter((t) => isAssignee(t, memberId) && t.status === "完了" && t.updated >= start && t.updated <= today);
   const cumulative: Record<string, number[]> = {};
   for (const k of krIds) {
     cumulative[k] = weeks.map((w) => {
@@ -249,7 +252,7 @@ export function buildSummaryText(args: {
 }): string {
   const { period, owner, krs, tasks, memberId, start, today, ctx, how, outcomes = [], reflections = [], trends = [], learnings = [] } = args;
   const lines = [`${period} 期のまとめ（${owner}）`, `集計期間：${start}〜${today}`, ""];
-  const mineDone = tasks.filter((t) => t.assigneeId === memberId && t.status === "完了" && t.updated >= start && t.updated <= today);
+  const mineDone = tasks.filter((t) => isAssignee(t, memberId) && t.status === "完了" && t.updated >= start && t.updated <= today);
   for (const kr of krs) {
     const done = tasksOfKr(mineDone, kr.id, ctx);
     lines.push(done.length === 0 ? `${kr.label} ${kr.text}：この期に終えた仕事は、まだつながっていません` : `${kr.label} ${kr.text}：${done.length}件`);
@@ -334,7 +337,7 @@ export function hintTrailsPeriod(h: Hint | undefined, elapsed: number): boolean 
 /** そのKRにつながる、その人の未着手・進行中の仕事。期日の近い（超過を含む）順に最大 max 件 */
 export function focusTasks(tasks: Task[], memberId: string, krId: string, ctx: LinkCtx, max = 3): Task[] {
   const open = tasksOfKr(
-    tasks.filter((t) => t.assigneeId === memberId && isOpen(t)),
+    tasks.filter((t) => isAssignee(t, memberId) && isOpen(t)),
     krId,
     ctx,
   );
@@ -398,7 +401,7 @@ export function weeklyFocus(args: {
     .sort((a, b) => b.pendingCount - a.pendingCount || b.mine.length - a.mine.length);
   if (next.length > 0) return next.slice(0, max);
   const most = krIds
-    .map((k) => ({ k, n: tasksOfKr(tasks.filter((t) => t.assigneeId === memberId && isOpen(t)), k, ctx).length }))
+    .map((k) => ({ k, n: tasksOfKr(tasks.filter((t) => isAssignee(t, memberId) && isOpen(t)), k, ctx).length }))
     .filter((x) => x.n > 0)
     .sort((a, b) => b.n - a.n);
   return most.length > 0 ? [{ ...base(most[0].k), kind: "most" as const, step: null, pendingCount: 0 }] : [];
@@ -423,7 +426,7 @@ export function candidateTasksForKr(
 ): TaskCandidate[] {
   const out: TaskCandidate[] = [];
   for (const t of tasks) {
-    if (t.assigneeId !== memberId || !isOpen(t)) continue;
+    if (!isAssignee(t, memberId) || !isOpen(t)) continue;
     if (krIdsOfTask(t, ctx).includes(krId)) continue;
     const c = (aiCands[t.pjId] ?? []).find((x) => x.krId === krId);
     if (c) out.push({ task: t, reason: c.reason });
@@ -436,7 +439,7 @@ export function candidateTasksForKr(
 /** その週（月曜〜日曜）に動いた（最終更新日が入る）、その人の仕事 */
 export function tasksMovedInWeek(tasks: Task[], memberId: string, weekStart: string): Task[] {
   const end = addDays(weekStart, 6);
-  return tasks.filter((t) => t.assigneeId === memberId && t.updated >= weekStart && t.updated <= end);
+  return tasks.filter((t) => isAssignee(t, memberId) && t.updated >= weekStart && t.updated <= end);
 }
 
 /** その週に動いた仕事がつながるKR（振り返りの対象） */

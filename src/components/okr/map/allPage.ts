@@ -1,11 +1,11 @@
 // 流れの図を「全体」にしたときの、画面に依存しない計算。
 import type { FlowCounts } from "./flow";
-import { krIdsOfTask, type LinkCtx } from "./logic";
+import { isAssignee, krIdsOfTask, type LinkCtx } from "./logic";
 
 /** 地図に出ている仕事（KRにつながる仕事＋つながらない仕事。1件は1回）のうち、見ている人の仕事のID */
 export function mineTaskIds(counts: FlowCounts, ownerId: string): Set<string> {
   const ids = new Set<string>();
-  for (const list of Object.values(counts.linkedByPj)) for (const t of list) if (t.assigneeId === ownerId) ids.add(t.id);
+  for (const list of Object.values(counts.linkedByPj)) for (const t of list) if (isAssignee(t, ownerId)) ids.add(t.id);
   return ids;
 }
 
@@ -18,8 +18,8 @@ export interface MineLine {
 
 export function mineLine(counts: FlowCounts, ownerId: string, krIds: string[], ctx: LinkCtx): MineLine {
   const linked = Object.values(counts.linkedByPj).flat();
-  const myLinked = linked.filter((t) => t.assigneeId === ownerId);
-  const myLoose = counts.loose.filter((t) => t.assigneeId === ownerId);
+  const myLinked = linked.filter((t) => isAssignee(t, ownerId));
+  const myLoose = counts.loose.filter((t) => isAssignee(t, ownerId));
   const krSet = new Set(myLinked.flatMap((t) => krIdsOfTask(t, ctx)));
   return { total: linked.length + counts.loose.length, mine: myLinked.length + myLoose.length, krs: krIds.filter((k) => krSet.has(k)) };
 }

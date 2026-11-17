@@ -1,7 +1,7 @@
 // 人ごとの状態（つなぎ先の変更・提案の採否・「どう役立つか」・個人OKRのつなぎ・振り返り・今週やる）。
 // 「本人」＝いま見ている人。すべて利用者IDごとに分け、他の人の分は読まない・書かない。
-import { overridesInit, personalLinksInit, picksInit } from "./dataset";
-import { answerKey, howKey } from "./logic";
+import { overridesInit, personalLinksInit, picksInit, userRecordsInit } from "./dataset";
+import { answerKey, howKey, isAssignee } from "./logic";
 import type { ClaimStatus, KrAnswer, OutcomeNote, Task } from "./types";
 
 export interface UserState {
@@ -30,8 +30,18 @@ export function userOf(s: UserStates, id: string): UserState {
 
 export function initialUserStates(weekStart: string): UserStates {
   const out: UserStates = {};
-  for (const id of new Set([...Object.keys(personalLinksInit), ...Object.keys(picksInit), ...Object.keys(overridesInit)])) {
-    out[id] = { ...emptyUser(), personalLinks: personalLinksInit[id] ?? [], picks: picksInit[id] ? { [weekStart]: picksInit[id] } : {}, overrides: { ...(overridesInit[id] ?? {}) } };
+  for (const id of new Set([...Object.keys(personalLinksInit), ...Object.keys(picksInit), ...Object.keys(overridesInit), ...Object.keys(userRecordsInit)])) {
+    const r = userRecordsInit[id] ?? {};
+    out[id] = {
+      ...emptyUser(),
+      personalLinks: personalLinksInit[id] ?? [],
+      picks: picksInit[id] ? { [weekStart]: picksInit[id] } : {},
+      overrides: { ...(overridesInit[id] ?? {}) },
+      how: { ...(r.how ?? {}) },
+      proposals: { ...(r.proposals ?? {}) },
+      answers: { ...(r.answers ?? {}) },
+      claims: { ...(r.claims ?? {}) },
+    };
   }
   return out;
 }
@@ -58,9 +68,18 @@ export const proposalKey = (taskId: string, krId: string) => `${taskId}|${krId}`
  * つなぎ先から外れたKRの「どう役立つか」と、採った提案の記録だけを消す（残したKRの答えは消さない）
  */
 export function setOverride(s: UserStates, userId: string, task: Task, krIds: string[] | undefined, defaultKrs: string[]): UserStates {
-  if (task.assigneeId !== userId) return s;
-  return patch(s, userId, (u) => {
-    const before = u.overrides[task.id] ?? defaultKrs;
+  if (!isAssignee(task, userId)) return s;
+  // つなぎ先は仕事1件につき1つ（保存も1行）。副担当が選び直したら、他の担当者の手元の分は外す
+  const current = mergedOverrides(s)[task.id];
+  let base = s;
+  for (const [id, u] of Object.entries(s)) {
+    if (id === userId || u.overrides[task.id] === undefined) continue;
+    const overrides = { ...u.overrides };
+    delete overrides[task.id];
+    base = { ...base, [id]: { ...u, overrides } };
+  }
+  return patch(base, userId, (u) => {
+    const before = current ?? defaultKrs;
     const after = krIds ?? defaultKrs;
     if (krIds === undefined ? u.overrides[task.id] === undefined : u.overrides[task.id] !== undefined && sameSet(u.overrides[task.id], krIds)) return u;
     const overrides = { ...u.overrides };
@@ -75,7 +94,7 @@ export function setOverride(s: UserStates, userId: string, task: Task, krIds: st
 
 /** AIの提案を1件採る＝いまのつなぎ先に足して（置き換えない）、採った記録を残す */
 export function takeProposal(s: UserStates, userId: string, task: Task, krId: string, currentKrs: string[], defaultKrs: string[]): UserStates {
-  if (task.assigneeId !== userId) return s;
+  if (!isAssignee(task, userId)) return s;
   const moved = setOverride(s, userId, task, [...currentKrs.filter((k) => k !== krId), krId], defaultKrs);
   return patch(moved, userId, (u) => {
     const proposals = { ...u.proposals, [proposalKey(task.id, krId)]: "taken" as const };
@@ -118,7 +137,7 @@ export function setAnswer(s: UserStates, userId: string, weekStart: string, krId
 
 /** 「今週やる」の印を付け外しする。本人の仕事だけ */
 export function togglePick(s: UserStates, userId: string, weekStart: string, task: Task): UserStates {
-  if (task.assigneeId !== userId) return s;
+  if (!isAssignee(task, userId)) return s;
   return patch(s, userId, (u) => {
     const cur = u.picks[weekStart] ?? [];
     return { ...u, picks: { ...u.picks, [weekStart]: cur.includes(task.id) ? cur.filter((x) => x !== task.id) : [...cur, task.id] } };
@@ -126,6 +145,9 @@ export function togglePick(s: UserStates, userId: string, weekStart: string, tas
 }
 
 export const claimKey = (noteKey: string, taskId: string) => `${noteKey}|${taskId}`;
+
+/** 仕事の担当者全員（主担当が先頭） */
+export const assigneesOf = (t: Task): string[] => [...new Set([t.assigneeId, ...(t.assigneeIds ?? [])])];
 
 /**
  * 確定した成果の記述の結びつきを、仕事の担当者本人へ「確かめてください」として届ける。
@@ -138,7 +160,7 @@ export function deliverClaims(s: UserStates, notes: OutcomeNote[], tasks: Task[]
       const t = tasks.find((x) => x.id === l.taskId);
       if (!t) continue;
       const key = claimKey(n.key, t.id);
-      out = patch(out, t.assigneeId, (u) => (u.claims[key] ? u : { ...u, claims: { ...u.claims, [key]: "pending" } }));
+      for (const who of assigneesOf(t)) out = patch(out, who, (u) => (u.claims[key] ? u : { ...u, claims: { ...u.claims, [key]: "pending" } }));
     }
   }
   return out;
@@ -146,7 +168,7 @@ export function deliverClaims(s: UserStates, notes: OutcomeNote[], tasks: Task[]
 
 /** 結びつきへの答え（そのとおり／違う）。担当者本人だけが、自分に届いたものについて答えられる */
 export function answerClaim(s: UserStates, userId: string, task: Task, noteKey: string, v: "yes" | "no"): UserStates {
-  if (task.assigneeId !== userId) return s;
+  if (!isAssignee(task, userId)) return s;
   const key = claimKey(noteKey, task.id);
   return patch(s, userId, (u) => (!u.claims[key] || u.claims[key] === v ? u : { ...u, claims: { ...u.claims, [key]: v } }));
 }
@@ -156,13 +178,13 @@ export interface ConfirmedLink {
   task: Task;
 }
 
-/** 「そのとおり」と答えられた結びつき（全員に見える）。未回答と「違う」は含めない */
+/** 「そのとおり」と答えられた結びつき（全員に見える。担当者のだれか1人が答えればよい）。未回答と「違う」は含めない */
 export function confirmedLinks(s: UserStates, notes: OutcomeNote[], tasks: Task[]): ConfirmedLink[] {
   const out: ConfirmedLink[] = [];
   for (const n of notes) {
     for (const l of n.links) {
       const t = tasks.find((x) => x.id === l.taskId);
-      if (t && userOf(s, t.assigneeId).claims[claimKey(n.key, t.id)] === "yes") out.push({ note: n, task: t });
+      if (t && assigneesOf(t).some((who) => userOf(s, who).claims[claimKey(n.key, t.id)] === "yes")) out.push({ note: n, task: t });
     }
   }
   return out;
@@ -171,4 +193,15 @@ export function confirmedLinks(s: UserStates, notes: OutcomeNote[], tasks: Task[
 /** 本人にまだ答えていない結びつきが何件あるか */
 export function pendingClaimCount(u: UserState): number {
   return Object.values(u.claims).filter((v) => v === "pending").length;
+}
+
+/**
+ * 保存に渡す、本人の状態の前後。つなぎ先は仕事1件1行なので、全員分を足し合わせたもので比べる
+ * （副担当が既定に戻したとき、変化が他の担当者の分にだけ現れても拾えるように）
+ */
+export function viewerChange(prev: UserStates, next: UserStates, viewerId: string): [UserState, UserState] {
+  return [
+    { ...userOf(prev, viewerId), overrides: mergedOverrides(prev) },
+    { ...userOf(next, viewerId), overrides: mergedOverrides(next) },
+  ];
 }

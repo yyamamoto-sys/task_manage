@@ -38,6 +38,7 @@ import { Avatar } from "../auth/UserSelectScreen";
 import { ConsultationPanel } from "../consultation/ConsultationPanel";
 import { OkrModeIntroModal } from "../okr/OkrModeIntroModal";
 import { OkrMapSidebar } from "../okr/map/OkrMapSidebar";
+import { useOkrMapBridge } from "../okr/map/bridge";
 import { shouldShowOkrModeIntro, hasApprovedOkrModeIntro, markOkrModeIntroApproved } from "../../lib/okr/okrModeGate";
 // GuideModeViewは全props省略可能な既定値付きコンポーネントのため、withChunkDownloadGate<P>への
 // P推論がTS上うまくいかず object に落ちてしまう。型のみをimportして明示的に指定する（実行時の
@@ -301,6 +302,10 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
     () => parseStoredSidebarWidth(localStorage.getItem(KEYS.SIDEBAR_WIDTH))
   );
   const sidebarWidthRef = useRef(sidebarWidth);
+  // OKRモードの地図は、サイドバーの実際の幅で「図と詳細を並べられるか」を決める（Section 91）
+  useEffect(() => {
+    useOkrMapBridge.getState().setSidebarPx(isSidebarCollapsed ? parseInt(SIDEBAR_WIDTH_COLLAPSED, 10) : sidebarWidth);
+  }, [isSidebarCollapsed, sidebarWidth]);
   const isDraggingSidebar = useRef(false);
   const sidebarDragStartX = useRef(0);
   const sidebarDragStartW = useRef(0);

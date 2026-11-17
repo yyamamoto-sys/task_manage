@@ -162,7 +162,7 @@
 | 88 | 88. タスクの親子を任意の深さにする：Phase A（表示）＋A'（下回り）（v3.195）＋Phase B（編集操作・v3.196） | 親子2段固定を撤廃。木順・N段の集計（末端数え）・子孫全体の移動/選択/複製・循環防止（Phase A）／親欄1つ・ドラッグ・Tab/Shift+Tab・＋子タスク・AI の parent_task（Phase B・MIN_CLIENT_VERSION を 3.196 へ） | docs/dev/sections/s88_task-tree-depth.md |
 | 89 | 89. 依存関係の種類（FS/SS/FF/SF）とずらし日数（v3.197） | 依存に種類とラグ（暦日・負＝リード）。自動ずらし・完了ゲート・着手警告・ガント矢印を4種へ一般化。MSPDI取り込みの土台 | docs/dev/sections/s89_dependency-type-lag.md |
 | 90 | 90. WBS取り込みの拡張：MS Project XML・各種ツールのCSV（v3.198） | 取り込みの中間表現を N 段・依存の種類／ラグ・グループ有無へ一般化。MSPDI（XMLは自前の小さなパーサ）・汎用CSV／xlsx＋列の対応づけ画面・Shift_JIS・M/D/YYYY | docs/dev/sections/s90_wbs-import-formats.md |
-| 91 | 91. OKRモードの作り直し 段階1：モックの「地図」を本番の OKR モードに差し替える | components/okr/map/ に移設。adapter（状態・TFの四半期・本人・task_task_forces の扱い）・dataset の差し替え・新しい表の入口 OkrMapRepository（段階1は空実装）・サイドバーは bridge 経由 | docs/dev/sections/s91_okr-map-stage1.md |
+| 91 | 91. OKRモードの作り直し 段階1：モックの「地図」を本番の OKR モードに差し替える | components/okr/map/ に移設。adapter（状態・TFの四半期・本人・task_task_forces の扱い）・dataset の差し替え・新しい表の入口 OkrMapRepository（段階1は空実装）・サイドバーは bridge 経由。段階2＝記録の表15本（20261117_okr_map_records.sql）と supabaseRepository・副担当・個人OKRの矢印・実際のサイドバー幅 | docs/dev/sections/s91_okr-map-stage1.md |
 
 ---
 

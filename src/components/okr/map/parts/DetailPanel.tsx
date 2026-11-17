@@ -5,6 +5,7 @@ import {
   formatMd,
   hintTrailsPeriod,
   howKey,
+  isAssignee,
   isNotUpdated,
   krIdsOfTask,
   latestCheckinDate,
@@ -21,8 +22,10 @@ import { krRegistration, workPhrase } from "../reach";
 import { useMock } from "../state";
 import { hasStretch, learningsOfKr, moveText, nextLine, nextRequirements, stepMove, stepsOf } from "../steps";
 import { proposalKey } from "../userState";
+import { KrDefEditor } from "./KrDefEditor";
 import { TrendChart } from "./Trend";
 import { panelNarrowPx } from "../nav";
+import { useSidebarPx } from "../state";
 import { hintText, JunctionMark, KrDot, KrDots, krLabel, krListText, krName, krText, nameOf, signed, StatusChip, StepScale, useFocusTrap, useNarrow } from "../ui";
 
 function KrPanel({ krId }: { krId: string }) {
@@ -95,6 +98,7 @@ function KrPanel({ krId }: { krId: string }) {
       ) : (
         <p className="mk-small mk-muted">段の基準文（60・70・80…）は、O・KRを取り込むとここに出ます。</p>
       )}
+      <KrDefEditor key={krId} krId={krId} />
       <dl className="mk-dl">
         {r.hint && (
           <>
@@ -304,7 +308,7 @@ function TaskPanel({ taskId }: { taskId: string }) {
   const pjLabel = t.pjId === PERSONAL_PJ ? PERSONAL_NAME : pj?.name;
   const krs = krIdsOfTask(t, linkCtx);
   const cands = aiCandidates[t.pjId] ?? [];
-  const mine = t.assigneeId === viewerId;
+  const mine = isAssignee(t, viewerId);
   const override = overrides[t.id];
   const effectKr = krs[0];
   const krOrder = items.filter((i) => i.kind === "kr").map((i) => i.id);
@@ -550,12 +554,12 @@ function PjPanel({ pjId }: { pjId: string }) {
 }
 
 /**
- * 詳細パネル。幅が広いときは地図の右、狭いときは右から出る引き出し（境目はサイドバーの幅しだい。nav.ts の panelNarrowPx と mock4.css が同じ値）。
+ * 詳細パネル。幅が広いときは地図の右、狭いときは右から出る引き出し（境目は実際のサイドバーの幅しだい。nav.ts の panelNarrowPx。本番は App の is-narrow、見本は mock4.css の幅）。
  * 開いたらパネルへフォーカスを移す。離れた場所から開いて見えない位置にあるときはスクロールする
  */
 export function DetailPanel() {
-  const { sel, setSel, sidebarCollapsed } = useMock();
-  const narrow = useNarrow(panelNarrowPx(sidebarCollapsed));
+  const { sel, setSel } = useMock();
+  const narrow = useNarrow(panelNarrowPx(useSidebarPx()));
   const ref = useRef<HTMLElement>(null);
   const key = sel ? `${sel.type}:${sel.id}` : "";
 

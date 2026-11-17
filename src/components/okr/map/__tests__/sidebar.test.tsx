@@ -4,6 +4,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import App from "../App";
+import { useOkrMapBridge } from "../bridge";
 import { assessInit, okrItems } from "../fixtures";
 import { panelNarrowPx, sidebarKrRows, sidebarWidth, switchPage } from "../nav";
 import type { InitialView } from "../state";
@@ -129,12 +130,29 @@ describe("サイドバー：資料と折りたたみ", () => {
   it("幅：既定 160px・折りたたみ 48px。図＋詳細（360px）が並ぶ境目はサイドバーの分だけ後ろにずれる", () => {
     expect(sidebarWidth(false)).toBe(160);
     expect(sidebarWidth(true)).toBe(48);
-    expect(panelNarrowPx(false)).toBe(1373);
-    expect(panelNarrowPx(true)).toBe(1261);
-    expect(panelNarrowPx(false)).toBeGreaterThan(1280 - 1);
+    expect(panelNarrowPx(sidebarWidth(false))).toBe(1373);
+    expect(panelNarrowPx(sidebarWidth(true))).toBe(1261);
+    expect(panelNarrowPx(sidebarWidth(false))).toBeGreaterThan(1280 - 1);
     const css = readFileSync(join(process.cwd(), "src", "components", "okr", "map", "mock4.css"), "utf-8");
     expect(css).toContain("@media (max-width: 1373px)");
     expect(css).toContain("@media (max-width: 1261px)");
+  });
+  it("本番：境目は MainLayout のサイドバーの実際の幅（140〜420・折りたたみ48）から決まり、App が is-narrow を付ける", () => {
+    expect(panelNarrowPx(140)).toBe(1353);
+    expect(panelNarrowPx(420)).toBe(1633);
+    expect(panelNarrowPx(48)).toBe(1261);
+    const css = readFileSync(join(process.cwd(), "src", "components", "okr", "map", "mock4.css"), "utf-8");
+    expect(css).toContain(".mk-app.is-embedded.is-narrow .mk-panel");
+    // 見本用の固定幅の @media は本番（is-embedded）に効かせない
+    expect(css).toContain(".mk-app:not(.is-embedded):not(.is-sb-collapsed) .mk-panel");
+    expect(css).toContain(".mk-app:not(.is-embedded).is-sb-collapsed .mk-panel");
+    // 1500px の画面：サイドバー160なら並ぶが、420まで広げると引き出しになる
+    expect(1500 <= panelNarrowPx(160)).toBe(false);
+    expect(1500 <= panelNarrowPx(420)).toBe(true);
+    // MainLayout が載せた幅を、見本の幅より優先して使う（サーバー描画では zustand が初期値を返すので、置き場の値で確かめる）
+    useOkrMapBridge.getState().setSidebarPx(420);
+    expect(useOkrMapBridge.getState().sidebarPx).toBe(420);
+    useOkrMapBridge.setState({ sidebarPx: null });
   });
 });
 

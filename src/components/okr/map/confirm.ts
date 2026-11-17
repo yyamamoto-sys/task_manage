@@ -1,6 +1,8 @@
 // 資料の確定まわりの純粋関数（決定事項の足し合わせ・資料どうしの食い違い）
 import { clampAssessment } from "./steps";
-import type { AssessEntry, Checkin, Conflict, Decision, Draft, KrBands, KrRecord, Learning, OutcomeNote, Resource } from "./types";
+import type { ConfirmSave } from "./repository";
+import type { AssessEntry, Checkin, Conflict, Decision, Draft, KrBands, KrRecord, Learning, OutcomeNote, Resource, Task } from "./types";
+import { assigneesOf } from "./userState";
 
 /**
  * 決定事項と宿題の反映。同じ回の資料を複数確定しても、資料ごとに足し合わせる（他の資料の分は消さない）。
@@ -115,4 +117,43 @@ export function mergeLearnings(prev: Learning[], selected: Resource[], ci: Check
   const kept = prev.filter((l) => !(l.checkinId === ci.id && ids.has(l.resourceId)));
   const added = selected.flatMap((res) => res.learnings.map((l, i) => ({ ...l, id: `${res.id}-l${i}`, checkinId: ci.id, resourceId: res.id })));
   return [...kept, ...added];
+}
+
+/**
+ * 確定で保存するもの。画面の足し合わせ（merge*）のあとの値から、今回の回×選んだ資料の分だけを取り出す。
+ * 結びつきは仕事の担当者全員（主担当・副担当）へ届ける
+ */
+export function confirmSaveOf(a: {
+  groupId: string | null;
+  viewerId: string;
+  ci: Checkin;
+  selected: Resource[];
+  drafts: Draft[];
+  nextRecords: Record<string, KrRecord>;
+  nextHist: Record<string, AssessEntry[]>;
+  nextLearnings: Learning[];
+  nextDecisions: Decision[];
+  notes: OutcomeNote[];
+  nextNotes: OutcomeNote[];
+  tasks: Task[];
+}): ConfirmSave {
+  const ids = new Set(a.selected.map((r) => r.id));
+  const noteKeys = new Set(a.notes.map((n) => n.key));
+  return {
+    groupId: a.groupId,
+    viewerId: a.viewerId,
+    checkin: a.ci,
+    resourceIds: [...ids],
+    assessments: Object.entries(a.nextHist).flatMap(([krId, list]) => list.filter((e) => e.checkinId === a.ci.id && ids.has(e.resourceId)).map((entry) => ({ krId, entry }))),
+    hintValues: Object.fromEntries(a.drafts.map((d) => [d.krId, { value: a.nextRecords[d.krId]?.hint?.value ?? d.value, source: d.source }])),
+    learnings: a.nextLearnings.filter((l) => l.checkinId === a.ci.id && ids.has(l.resourceId)),
+    decisions: a.nextDecisions.filter((d) => d.checkinId === a.ci.id && d.resourceId !== undefined && ids.has(d.resourceId)),
+    notes: a.nextNotes.filter((n) => noteKeys.has(n.key)),
+    claims: a.notes.flatMap((n) =>
+      n.links.flatMap((l) => {
+        const t = a.tasks.find((x) => x.id === l.taskId);
+        return t ? assigneesOf(t).map((memberId) => ({ noteKey: n.key, taskId: t.id, memberId })) : [];
+      }),
+    ),
+  };
 }

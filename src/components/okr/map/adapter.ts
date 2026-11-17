@@ -137,6 +137,8 @@ export function buildOkrMapCore(src: OkrMapSource): OkrMapCore {
       (status === "完了" ? localDateOf(t.completed_at) : null) ?? localDateOf(t.updated_at) ?? localDateOf(t.created_at) ?? today;
     const direct = ttfByTask.get(t.id) ?? [];
     const task: Task = { id: t.id, pjId, title: t.name, assigneeId: t.assignee_member_id, due: t.due_date || null, status, updated };
+    const assignees = [...new Set([t.assignee_member_id, ...(t.assignee_member_ids ?? [])].filter((x): x is string => !!x))];
+    if (assignees.length > 1) task.assigneeIds = assignees;
     const directNow = direct.filter((id) => curTfIds.has(id));
     if (directNow.length > 0) task.tfIds = directNow;
     // 完了した仕事は「完了した時点のつながり」を記録として持つ（後の四半期にTF構成が変わっても図から落ちない）
@@ -148,6 +150,7 @@ export function buildOkrMapCore(src: OkrMapSource): OkrMapCore {
   const info: QuarterInfo = { quarter, range: RANGE[quarter], ended: false };
 
   return {
+    groupId: src.groupId,
     today,
     weekStart: weekStartOf(today),
     periodName: half.name,

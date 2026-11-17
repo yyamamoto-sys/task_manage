@@ -1,10 +1,13 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from "react";
-import { flowAllInit, setFlowAllFor, SIDEBAR_AUTO_COLLAPSE_PX, switchPage, type FlowAll } from "./nav";
-import { addOutcomeNotes, detectConflicts, mergeAssessments, mergeDecisions, mergeDrafts, mergeLearnings, notesOfResources } from "./confirm";
+import { useOkrMapBridge } from "./bridge";
+import { flowAllInit, setFlowAllFor, SIDEBAR_AUTO_COLLAPSE_PX, sidebarWidth, switchPage, type FlowAll } from "./nav";
+import { addOutcomeNotes, confirmSaveOf, detectConflicts, mergeAssessments, mergeDecisions, mergeDrafts, mergeLearnings, notesOfResources } from "./confirm";
+import { formatErrorForUser } from "../../../lib/errorMessage";
 import { activeData, krBands, setActiveData, type OkrMapData } from "./dataset";
 import { applyConfirm, compareOkr, defaultKrIdsOfTask, importKintone, type LinkCtx } from "./logic";
 import { crossedStep, currentAssessment, deltaText, type CurrentAssessment } from "./steps";
-import type { AssessEntry, Checkin, ClaimStatus, Decision, KintoneRow, KrAnswer, KrRecord, Learning, OkrItem, OutcomeNote, Task } from "./types";
+import { memoryRepository, type HintDef, type OkrMapRepository } from "./repository";
+import type { AssessEntry, Checkin, ClaimStatus, Decision, KintoneRow, KrAnswer, KrDef, KrRecord, Learning, OkrItem, OutcomeNote, Task } from "./types";
 import { addHistory, registeredTasks, type History, type Reach } from "./reach";
 import * as U from "./userState";
 
@@ -113,6 +116,10 @@ interface MockState {
   answerClaim: (noteKey: string, task: Task, v: "yes" | "no") => void;
   /** 「そのとおり」と確かめられた結びつき（全員に見える） */
   confirmedLinks: U.ConfirmedLink[];
+  /** KRごとの段の基準文・証拠（手入力で直せる） */
+  krDefs: Record<string, KrDef>;
+  /** KRの段の基準文・証拠・手がかりの定めを保存する（手入力） */
+  saveKrDef: (krId: string, def: KrDef, hint: HintDef | null) => Promise<boolean>;
   toast: string | null;
   showToast: (msg: string) => void;
 }
@@ -149,9 +156,25 @@ export interface InitialView {
 
 const reducedMotion = () => typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-export function MockProvider({ children, initial, data: dataProp, onOpenPersonalOkr }: { children: ReactNode; initial?: InitialView; data?: OkrMapData; onOpenPersonalOkr?: () => void }) {
-  const data = dataProp ?? activeData();
-  if (!data) throw new Error("地図のデータがありません");
+export function MockProvider({
+  children,
+  initial,
+  data: dataProp,
+  onOpenPersonalOkr,
+  repository = memoryRepository,
+}: {
+  children: ReactNode;
+  initial?: InitialView;
+  data?: OkrMapData;
+  onOpenPersonalOkr?: () => void;
+  /** 記録の保存先。既定はメモリ（テスト・ゲスト）。本番は supabaseRepository */
+  repository?: OkrMapRepository;
+}) {
+  const loaded = dataProp ?? activeData();
+  if (!loaded) throw new Error("地図のデータがありません");
+  // 段の基準文は画面で直せるので、直した分を重ねたものを「いまのデータ」にする
+  const [krDefsState, setKrDefs] = useState(loaded.krDefs);
+  const data = useMemo(() => (krDefsState === loaded.krDefs ? loaded : { ...loaded, krDefs: krDefsState }), [loaded, krDefsState]);
   // 子の部品は dataset.ts から読む。子より先に描画されるここで、いまのデータに差し替える
   setActiveData(data);
   const { tasks: allTasks, nextCheckin, resources, weekStart: WEEK_START } = data;
@@ -192,7 +215,7 @@ export function MockProvider({ children, initial, data: dataProp, onOpenPersonal
   const [reach, setReachState] = useState<Reach>(initial?.reach ?? "all");
   const [checkins, setCheckins] = useState<Checkin[]>(data.checkins);
   const [decisions, setDecisions] = useState<Decision[]>(data.decisions);
-  const [confirmedBy, setConfirmedBy] = useState<Record<string, string>>(initial?.confirmedBy ?? {});
+  const [confirmedBy, setConfirmedBy] = useState<Record<string, string>>(initial?.confirmedBy ?? data.confirmedBy ?? {});
   const [users, setUsers] = useState<U.UserStates>(() => {
     const base = U.initialUserStates(WEEK_START);
     for (const [uid, claims] of Object.entries(initial?.outcome?.claims ?? {})) base[uid] = { ...U.userOf(base, uid), claims };
@@ -201,7 +224,7 @@ export function MockProvider({ children, initial, data: dataProp, onOpenPersonal
     }
     return base;
   });
-  const [outcomeNotes, setOutcomeNotes] = useState<OutcomeNote[]>(initial?.outcome?.notes ?? []);
+  const [outcomeNotes, setOutcomeNotes] = useState<OutcomeNote[]>(initial?.outcome?.notes ?? data.outcomeNotes ?? []);
   const [toast, setToast] = useState<string | null>(null);
   const [junctionOnly, setJunctionOnly] = useState(initial?.junctionOnly ?? false);
   const timer = useRef<number | undefined>(undefined);
@@ -213,6 +236,27 @@ export function MockProvider({ children, initial, data: dataProp, onOpenPersonal
     window.clearTimeout(timer.current);
     timer.current = window.setTimeout(() => setToast(null), 3500);
   }, []);
+
+  // 保存は画面の更新のあとに裏で行う。失敗したら原因つきで知らせる（Section 15）。画面の状態は戻さない
+  const persist = useCallback((p: Promise<void>) => {
+    p.catch((e: unknown) => showToast(formatErrorForUser("保存できませんでした", e)));
+  }, [showToast]);
+
+  // 人ごとの状態を変えて、本人の分の変化を保存する。つなぎ先は仕事1件1行なので全員分を足したもので差分を取る
+  const usersRef = useRef(users);
+  usersRef.current = users;
+  const updateUsers = useCallback(
+    (fn: (s: U.UserStates) => U.UserStates) => {
+      const prev = usersRef.current;
+      const next = fn(prev);
+      if (next === prev) return;
+      usersRef.current = next;
+      setUsers(next);
+      const [before, after] = U.viewerChange(prev, next, viewerId);
+      persist(repository.saveUser(viewerId, before, after));
+    },
+    [viewerId, repository, persist],
+  );
 
   // 増減の札：動きを減らす設定では静止表示にして、次の操作で消す。それ以外は少し経ったら消す
   const hasChanges = changes.length > 0;
@@ -276,8 +320,10 @@ export function MockProvider({ children, initial, data: dataProp, onOpenPersonal
       importFromKintone: () => {
         const rows = data.kintoneRows;
         if (!rows) return;
-        setItems(importKintone(items, rows, data.currentQuarter.quarter));
+        const next = importKintone(items, rows, data.currentQuarter.quarter);
+        setItems(next);
         setLocked(true);
+        persist(repository.saveLock({ groupId: data.groupId, viewerId, year: Number(data.today.slice(0, 4)), quarter: data.currentQuarter.quarter, lockedOn: data.today, snapshot: next }));
       },
       unlockDemo: () => {
         setItems(null);
@@ -316,16 +362,22 @@ export function MockProvider({ children, initial, data: dataProp, onOpenPersonal
           const text = deltaText(before.cur.assessment.value, after.cur.assessment.value);
           if (text) deltas.push({ krId, text });
         }
+        const nextLearnings = mergeLearnings(learnings, selected, ci);
+        const nextDecisions = mergeDecisions(decisions, selected, ci);
+        const notes = notesOfResources(selected);
+        const nextNotes = addOutcomeNotes(outcomeNotes, notes);
+        persist(repository.saveConfirm(confirmSaveOf({ groupId: data.groupId, viewerId, ci, selected, drafts, nextRecords: next, nextHist, nextLearnings, nextDecisions, notes, nextNotes, tasks: allTasks })));
         setRecords(next);
         setAssessHist(nextHist);
-        setLearnings((p) => mergeLearnings(p, selected, ci));
+        setLearnings(nextLearnings);
         setHistory((p) => addHistory(p, drafts.map((d) => d.krId), Object.fromEntries(drafts.map((d) => [d.krId, next[d.krId].hint?.value ?? d.value])), ci.date));
         setCheckins((p) => (p.some((c) => c.id === ci.id) ? p : [...p, ci]));
-        setDecisions((p) => mergeDecisions(p, selected, ci));
+        setDecisions(nextDecisions);
         setConfirmedBy((p) => ({ ...p, [ci.id]: viewerId }));
-        const notes = notesOfResources(selected);
-        setOutcomeNotes((p) => addOutcomeNotes(p, notes));
-        setUsers((p) => U.deliverClaims(p, notes, allTasks));
+        setOutcomeNotes(nextNotes);
+        // 届けた結びつき（pending）は saveConfirm が書く。ここでは画面の状態だけ変える
+        usersRef.current = U.deliverClaims(usersRef.current, notes, allTasks);
+        setUsers(usersRef.current);
         setNewDecisions(selected.reduce((s, r) => s + r.decisions.length, 0));
         setDecisionsOpen(true);
         setChanges(deltas);
@@ -343,31 +395,57 @@ export function MockProvider({ children, initial, data: dataProp, onOpenPersonal
       tasks: regTasks,
       history,
       overrides: me.overrides,
-      setOverride: (task, krIds) => setUsers((p) => U.setOverride(p, viewerId, task, krIds, defaultKrIdsOfTask(task, linkCtx))),
+      setOverride: (task, krIds) => updateUsers((p) => U.setOverride(p, viewerId, task, krIds, defaultKrIdsOfTask(task, linkCtx))),
       proposals: me.proposals,
       takeProposal: (task, krId) =>
-        setUsers((p) => U.takeProposal(p, viewerId, task, krId, U.userOf(p, viewerId).overrides[task.id] ?? defaultKrIdsOfTask(task, linkCtx), defaultKrIdsOfTask(task, linkCtx))),
-      setProposal: (taskId, krId, v) => setUsers((p) => U.setProposal(p, viewerId, taskId, krId, v)),
+        updateUsers((p) => U.takeProposal(p, viewerId, task, krId, U.mergedOverrides(p)[task.id] ?? defaultKrIdsOfTask(task, linkCtx), defaultKrIdsOfTask(task, linkCtx))),
+      setProposal: (taskId, krId, v) => updateUsers((p) => U.setProposal(p, viewerId, taskId, krId, v)),
       junctionOnly,
       setJunctionOnly,
       how: me.how,
-      setHow: (taskId, krId, text) => setUsers((p) => U.setHow(p, viewerId, taskId, krId, text)),
+      setHow: (taskId, krId, text) => updateUsers((p) => U.setHow(p, viewerId, taskId, krId, text)),
       personalLinks: me.personalLinks,
-      togglePersonalLink: (personalId, krId) => setUsers((p) => U.toggleLink(p, viewerId, personalId, krId)),
+      togglePersonalLink: (personalId, krId) => updateUsers((p) => U.toggleLink(p, viewerId, personalId, krId)),
       answers: me.answers,
-      setAnswer: (krId, patch) => setUsers((p) => U.setAnswer(p, viewerId, WEEK_START, krId, patch)),
+      setAnswer: (krId, patch) => updateUsers((p) => U.setAnswer(p, viewerId, WEEK_START, krId, patch)),
       picks: me.picks[WEEK_START] ?? [],
-      togglePick: (task) => setUsers((p) => U.togglePick(p, viewerId, WEEK_START, task)),
+      togglePick: (task) => updateUsers((p) => U.togglePick(p, viewerId, WEEK_START, task)),
       outcomeNotes,
       claims: me.claims,
-      answerClaim: (noteKey, task, v) => setUsers((p) => U.answerClaim(p, viewerId, task, noteKey, v)),
+      answerClaim: (noteKey, task, v) => updateUsers((p) => U.answerClaim(p, viewerId, task, noteKey, v)),
       confirmedLinks,
+      krDefs: krDefsState,
+      saveKrDef: async (krId, def, hint) => {
+        try {
+          await repository.saveKrDef(krId, def, hint, viewerId);
+        } catch (e) {
+          showToast(formatErrorForUser("保存できませんでした", e));
+          return false;
+        }
+        setKrDefs((p) => ({ ...p, [krId]: def }));
+        setRecords((p) => {
+          const r = p[krId] ?? { krId, updatedAt: "", prevAt: "", source: null };
+          const rec: KrRecord = { ...r };
+          if (hint) rec.hint = { ...hint, value: r.hint?.value ?? hint.start, prev: r.hint?.prev ?? hint.start };
+          else delete rec.hint;
+          return { ...p, [krId]: rec };
+        });
+        showToast("保存しました");
+        return true;
+      },
       toast,
       showToast,
     }),
-    [data, onOpenPersonalOkr, allTasks, nextCheckin, resources, WEEK_START, viewerId, reach, regTasks, history, assessHist, assess, learnings, mode, setMode, flowAll, setFlowAll, sidebarCollapsed, sel, guideOpen, drawerOpen, modal, junctionOnly, celebrations, changes, decisionsOpen, newDecisions, items, locked, imported, records, checkins, decisions, confirmedBy, linkCtx, me, outcomeNotes, confirmedLinks, toast, showToast],
+    [data, onOpenPersonalOkr, repository, persist, updateUsers, krDefsState, allTasks, nextCheckin, resources, WEEK_START, viewerId, reach, regTasks, history, assessHist, assess, learnings, mode, setMode, flowAll, setFlowAll, sidebarCollapsed, sel, guideOpen, drawerOpen, modal, junctionOnly, celebrations, changes, decisionsOpen, newDecisions, items, locked, imported, records, checkins, decisions, confirmedBy, linkCtx, me, outcomeNotes, confirmedLinks, toast, showToast],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+}
+
+/** いまのサイドバーの幅。本番は MainLayout が bridge に載せた実際の幅、見本（テスト）は自分のサイドバーの幅 */
+export function useSidebarPx(): number {
+  const { sidebarCollapsed } = useMock();
+  const real = useOkrMapBridge((s) => s.sidebarPx);
+  return real ?? sidebarWidth(sidebarCollapsed);
 }
 
 /** Kintone（正式な内容）とアプリの今期のTFの突き合わせ */

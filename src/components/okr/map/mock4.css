@@ -137,15 +137,19 @@ button.mk-seg-item:focus-visible { outline: 3px solid var(--color-brand); outlin
 }
 
 /* 図（760px 以上）＋詳細（360px）が横スクロールなしに並ぶのは、メイン領域の中身が 1166px 以上のとき。
-   メイン領域＝ウィンドウ幅 − サイドバー − 左右の余白48px。境目は nav.ts の panelNarrowPx と同じ値
-   （サイドバー160px なら 1373px、折りたたみ48px なら 1261px）。これより狭いときは詳細が右から出る引き出しになる */
+   メイン領域＝ウィンドウ幅 − サイドバー − 左右の余白48px。境目は nav.ts の panelNarrowPx と同じ値。
+   見本（テスト）はサイドバー160px なら 1373px、折りたたみ48px なら 1261px（下の2つ）。
+   本番（is-embedded）は MainLayout のサイドバーの幅が 140〜420px で変わるので、App が実際の幅から計算して is-narrow を付ける。
+   これより狭いときは詳細が右から出る引き出しになる */
+.mk-app.is-embedded.is-narrow .mk-flowwrap { grid-template-columns: minmax(0, 1fr); }
+.mk-app.is-embedded.is-narrow .mk-panel { position: fixed; top: 0; right: 0; bottom: 0; z-index: 45; width: min(420px, 100%); max-height: none; border-radius: 16px 0 0 16px; box-shadow: var(--shadow-lg); outline: none; pointer-events: auto; }
 @media (max-width: 1373px) {
-  .mk-app:not(.is-sb-collapsed) .mk-flowwrap { grid-template-columns: minmax(0, 1fr); }
-  .mk-app:not(.is-sb-collapsed) .mk-panel { position: fixed; top: 0; right: 0; bottom: 0; z-index: 45; width: min(420px, 100%); max-height: none; border-radius: 16px 0 0 16px; box-shadow: var(--shadow-lg); outline: none; pointer-events: auto; }
+  .mk-app:not(.is-embedded):not(.is-sb-collapsed) .mk-flowwrap { grid-template-columns: minmax(0, 1fr); }
+  .mk-app:not(.is-embedded):not(.is-sb-collapsed) .mk-panel { position: fixed; top: 0; right: 0; bottom: 0; z-index: 45; width: min(420px, 100%); max-height: none; border-radius: 16px 0 0 16px; box-shadow: var(--shadow-lg); outline: none; pointer-events: auto; }
 }
 @media (max-width: 1261px) {
-  .mk-app.is-sb-collapsed .mk-flowwrap { grid-template-columns: minmax(0, 1fr); }
-  .mk-app.is-sb-collapsed .mk-panel { position: fixed; top: 0; right: 0; bottom: 0; z-index: 45; width: min(420px, 100%); max-height: none; border-radius: 16px 0 0 16px; box-shadow: var(--shadow-lg); outline: none; pointer-events: auto; }
+  .mk-app:not(.is-embedded).is-sb-collapsed .mk-flowwrap { grid-template-columns: minmax(0, 1fr); }
+  .mk-app:not(.is-embedded).is-sb-collapsed .mk-panel { position: fixed; top: 0; right: 0; bottom: 0; z-index: 45; width: min(420px, 100%); max-height: none; border-radius: 16px 0 0 16px; box-shadow: var(--shadow-lg); outline: none; pointer-events: auto; }
 }
 @media (max-width: 700px) {
   .mk-head { gap: 8px; }
@@ -273,3 +277,11 @@ button.mk-seg-item:focus-visible { outline: 3px solid var(--color-brand); outlin
 .mk-mineline { margin: 0; padding: 10px 16px; border-radius: 12px; font-size: 14px; font-weight: 600; border: 1px solid var(--color-border-tertiary, #d6dbe6); }
 .mk-lg-you { background: #3b6fd4; }
 .mk-lg-others { background: rgba(59, 111, 212, 0.22); }
+
+/* KRの段の基準・証拠・手がかりを手で入れる欄（段階2） */
+.mk-krdef-form { display: flex; flex-direction: column; gap: 8px; margin: 8px 0 12px; padding: 10px; border: 1px solid var(--color-border-primary); border-radius: 10px; }
+.mk-krdef-row { display: flex; align-items: center; gap: 8px; }
+.mk-krdef-row > .mk-input { flex: 1; min-width: 0; }
+.mk-krdef-hint { display: flex; flex-wrap: wrap; gap: 8px; }
+.mk-krdef-hint .mk-input { width: 7em; }
+.mk-krdef-actions { display: flex; gap: 8px; }

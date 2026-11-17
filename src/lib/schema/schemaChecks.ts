@@ -746,4 +746,27 @@ export const SCHEMA_HEALTH_CHECKS: SchemaCheckDescriptor[] = [
     label: "タスクの親子の循環を拒否するトリガー関数（prevent_task_parent_cycle）が見つかりません",
     migration: "20261030_task_parent_cycle_guard.sql",
   },
+  // OKRモード（地図）の記録（段階2）。未適用だと地図は開けるが、記録の読み込みと保存が失敗する（Section 91）。
+  // 15本は同じマイグレーションで入るので、最初・最後に作る表と、RLS が頼る関数だけを見る。
+  {
+    id: "okr_kr_defs_table",
+    kind: "table",
+    table: "okr_kr_defs",
+    label: "OKRモードの記録の表（okr_kr_defs ほか15本）が見つかりません",
+    migration: "20261117_okr_map_records.sql",
+  },
+  {
+    id: "okr_tf_locks_table",
+    kind: "table",
+    table: "okr_tf_locks",
+    label: "OKRモードのTF構成の確定の表（okr_tf_locks）が見つかりません",
+    migration: "20261117_okr_map_records.sql",
+  },
+  {
+    id: "fn_okr_task_assignee_ids",
+    kind: "function",
+    name: "okr_task_assignee_ids",
+    label: "OKRモードの担当者判定の関数（okr_task_assignee_ids）が見つかりません",
+    migration: "20261117_okr_map_records.sql",
+  },
 ];

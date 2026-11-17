@@ -688,6 +688,7 @@ export const pastWeeks: Record<string, PastWeek[]> = {
 export function fixtureData(overrides: Partial<OkrMapData> = {}): OkrMapData {
   return {
     demo: true,
+    groupId: null,
     today: TODAY,
     weekStart: WEEK_START,
     periodName: PERIOD_NAME,

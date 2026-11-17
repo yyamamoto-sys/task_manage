@@ -1,7 +1,7 @@
 // 利用の広がり：仕事の「登録」がどこまであるか。画面には依存しない純粋関数だけを置く。
 // 成果（見立ての段・手がかりの数字）はチェックイン資料から取るので、誰が使っていても同じ。登録の有無で変わるのは仕事の側だけ。
 // 登録が無いことは「仕事が無い」ではない。ここでは「登録なし」と「登録あり」を区別するための判定を持つ。
-import { inPeriod, krIdsOfTask, PERSONAL_PJ, type LinkCtx } from "./logic";
+import { inPeriod, isAssignee, krIdsOfTask, PERSONAL_PJ, type LinkCtx } from "./logic";
 import type { Checkin, Task } from "./types";
 
 /** all＝全員が登録／pjs＝一部のPJだけ登録／solo＝見ている人の分だけ登録（モックの確認用の切替） */
@@ -12,7 +12,7 @@ export type Registration = "full" | "partial" | "none";
 /** アプリに登録された仕事。pjs は pjSubset のPJの仕事（PJに属さない個人の仕事は含めない）、solo は見ている人の仕事だけ */
 export function registeredTasks(all: Task[], reach: Reach, viewerId: string, pjSubset: string[]): Task[] {
   if (reach === "all") return all;
-  if (reach === "solo") return all.filter((t) => t.assigneeId === viewerId);
+  if (reach === "solo") return all.filter((t) => isAssignee(t, viewerId));
   return all.filter((t) => pjSubset.includes(t.pjId));
 }
 

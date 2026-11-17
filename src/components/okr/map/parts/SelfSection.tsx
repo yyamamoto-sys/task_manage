@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { krStyle, PERIOD_NAME, PERIOD_START, pastWeeks, TODAY, WEEK_START } from "../dataset";
-import { addDays, answerKey, buildSummaryText, buildup, formatMd, krIdsOfTask, picksOutcome, tasksMovedInWeek, weekKrIds, weeklyView } from "../logic";
+import { addDays, answerKey, buildSummaryText, buildup, formatMd, isAssignee, krIdsOfTask, picksOutcome, tasksMovedInWeek, weekKrIds, weeklyView } from "../logic";
 import { useMock } from "../state";
 import { effectiveEntries } from "../steps";
 import type { Effect, Match } from "../types";
@@ -108,7 +108,7 @@ function Reflect() {
                   <tr key={k}>
                     <td>{krName(k)}</td>
                     <td>{x.effect}</td>
-                    <td>{x.view}</td>
+                    <td>{x.view || weeklyView(tasksMovedInWeek(tasks, viewerId, w.weekStart).filter((t) => krIdsOfTask(t, linkCtx).includes(k)))}</td>
                     <td>{x.match}</td>
                   </tr>
                 ))}
@@ -123,7 +123,7 @@ function Reflect() {
 /** 本人の仕事のうち、成果につながったと本人が確かめたもの */
 function useMyOutcomes() {
   const { confirmedLinks, viewerId } = useMock();
-  return confirmedLinks.filter((c) => c.task.assigneeId === viewerId);
+  return confirmedLinks.filter((c) => isAssignee(c.task, viewerId));
 }
 
 function Buildup() {

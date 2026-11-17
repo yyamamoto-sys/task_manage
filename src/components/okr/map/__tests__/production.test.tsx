@@ -81,9 +81,9 @@ describe("adapter：本番のデータ → 地図の形", () => {
   });
 });
 
-describe("repository：段階1はメモリ上の空実装", () => {
+describe("repository：メモリ実装（テスト・ゲスト）", () => {
   it("空の記録を返し、KRごとの欄は空の形をそろえる。後から増えたKRにも空の欄を足す", async () => {
-    const rec = await memoryRepository.load({ groupId: G, krIds: ["k1"] });
+    const rec = await memoryRepository.load({ groupId: G, krIds: ["k1"], viewerId: "u1", year: 2026, quarter: "4Q", weekStart: "2026-11-16" });
     expect(rec.checkins).toEqual([]);
     expect(rec.kintoneRows).toBeNull();
     expect(rec.lock.locked).toBe(false);

@@ -58,5 +58,79 @@ OKRモードを、モック（ブランチ `mock/okr-mode` の `src/okr-mock/`�
 - 印刷の CSS は `body:has(.mk-app)` に絞った（カレンダーの印刷に影響させない）。
 
 ### 未解決
-- 詳細の列が図と並ぶ幅（`mock4.css` の 1373px／1261px）は、モックのサイドバー幅 160px／48px を前提にしている。本番のサイドバーは 140〜420px で可変なので、幅を広げた人は早めに引き出しになる。
-- 主担当以外の担当者（`assignee_member_ids` の2人目以降）は「本人の仕事」に入らない。
+- ~~詳細の列が図と並ぶ幅は、モックのサイドバー幅 160px／48px を前提にしている~~ → 段階2で解消（下記）。
+- ~~主担当以外の担当者は「本人の仕事」に入らない~~ → 段階2で解消（下記）。
+
+---
+
+## 91-2. 段階2：記録の表と Supabase への保存（2026-11-17・feature/okr-v2・版は上げない）
+
+段階1の `memoryRepository` に、Supabase に保存する実装 `supabaseRepository.ts`（`createSupabaseRepository()`）を足した。開き直しても記録が消えない。ゲストとテストは `memoryRepository` のまま（`OkrMapView` が `isGuestMode()` で選ぶ。Section 23）。
+
+### マイグレーション
+
+`supabase/migrations/20261117_okr_map_records.sql`（冪等・末尾に確認の DO ブロック）。`schema.sql` に同じ内容と `$grant_tables$` の15本を足した。`schemaChecks.ts` に3項目（`okr_kr_defs`・`okr_tf_locks`・関数 `okr_task_assignee_ids`）。**MIN_CLIENT_VERSION は上げない**（新しい表の追加だけ）。
+
+**適用前に本番で確かめること**（Section 58。`schema.sql` ではなく実体を見る）：
+
+```sql
+-- 1) RLS が頼る関数が本番にあるか（6行返ればよい）
+SELECT proname FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+ WHERE n.nspname = 'public'
+   AND proname IN ('current_member_id','current_member_group_ids','current_member_is_super_admin','task_group_ids','personal_kr_owner_member_id','update_updated_at');
+-- 2) 同じ名前の表がまだ無いか（okr_analyses だけが返ればよい）
+SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name LIKE 'okr\_%';
+-- 3) 担当者の判定に使う列があるか（4行）
+SELECT column_name, udt_name FROM information_schema.columns
+ WHERE table_schema = 'public' AND table_name = 'tasks' AND column_name IN ('assignee_member_id','assignee_member_ids','group_ids','is_deleted');
+```
+
+`tasks.assignee_member_ids` は `text[]`（`_text`）であること（`okr_task_assignee_ids` が `assignee_member_id` と連結する）。
+
+### 表（15本）と RLS
+
+〔全員〕＝部署（兼務込み `current_member_group_ids()`）の行＋全社スーパー管理者。〔本人〕＝`member_id = current_member_id()` の行だけ。どの表も **SELECT／INSERT／UPDATE のポリシーだけで DELETE は作らない**（物理削除しない。取り消しは `is_deleted`・claims は `status`）。`FOR ALL` は使わない。
+
+| 表 | RLS |
+|---|---|
+| okr_kr_defs（kr_id 一意・bands jsonb・evidence・hint_unit/start/target/direction） | 〔全員〕。group_id は key_results からトリガー |
+| okr_checkins（group_id・checkin_date・title・confirmed_by/at） | 〔全員〕。group_id は画面が送り、RLS が自分の部署か確かめる |
+| okr_resources（checkin・file_name・kind・reading jsonb） | 〔全員〕。表だけ（書き込みは段階3） |
+| okr_kr_assessments（checkin・kr・resource・value・summary・basis・source・hint_value） | 〔全員〕。resource_id が NULL の行＝その回に確定した手がかりの値 |
+| okr_learnings／okr_decisions | 〔全員〕 |
+| okr_outcome_notes（kr_id＋note_key 一意・sources/links jsonb） | 〔全員〕 |
+| okr_outcome_claims（note・task・member・pending/yes/no） | 読み＝本人の行は全件、他人の行は yes だけ（同じ部署）。作る＝同じ部署の人が、その仕事の担当者あてに pending でだけ。答える（UPDATE）＝本人だけ |
+| okr_task_kr_links（task_id 一意・kr_ids） | 読み＝その仕事が見える人（`task_group_ids` と自分の部署が重なる）。書き＝担当者本人（`okr_task_assignee_ids` に自分が入る＝主担当・副担当） |
+| okr_task_kr_how／okr_proposal_choices／okr_weekly_answers／okr_weekly_picks | 〔本人〕 |
+| okr_personal_kr_links（member・personal_kr・kr。多対多） | 〔本人〕＋書くときは矢印の元の個人OKRも本人のもの（`personal_kr_owner_member_id`） |
+| okr_tf_locks（group・年・四半期 一意・locked_on/by・snapshot jsonb） | 〔全員〕 |
+
+- **group_id は画面から送らせない**（偽れないように）：KR を持つ表は key_results から、回を持つ表（resources・decisions）は okr_checkins から、claims は outcome_notes から、`BEFORE INSERT OR UPDATE` のトリガーで入れる（kr_quarter_plans と同じ流儀）。RLS の WITH CHECK はトリガーのあとの行を見る。
+- Section 39：`current_member_*()` はすべて `(SELECT ...)` で包み、単数の部署は `@> ARRAY[group_id]`。`task_group_ids(task_id)`・`okr_task_assignee_ids(task_id)`・`personal_kr_owner_member_id(...)` は行の列を引数に取るので InitPlan にはならない（包まない。既存の `quarterly_objective_group_id(...)` と同じ）。
+- GRANT は同じマイグレーションで `authenticated`・`service_role` に select/insert/update/delete、`anon` は REVOKE。
+- 部署を変える担当者の付け替えなどで、仕事が自分の担当でなくなると、その仕事のつなぎ先は書けなくなる（読みは残る）。
+
+### 画面側
+
+- **読み込み**：`load({ groupId, krIds, viewerId, year, quarter, weekStart })`。一覧はすべて `fetchAllRows`（Section 61）。行 → 画面の形は純粋関数 `buildRecords`（`__tests__/persistence.test.ts`）。読み込みに失敗したら `formatErrorForUser` の文を地図の代わりに出す（Section 15）。読み直しは「部署・本人・週・四半期・KRの顔ぶれ」が変わったときだけ（世代番号で古い応答を捨てる）。
+- **保存**：画面の状態を先に変え、裏で保存する。失敗したらトーストで `formatErrorForUser` の文を出す（画面の状態は戻さない）。
+  - 人ごとの状態（つなぎ先・採否・どう役立つか・個人OKRの矢印・振り返りの答え・今週やる・結びつきへの答え）は、`updateUsers` が変化の前後を `repository.saveUser` に渡し、`diffUser` が書く行だけを出す。つなぎ先は仕事1件1行なので、全員分を足し合わせたもの（`viewerChange`）で比べる。
+  - 資料の確定は `confirmSaveOf`（confirm.ts）が今回の回×選んだ資料の分を取り出し、`saveConfirm` が「同じ資料の分を is_deleted にしてから入れ直す」。結びつきは担当者全員あてに pending で作る（すでにある行は上書きしない＝`ignoreDuplicates`）。段階2の本番では資料（okr_resources）がまだ作られないので、確定の保存は段階3から動く。
+  - 次の回の ID は uuid（`OkrMapView` が画面を開いたときに1つ作る）。
+  - Kintone の取り込みで確定したら `okr_tf_locks` に1行（その時点の O・KR・TF の並び）。
+- **KRの段の基準・証拠・手がかりの定めを手で入れる欄**：KR の詳細の「段の基準・証拠・手がかりを入れる／直す」（`parts/KrDefEditor.tsx`）。明示保存・書きかけは `useUnsavedEditor`（Section 46）。保存は `saveWithLock`（Section 5。行の updated_at で競合を検知し、競合したら保存せず原因を出す。開き直すと最新になる）。手がかりの値（value／prev）は資料の確定で入る。値がまだ無い KR は期首を value・prev にする。
+- **同時編集**：KRの定めだけ楽観ロック。他は1人の本人の行か、追記・置き換え型なので「後から書いた方が残る」。
+
+### 段階1の判断待ちへの対応
+
+- 保留タスクは未着手のまま（変更なし）。
+- **副担当**：`Task.assigneeIds`（adapter が `assignee_member_ids` から作る。2人以上のときだけ）と `isAssignee(t, id)`（logic.ts）。「わたし」の仕事・今週やる・振り返り・つなぎ先の選び直し・結びつきへの答えは、主担当・副担当のどちらでも本人。名前を出すのは主担当。つなぎ先は仕事1件に1つで、副担当が選び直すと主担当の手元の分は外れる（`setOverride`）。結びつきは担当者全員に届き、だれか1人が「そのとおり」と答えれば全員に見える。
+- **個人OKR**：地図の左端は `personal_krs` の今期（暦年＝fiscal_year・`currentQuarter()`）・本人の分（`label`）。KRへの矢印は `okr_personal_kr_links`。`personal_krs.key_result_id`（個人OKR画面の取込でつく既存の紐づけ）は矢印の初期値に**使っていない**（判断待ち）。
+- **詳細の列が図と並ぶ境目**：`panelNarrowPx(sidebarPx)`＝実際のサイドバーの幅＋48＋1166−1。MainLayout がサイドバーの幅（展開時 140〜420・折りたたみ 48）を `bridge.ts` の `sidebarPx` に載せ、App が `useNarrow` で判定して `is-narrow` を付ける（CSS は `.mk-app.is-embedded.is-narrow`）。見本（テスト）の固定幅の `@media` は `:not(.is-embedded)` に絞った。右の AI 相談パネルを開いたときの幅は計算に入れていない。
+- **`dataset.ts` の `export let` を Context に改めるのは見送った。** 理由：部品だけでなく `ui.tsx` の `krLabel`／`krName`／`nameOf`／`krListText` などの普通の関数（フックではない）が、部品・純粋関数の両方から約100か所で呼ばれていて、Context にするとそれらをすべてフックにするか引数でデータを渡す形に書き換えることになる。段階2の保存と同時に入れると差分が読めなくなるので、地図が1つしか描かれない前提（段階1のまま）を保ち、KRの定めを直したときは `MockProvider` が直した分を重ねたデータで `setActiveData` し直す形にした。やるなら段階4のあと、`ui.tsx` の関数を `useOkrMapData()` 経由に寄せるところから。
+
+### 未解決・判断待ち
+
+- `okr_resources.reading` の形（段階3で決める）。それまで読み込みは資料を返さない。
+- 過去の週の「AIのまとめ」は保存しない（その週に動いた仕事から作り直す）。仕事の状態が後で変わると、まとめも変わる。
+- `personal_krs.key_result_id` を矢印の初期値にするか。

@@ -5,7 +5,7 @@ import { flowViewOf, selectionAfterFlowSwitch, visibleTaskIds, type FlowView } f
 import { MineLine } from "./MineLine";
 import { proposalKey } from "../userState";
 import { aiCandidates, krBands, krStyle, PERIOD_START, personalOkrs, PERSONAL_NAME, MINE_COLOR, pjsInit } from "../dataset";
-import { krIdsOfTask, PERSONAL_PJ } from "../logic";
+import { isAssignee, krIdsOfTask, PERSONAL_PJ } from "../logic";
 import { hasStretch } from "../steps";
 import { krRegistration, reachCounts, reachNote, workPhrase } from "../reach";
 import { useMock } from "../state";
@@ -474,7 +474,7 @@ export function FlowDiagram() {
                     const tk = krIdsOfTask(t, linkCtx);
                     const isJ = tk.length >= 2;
                     const starred = starredTasks.has(t.id);
-                    const isYou = isAll && t.assigneeId === viewerId;
+                    const isYou = isAll && isAssignee(t, viewerId);
                     return (
                       <SvgButton
                         key={t.id}

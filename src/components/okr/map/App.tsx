@@ -1,8 +1,9 @@
 import { useEffect, useRef } from "react";
 import { useOkrMapBridge } from "./bridge";
 import type { OkrMapData } from "./dataset";
-import { scrollToId, sidebarKrRows } from "./nav";
-import { MockProvider, useMock, type InitialView } from "./state";
+import { panelNarrowPx, scrollToId, sidebarKrRows } from "./nav";
+import type { OkrMapRepository } from "./repository";
+import { MockProvider, useMock, useSidebarPx, type InitialView } from "./state";
 import { CompareTable } from "./parts/CompareTable";
 import { DecisionsFold } from "./parts/DecisionsFold";
 import { DetailPanel } from "./parts/DetailPanel";
@@ -15,7 +16,7 @@ import { Sidebar } from "./parts/Sidebar";
 import { TeamBand } from "./parts/TeamBand";
 import { OBlock, RecentLearnings } from "./parts/OBlock";
 import { GoalsScreen } from "./screens/GoalsScreen";
-import { Modal } from "./ui";
+import { Modal, useNarrow } from "./ui";
 
 function Header({ padRight }: { padRight?: string }) {
   const { setModal, locked } = useMock();
@@ -135,6 +136,8 @@ function PublishSidebar() {
 
 function Shell({ embedded, headerPadRight }: { embedded: boolean; headerPadRight?: string }) {
   const { toast, mode, pageAnchor, sidebarCollapsed, drawerOpen, modal, setModal } = useMock();
+  // 本番は MainLayout のサイドバーの実際の幅で、図と詳細を並べられるかを決める（見本は mock4.css の幅）
+  const narrow = useNarrow(panelNarrowPx(useSidebarPx()));
 
   // ページを切り替えたら先頭へ戻す（場所を指定されたときはそこへ）。最初の表示では動かさない
   const mainRef = useRef<HTMLElement>(null);
@@ -151,7 +154,7 @@ function Shell({ embedded, headerPadRight }: { embedded: boolean; headerPadRight
   }, [mode, pageAnchor]);
 
   return (
-    <div className={`mk-app${sidebarCollapsed ? " is-sb-collapsed" : ""}${embedded ? " is-embedded" : ""}`}>
+    <div className={`mk-app${sidebarCollapsed ? " is-sb-collapsed" : ""}${embedded ? " is-embedded" : ""}${embedded && narrow ? " is-narrow" : ""}`}>
       {embedded && <PublishSidebar />}
       <div className="mk-shell">
         {!embedded && <Sidebar />}
@@ -207,11 +210,13 @@ export interface OkrMapAppProps {
   /** 見出しの右側に空ける幅（右上のベルと重ならないように） */
   headerPadRight?: string;
   onOpenPersonalOkr?: () => void;
+  /** 記録の保存先（既定はメモリ） */
+  repository?: OkrMapRepository;
 }
 
-export default function App({ initial, data, embedded = false, headerPadRight, onOpenPersonalOkr }: OkrMapAppProps) {
+export default function App({ initial, data, embedded = false, headerPadRight, onOpenPersonalOkr, repository }: OkrMapAppProps) {
   return (
-    <MockProvider initial={initial} data={data} onOpenPersonalOkr={onOpenPersonalOkr}>
+    <MockProvider initial={initial} data={data} onOpenPersonalOkr={onOpenPersonalOkr} repository={repository}>
       <Shell embedded={embedded} headerPadRight={headerPadRight} />
     </MockProvider>
   );

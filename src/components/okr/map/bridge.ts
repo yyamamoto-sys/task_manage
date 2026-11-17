@@ -20,13 +20,18 @@ export interface OkrMapSidebarActions {
 interface BridgeState {
   view: OkrMapSidebarView | null;
   actions: OkrMapSidebarActions | null;
+  /** MainLayout のサイドバーの実際の幅（px。折りたたみ中は 48）。見本（テスト）では null */
+  sidebarPx: number | null;
   publish: (view: OkrMapSidebarView, actions: OkrMapSidebarActions) => void;
   clear: () => void;
+  setSidebarPx: (px: number) => void;
 }
 
 export const useOkrMapBridge = create<BridgeState>((set) => ({
   view: null,
   actions: null,
+  sidebarPx: null,
   publish: (view, actions) => set({ view, actions }),
   clear: () => set({ view: null, actions: null }),
+  setSidebarPx: (px) => set((s) => (s.sidebarPx === px ? s : { sidebarPx: px })),
 }));

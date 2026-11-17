@@ -15,8 +15,12 @@ const MAIN_SIDE_PADDING = 48;
 
 export const sidebarWidth = (collapsed: boolean) => (collapsed ? SIDEBAR_W_COLLAPSED : SIDEBAR_W);
 
-/** ウィンドウ幅がこの値以下だと、図と詳細は並べられない（詳細は右から出る引き出しになる）。mock4.css の2つの幅と同じ値 */
-export const panelNarrowPx = (collapsed: boolean) => sidebarWidth(collapsed) + MAIN_SIDE_PADDING + MAIN_NEEDS - 1;
+/**
+ * ウィンドウ幅がこの値以下だと、図と詳細は並べられない（詳細は右から出る引き出しになる）。
+ * sidebarPx は実際のサイドバーの幅（本番は MainLayout が bridge に載せる 140〜420・折りたたみ 48）。
+ * 見本（テスト）は 160／48 で、mock4.css の2つの幅（1373／1261）と同じ値になる
+ */
+export const panelNarrowPx = (sidebarPx: number) => sidebarPx + MAIN_SIDE_PADDING + MAIN_NEEDS - 1;
 
 /** ページを切り替える。開いていた詳細は閉じる。同じページを押しても何も変えない */
 export function switchPage(view: { mode: ViewMode; sel: Selection }, to: ViewMode): { mode: ViewMode; sel: Selection } {

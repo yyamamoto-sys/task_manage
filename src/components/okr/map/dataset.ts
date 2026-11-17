@@ -4,7 +4,7 @@
 // export let は読み手から常に最新の値が見える）。部品の呼び出し箇所（約100か所）を書き換えずに
 // 実データへ切り替えるための形で、地図は同時に1つしか描かない前提に立つ。
 import { krStyleAt } from "./palette";
-import type { OkrMapLock, OkrMapRecords } from "./repository";
+import type { OkrMapLock, OkrMapRecords, UserRecord } from "./repository";
 import type { History } from "./reach";
 import type { AiCandidate, AssessEntry, Checkin, Decision, KintoneRow, KrBands, KrDef, KrRecord, Learning, Member, OkrItem, PastWeek, PersonalOkr, Pj, Quarter, Resource, Task } from "./types";
 
@@ -17,6 +17,8 @@ export interface QuarterInfo {
 
 /** 本番の表から作る部分（adapter.ts が作る） */
 export interface OkrMapCore {
+  /** 表示部署（記録の保存先）。部署が無いときは null */
+  groupId: string | null;
   today: string;
   /** 今週の月曜 */
   weekStart: string;
@@ -79,6 +81,7 @@ export let pastWeeks: Record<string, PastWeek[]> = {};
 export let overridesInit: Record<string, Record<string, string[]>> = {};
 export let personalLinksInit: Record<string, { personalId: string; krId: string }[]> = {};
 export let picksInit: Record<string, string[]> = {};
+export let userRecordsInit: Record<string, UserRecord> = {};
 export let personalOkrs: PersonalOkr[] = [];
 export let aiCandidates: Record<string, AiCandidate[]> = {};
 export let howOptions: Record<string, string[]> = {};
@@ -129,6 +132,7 @@ export function setActiveData(d: OkrMapData): void {
   overridesInit = d.overrides;
   personalLinksInit = d.personalLinks;
   picksInit = d.picks;
+  userRecordsInit = d.userRecords ?? {};
   personalOkrs = d.personalOkrs;
   aiCandidates = d.aiCandidates;
   howOptions = d.howOptions;

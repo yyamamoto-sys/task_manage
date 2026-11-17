@@ -37,7 +37,10 @@ export interface Task {
   id: string;
   pjId: string;
   title: string;
+  /** 主担当（名前を出すのはこの人） */
   assigneeId: string;
+  /** 主担当以外も含む担当者全員（本番の assignee_member_ids）。無ければ主担当だけ */
+  assigneeIds?: string[];
   /** YYYY-MM-DD。本番のタスクは期日なしがありうる */
   due: string | null;
   status: TaskStatus;
@@ -234,7 +237,8 @@ export interface KrAnswer {
 
 export interface PastWeek {
   weekStart: string;
-  answers: Record<string, { effect: Effect; match: Match; view: string }>;
+  /** view＝その週のAIのまとめ。本番は保存しないので空（画面がその週の仕事から作り直す）。match は答えていなければ無い */
+  answers: Record<string, { effect: Effect; match?: Match; view: string }>;
 }
 
 /** Kintone（正式な内容）から読んだTFの1行 */

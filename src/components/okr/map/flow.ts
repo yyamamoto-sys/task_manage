@@ -1,7 +1,7 @@
 // 地図（PJ → TF → KR → O）の集計と配置。画面には依存しない純粋関数だけを置く。
 // PJは必ずTFを通ってKRへ届く（PJとKRを直接つなぐ帯は作らない）。
 // 帯の太さは「件数」ではなく「割合」。KRとOの高さは固定なので、仕事が何百件になっても図の大きさは変わらない。
-import { inPeriod, isOpen, krIdsOfTask, PERSONAL_PJ, type LinkCtx } from "./logic";
+import { inPeriod, isAssignee, isOpen, krIdsOfTask, PERSONAL_PJ, type LinkCtx } from "./logic";
 import type { Task } from "./types";
 
 export const PJ_MIN = 44;
@@ -52,7 +52,7 @@ export interface FlowCounts {
  */
 export function flowCounts(args: { tasks: Task[]; ctx: LinkCtx; ownerId: string; scope: FlowScope; periodStart: string }): FlowCounts {
   const { tasks, ctx, ownerId, scope, periodStart } = args;
-  const scoped = tasks.filter((t) => inPeriod(t, periodStart) && (scope === "team" || t.assigneeId === ownerId));
+  const scoped = tasks.filter((t) => inPeriod(t, periodStart) && (scope === "team" || isAssignee(t, ownerId)));
   const edgeMap = new Map<string, EdgeCount>();
   const linkedByPj: Record<string, Task[]> = {};
   const loose: Task[] = [];
