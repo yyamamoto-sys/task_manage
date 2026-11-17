@@ -284,3 +284,43 @@ SELECT tgname FROM pg_trigger WHERE tgrelid = 'public.key_results'::regclass AND
 
 - ブラウザでの見え方は確かめていない（山本さんの実機確認待ち）。
 - 個人OKRのモーダル・AIパネル・週のカードの中身は角丸と主ボタンだけが変わり、配置は今のまま。
+
+---
+
+## 91-6. 最終点検（独立レビュー2本）の指摘（2026-11-18・feature/okr-v2・版は上げない）
+
+マイグレーションはまだ未適用なので同じファイルを直し、`schema.sql` の 0)〜4b) も一致させた。
+
+### マイグレーション（M1〜M10）
+
+| # | 指摘 | 対応 |
+|---|---|---|
+| M1（重大） | `okr_stamp_member` の `IF TG_TABLE_NAME = 'x' AND NEW.列` は、列の無い表で式の準備が失敗し、authenticated からの INSERT/UPDATE が15本すべて落ちる（SQL Editor では v_me が NULL で先に RETURN するので見えない） | 表の名前の IF の内側の別の IF で列を読む。OLD も TG_OP の IF の内側でだけ読む。`okr_check_kr_in_checkin`／`okr_check_decision_krs` の `TG_OP = 'UPDATE' AND … OLD` も同じ形に直した。`stage3Migration.test.ts` が全関数の IF の条件を検査する（直す前の本文に戻すと赤になることを確認） |
+| M2（重大） | 確認ブロックは実行時の失敗を検出できない | 煙試験 `docs/dev/verify_20261117_okr_map_smoke.sql`（既存の `verify_*.sql` の置き場と流儀に合わせた）。メールを1か所差し替えて流す。authenticated・同じ JWT で12段を1件ずつ試して取り消し、最後に ROLLBACK |
+| M3 | 同時確定で二重に入る | RPC の先頭で `pg_advisory_xact_lock(hashtext('okr_confirm_checkin:'||回ID))`。後の人は先の人の分を取り消してから入れ直すので、見立てが空の確定でも学び・決定事項は二重にならない。見立ての一意制約（23505）は画面で「ほかの人が先に確定しました」 |
+| M4 | payload に同じ (kr_id, note_key) が2つあると全体が失敗 | `SELECT DISTINCT ON (kr_id, note_key)`（先に出たものを採る）。**取り消し済みの記述は復活させない**（`ON CONFLICT … DO UPDATE … WHERE n.is_deleted = false`＝和集合もしない。その記述への結びつきも作らない） |
+| M5 | KR の部署移動で、回・資料・決定事項は元の部署に残り、KR と回の部署の一致が事後に崩れる | **仕様として受け入れる**（コード変更なし）。KR の部署移動は管理者の稀な操作。移動後は、KR を持つ表（見立て・学び・成果の記述・結びつき）は新しい部署へ移り、元の部署の回からその KR の見立ては見えなくなる。回・資料・決定事項は元の部署に残る |
+| M6 | 成果の記述に部署の一致の検査が無い | `trg_okr_outcome_notes_check`（`okr_check_kr_in_checkin` を共用。回の無い行は見ない。資料の列は持たないので読まない） |
+| M7 | claims の INSERT で仕事と記述の部署を見ていない | WITH CHECK に `task_group_ids(task_id) @> ARRAY[group_id]`（group_id は記述からトリガーで入る） |
+| M8 | 取り消し済みの回を確定すると復活しうる | RPC で取り消し済みの回は例外（SQLSTATE 55000） |
+| M9 | deleted_by の取り扱い | is_deleted が false→true になったら deleted_by を無条件に本人。取り消し済みの行で deleted_by を消す・書き換えることはできない（元の値に戻す） |
+| M10 | PJ 招待で入った部署外の担当者 | **仕様として明記**（コード変更なし）。つなぎ先（`okr_task_kr_links`）と結びつき（claims）は、仕事の部署（tasks.group_ids）に自分の部署が入っている人だけが対象。招待で別部署から入った担当者は、その仕事のつなぎ先を変えられず、結びつきも届かない（`okr_task_assignee_ids` が自分の部署の仕事にしか答えないため） |
+
+### 煙試験（適用後に流す）
+
+`docs/dev/verify_20261117_okr_map_smoke.sql`。差し替えるのは ★ の1行（`set_config('smoke.email', '…')`。`current_member_id()` がメールで本人を引くので uid ではなくメール）。最後の表の judge がすべて OK（試すデータが無い段は SKIP）ならよい。
+
+| # | 試すこと | 期待 |
+|---|---|---|
+| 1 | okr_kr_defs を入れる（updated_by に別人を送る） | ok:1/true（本人になる。M1 の INSERT の経路） |
+| 2 | okr_kr_defs を直す | ok:1/true（M1 の UPDATE の経路） |
+| 3 | okr_confirm_checkin（最小） | ok:1/true（確定した人は本人） |
+| 4 | 確定で学びを1件（自分の部署の KR） | ok:1/1 |
+| 5 | 確定で他部署の KR の学び | error 23514（全体が取り消される） |
+| 6 | okr_weekly_answers に自分の答え | ok:1 |
+| 7 | okr_weekly_answers に他人の答え | denied |
+| 8 | 他部署の KR の okr_kr_defs | denied |
+| 9 | 結びつきに答える | ok:1 |
+| 10 | 結びつきの仕事を付け替える | denied |
+| 11 | okr_task_assignee_ids（他部署の仕事） | ok:1/true（NULL） |
+| 12 | 取り消し済みの回を確定 | error 55000 |

@@ -126,7 +126,11 @@ END;
 $fn_okr_sync_group_from_note$;
 
 -- updated_by（と confirmed_by・locked_by・deleted_by）を書いた本人にする。画面が送った値は使わない。
--- メンバーとして解決できない（サービスロール等）ときは送られた値のまま
+-- メンバーとして解決できない（サービスロール等）ときは送られた値のまま。
+-- 🔴 一部の表にしか無い列（confirmed_by 等）は、必ず「表の名前の IF」の内側の別の IF で読む。
+--   `TG_TABLE_NAME = 'x' AND NEW.列` と1つの式に書くと、PL/pgSQL は式を丸ごと準備するので、
+--   その列が無い表では「record "new" has no field」で INSERT/UPDATE がすべて失敗する（91-6 M1）。
+--   OLD も同じ理由で、TG_OP = 'UPDATE' の IF の内側でだけ読む。
 CREATE OR REPLACE FUNCTION public.okr_stamp_member()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -139,16 +143,31 @@ BEGIN
     RETURN NEW;
   END IF;
   NEW.updated_by := v_me;
-  IF TG_TABLE_NAME = 'okr_checkins' AND NEW.confirmed_by IS NOT NULL
-     AND (TG_OP = 'INSERT' OR NEW.confirmed_by IS DISTINCT FROM OLD.confirmed_by OR NEW.confirmed_at IS DISTINCT FROM OLD.confirmed_at) THEN
-    NEW.confirmed_by := v_me;
+  IF TG_TABLE_NAME = 'okr_checkins' THEN
+    IF NEW.confirmed_by IS NOT NULL THEN
+      IF TG_OP = 'INSERT' THEN
+        NEW.confirmed_by := v_me;
+      ELSIF NEW.confirmed_by IS DISTINCT FROM OLD.confirmed_by OR NEW.confirmed_at IS DISTINCT FROM OLD.confirmed_at THEN
+        NEW.confirmed_by := v_me;
+      END IF;
+    END IF;
   END IF;
-  IF TG_TABLE_NAME = 'okr_tf_locks' AND NEW.locked_by IS NOT NULL THEN
-    NEW.locked_by := v_me;
+  IF TG_TABLE_NAME = 'okr_tf_locks' THEN
+    IF NEW.locked_by IS NOT NULL THEN
+      NEW.locked_by := v_me;
+    END IF;
   END IF;
-  IF TG_TABLE_NAME NOT IN ('okr_outcome_claims', 'okr_weekly_answers') AND NEW.deleted_by IS NOT NULL
-     AND (TG_OP = 'INSERT' OR NEW.deleted_by IS DISTINCT FROM OLD.deleted_by OR NEW.is_deleted IS DISTINCT FROM OLD.is_deleted) THEN
-    NEW.deleted_by := v_me;
+  -- 取り消し（is_deleted が false→true）をしたのは必ず本人。取り消し済みの行で deleted_by を消す・書き換えることはできない
+  IF TG_TABLE_NAME NOT IN ('okr_outcome_claims', 'okr_weekly_answers') THEN
+    IF TG_OP = 'INSERT' THEN
+      IF NEW.is_deleted THEN
+        NEW.deleted_by := v_me;
+      END IF;
+    ELSIF NEW.is_deleted AND NOT OLD.is_deleted THEN
+      NEW.deleted_by := v_me;
+    ELSIF NEW.is_deleted AND OLD.is_deleted THEN
+      NEW.deleted_by := OLD.deleted_by;
+    END IF;
   END IF;
   RETURN NEW;
 END;
@@ -189,7 +208,9 @@ BEGIN
 END;
 $fn_okr_checkins_guard$;
 
--- 見立て・学び：KR と回の部署が同じであること。資料はその回のものであること（入れたとき・付け替えたときだけ見る）
+-- 見立て・学び・成果の記述：KR と回の部署が同じであること。資料はその回のものであること（入れたとき・付け替えたときだけ見る）。
+-- 成果の記述は回（最初に確定した回）が無い行があるので、そのときは見ない。資料の列は持たない。
+-- 列と OLD は、その列を持つ表・UPDATE のときだけ、内側の IF で読む（stamp と同じ理由。91-6 M1）
 CREATE OR REPLACE FUNCTION public.okr_check_kr_in_checkin()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -199,20 +220,32 @@ AS $fn_okr_check_kr_in_checkin$
 DECLARE
   v_ci text;
   v_kr text;
+  v_has_resource boolean := TG_TABLE_NAME IN ('okr_kr_assessments', 'okr_learnings');
 BEGIN
-  IF TG_OP = 'UPDATE' AND NEW.kr_id IS NOT DISTINCT FROM OLD.kr_id
-     AND NEW.checkin_id IS NOT DISTINCT FROM OLD.checkin_id
-     AND NEW.resource_id IS NOT DISTINCT FROM OLD.resource_id THEN
+  IF NEW.checkin_id IS NULL THEN
     RETURN NEW;
+  END IF;
+  IF TG_OP = 'UPDATE' THEN
+    IF NEW.kr_id IS NOT DISTINCT FROM OLD.kr_id AND NEW.checkin_id IS NOT DISTINCT FROM OLD.checkin_id THEN
+      IF NOT v_has_resource THEN
+        RETURN NEW;
+      END IF;
+      IF NEW.resource_id IS NOT DISTINCT FROM OLD.resource_id THEN
+        RETURN NEW;
+      END IF;
+    END IF;
   END IF;
   SELECT c.group_id INTO v_ci FROM public.okr_checkins c WHERE c.id = NEW.checkin_id;
   SELECT kr.group_id INTO v_kr FROM public.key_results kr WHERE kr.id = NEW.kr_id;
   IF v_ci IS NULL OR v_kr IS DISTINCT FROM v_ci THEN
     RAISE EXCEPTION 'KR とチェックインの回の部署が一致しません（%）', TG_TABLE_NAME USING ERRCODE = '23514';
   END IF;
-  IF NEW.resource_id IS NOT NULL
-     AND NOT EXISTS (SELECT 1 FROM public.okr_resources r WHERE r.id = NEW.resource_id AND r.checkin_id = NEW.checkin_id) THEN
-    RAISE EXCEPTION '資料がこの回のものではありません（%）', TG_TABLE_NAME USING ERRCODE = '23514';
+  IF v_has_resource THEN
+    IF NEW.resource_id IS NOT NULL THEN
+      IF NOT EXISTS (SELECT 1 FROM public.okr_resources r WHERE r.id = NEW.resource_id AND r.checkin_id = NEW.checkin_id) THEN
+        RAISE EXCEPTION '資料がこの回のものではありません（%）', TG_TABLE_NAME USING ERRCODE = '23514';
+      END IF;
+    END IF;
   END IF;
   RETURN NEW;
 END;
@@ -228,10 +261,12 @@ AS $fn_okr_check_decision_krs$
 DECLARE
   v_ci text;
 BEGIN
-  IF TG_OP = 'UPDATE' AND NEW.kr_ids IS NOT DISTINCT FROM OLD.kr_ids
-     AND NEW.checkin_id IS NOT DISTINCT FROM OLD.checkin_id
-     AND NEW.resource_id IS NOT DISTINCT FROM OLD.resource_id THEN
-    RETURN NEW;
+  IF TG_OP = 'UPDATE' THEN
+    IF NEW.kr_ids IS NOT DISTINCT FROM OLD.kr_ids
+       AND NEW.checkin_id IS NOT DISTINCT FROM OLD.checkin_id
+       AND NEW.resource_id IS NOT DISTINCT FROM OLD.resource_id THEN
+      RETURN NEW;
+    END IF;
   END IF;
   SELECT c.group_id INTO v_ci FROM public.okr_checkins c WHERE c.id = NEW.checkin_id;
   IF v_ci IS NULL
@@ -618,8 +653,8 @@ BEGIN
   CREATE TRIGGER trg_okr_checkins_guard BEFORE UPDATE ON public.okr_checkins
     FOR EACH ROW EXECUTE FUNCTION public.okr_checkins_guard();
 
-  -- KR と回の部署の一致
-  FOREACH t IN ARRAY ARRAY['okr_kr_assessments', 'okr_learnings'] LOOP
+  -- KR と回の部署の一致（成果の記述は最初に確定した回と。回の無い行は見ない）
+  FOREACH t IN ARRAY ARRAY['okr_kr_assessments', 'okr_learnings', 'okr_outcome_notes'] LOOP
     EXECUTE format('DROP TRIGGER IF EXISTS trg_%s_check ON public.%I', t, t);
     EXECUTE format('CREATE TRIGGER trg_%s_check BEFORE INSERT OR UPDATE ON public.%I FOR EACH ROW EXECUTE FUNCTION public.okr_check_kr_in_checkin()', t, t);
   END LOOP;
@@ -716,7 +751,7 @@ CREATE POLICY "okr_task_kr_links_update" ON public.okr_task_kr_links
 
 -- 成果の記述との結びつき：
 --   読み＝本人の行は全件、他人の行は yes だけ（同じ部署）。
---   作る＝同じ部署の人が、その仕事の担当者あてに pending でだけ作れる（確定した人が届ける）。
+--   作る＝同じ部署の人が、その仕事の担当者あてに pending でだけ作れる（確定した人が届ける）。仕事の部署に成果の記述の部署が含まれること。
 --   答える（UPDATE）＝member_id の本人だけ。変えられるのは答え（status・answered_at）だけで、
 --   成果の記述・仕事・担当者・部署の付け替えは trg_okr_outcome_claims_guard が例外にする。DELETE なし
 ALTER TABLE public.okr_outcome_claims ENABLE ROW LEVEL SECURITY;
@@ -733,6 +768,7 @@ CREATE POLICY "okr_outcome_claims_insert" ON public.okr_outcome_claims
   FOR INSERT TO authenticated
   WITH CHECK (status = 'pending'
               AND public.okr_task_assignee_ids(task_id) @> ARRAY[member_id]
+              AND public.task_group_ids(task_id) @> ARRAY[group_id]
               AND ((group_id IS NOT NULL AND (SELECT public.current_member_group_ids()) @> ARRAY[group_id])
                    OR (SELECT public.current_member_is_super_admin())));
 CREATE POLICY "okr_outcome_claims_update" ON public.okr_outcome_claims
@@ -751,7 +787,9 @@ CREATE POLICY "okr_outcome_claims_update" ON public.okr_outcome_claims
 --        claims:[{kr_id,note_key,task_id,member_id}]}
 --   同じ資料を確定し直したときは、その回のその資料の分を取り消してから入れ直す。
 --   成果の記述は (kr_id, note_key) で1行。すでにあれば、原文・増減・最初の回は変えず、出典と関連の仕事を DB 側で和集合にする
---   （同時に確定しても先の人の出典が消えない）。結びつきは担当者あてに pending で作る（すでにあれば何もしない）
+--   （同時に確定しても先の人の出典が消えない）。取り消し済みの記述は復活させない（和集合もしない・結びつきも作らない）。
+--   結びつきは担当者あてに pending で作る（すでにあれば何もしない）。
+--   同じ回の確定は pg_advisory_xact_lock で直列にする。取り消し済みの回は例外（55000）。
 -- ------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.okr_confirm_checkin(p jsonb)
 RETURNS jsonb
@@ -769,6 +807,12 @@ DECLARE
 BEGIN
   IF v_me IS NULL THEN
     RAISE EXCEPTION 'メンバーとして登録されていないため、確定を保存できません' USING ERRCODE = '42501';
+  END IF;
+  -- 同じ回の確定を直列にする（2人が同時に確定しても、後の人は先の人の分を取り消してから入れ直す＝二重にならない）
+  PERFORM pg_advisory_xact_lock(hashtext('okr_confirm_checkin:' || v_ci::text));
+  -- 取り消し済みの回は確定しない（復活させない）
+  IF EXISTS (SELECT 1 FROM public.okr_checkins c WHERE c.id = v_ci AND c.is_deleted) THEN
+    RAISE EXCEPTION 'このチェックインの回は取り消されています。別の回を選んでください' USING ERRCODE = '55000';
   END IF;
 
   INSERT INTO public.okr_checkins (id, group_id, checkin_date, title, confirmed_by, confirmed_at, updated_by)
@@ -806,13 +850,15 @@ BEGIN
 
   WITH up AS (
     INSERT INTO public.okr_outcome_notes AS n (kr_id, note_key, checkin_id, change_text, excerpt, sources, links, updated_by)
-    SELECT x ->> 'kr_id', x ->> 'note_key', v_ci, coalesce(x ->> 'change_text', ''), coalesce(x ->> 'excerpt', ''),
+    SELECT DISTINCT ON (x ->> 'kr_id', x ->> 'note_key')
+           x ->> 'kr_id', x ->> 'note_key', v_ci, coalesce(x ->> 'change_text', ''), coalesce(x ->> 'excerpt', ''),
            coalesce(nullif(x -> 'sources', 'null'::jsonb), '[]'::jsonb), coalesce(nullif(x -> 'links', 'null'::jsonb), '[]'::jsonb), v_me
-      FROM jsonb_array_elements(coalesce(p -> 'notes', '[]'::jsonb)) AS x
+      FROM jsonb_array_elements(coalesce(p -> 'notes', '[]'::jsonb)) WITH ORDINALITY AS e(x, ord)
+     ORDER BY x ->> 'kr_id', x ->> 'note_key', ord
     ON CONFLICT (kr_id, note_key) DO UPDATE
       SET sources    = public.okr_jsonb_union(n.sources, EXCLUDED.sources, NULL),
-          links      = public.okr_jsonb_union(n.links, EXCLUDED.links, 'taskId'),
-          is_deleted = false, deleted_at = NULL, deleted_by = NULL
+          links      = public.okr_jsonb_union(n.links, EXCLUDED.links, 'taskId')
+      WHERE n.is_deleted = false
     RETURNING n.id, n.kr_id, n.note_key
   )
   SELECT coalesce(jsonb_agg(jsonb_build_object('id', up.id, 'kr_id', up.kr_id, 'note_key', up.note_key)), '[]'::jsonb)
@@ -821,7 +867,7 @@ BEGIN
   INSERT INTO public.okr_outcome_claims (note_id, task_id, member_id, status, updated_by)
   SELECT n.id, c ->> 'task_id', c ->> 'member_id', 'pending', v_me
     FROM jsonb_array_elements(coalesce(p -> 'claims', '[]'::jsonb)) AS c
-    JOIN public.okr_outcome_notes n ON n.kr_id = c ->> 'kr_id' AND n.note_key = c ->> 'note_key'
+    JOIN public.okr_outcome_notes n ON n.kr_id = c ->> 'kr_id' AND n.note_key = c ->> 'note_key' AND n.is_deleted = false
   ON CONFLICT (note_id, task_id, member_id) DO NOTHING;
 
   RETURN jsonb_build_object('notes', v_notes);
@@ -908,9 +954,9 @@ BEGIN
 
   v_ok := (SELECT count(*) FROM pg_trigger WHERE tgname LIKE 'trg_okr_%_sync_group' AND NOT tgisinternal) = 7
       AND (SELECT count(*) FROM pg_trigger WHERE tgname IN ('trg_okr_outcome_claims_guard', 'trg_okr_checkins_guard',
-             'trg_okr_kr_assessments_check', 'trg_okr_learnings_check', 'trg_okr_decisions_check',
-             'trg_key_results_cascade_okr_map', 'trg_okr_checkins_cascade_group') AND NOT tgisinternal) = 7;
-  v_lines := v_lines || (CASE WHEN v_ok THEN 'OK ' ELSE 'NG ' END || 'group_id のトリガー7本・付け替えの禁止2本・部署の一致3本・部署の追随2本');
+             'trg_okr_kr_assessments_check', 'trg_okr_learnings_check', 'trg_okr_outcome_notes_check', 'trg_okr_decisions_check',
+             'trg_key_results_cascade_okr_map', 'trg_okr_checkins_cascade_group') AND NOT tgisinternal) = 8;
+  v_lines := v_lines || (CASE WHEN v_ok THEN 'OK ' ELSE 'NG ' END || 'group_id のトリガー7本・付け替えの禁止2本・部署の一致4本・部署の追随2本');
 
   RAISE EXCEPTION E'確認結果（全行が OK ならよい。この例外は結果の表示用で、何も書き込んでいない）:\n%', array_to_string(v_lines, E'\n');
 END;

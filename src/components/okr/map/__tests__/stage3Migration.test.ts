@@ -43,7 +43,7 @@ describe("マイグレーションの守り（91-4）", () => {
   it("4. 見立て・学び・決定事項は、回と同じ部署の KR だけ（入れたとき・付け替えたとき）", () => {
     expect(code(body(mig, "fn_okr_check_kr_in_checkin"))).toMatch(/v_kr IS DISTINCT FROM v_ci/);
     expect(code(body(mig, "fn_okr_check_decision_krs"))).toMatch(/unnest\(NEW\.kr_ids\)/);
-    expect(mig).toMatch(/ARRAY\['okr_kr_assessments', 'okr_learnings'\] LOOP\s+EXECUTE format\('DROP TRIGGER IF EXISTS trg_%s_check[\s\S]{0,200}okr_check_kr_in_checkin/);
+    expect(mig).toMatch(/ARRAY\['okr_kr_assessments', 'okr_learnings', 'okr_outcome_notes'\] LOOP\s+EXECUTE format\('DROP TRIGGER IF EXISTS trg_%s_check[\s\S]{0,200}okr_check_kr_in_checkin/);
     expect(code(mig)).toMatch(/CREATE TRIGGER trg_okr_decisions_check BEFORE INSERT OR UPDATE ON public\.okr_decisions/);
   });
 
@@ -130,5 +130,47 @@ describe("長い資料の案内（Edge の実行時間の上限への備え）",
   it("時間切れらしいエラーには分ける案内を添える（他のエラーはそのまま）", () => {
     expect(withSplitHint("a.txt を読めませんでした（546 WORKER_RESOURCE_LIMIT）")).toContain("前半と後半");
     expect(withSplitHint("a.txt を読めませんでした（permission denied）")).toBe("a.txt を読めませんでした（permission denied）");
+  });
+});
+
+/** 関数の本文（AS $fn_x$ 〜 $fn_x$）の中の IF／ELSIF の条件（THEN まで）。END IF と CREATE … IF NOT EXISTS は含めない */
+function ifConditions(sql: string): string[] {
+  const bodies = [...sql.matchAll(/AS \$(fn_[a-z_]+)\$([\s\S]*?)\$\1\$/g)].map((m) => m[2]);
+  const src = bodies.length > 0 ? bodies.join("\n") : sql;
+  return [...code(src).matchAll(/(?<!END )\b(?:IF|ELSIF)\b([\s\S]*?)\bTHEN\b/g)].map((m) => m[1]);
+}
+/**
+ * 1つの条件の式に「表の名前の判定」と NEW／OLD の列を混ぜると、列の無い表で式の準備が失敗する。
+ * TG_OP の判定と OLD の列を混ぜると、INSERT で OLD を読むことになる
+ */
+function badTriggerConditions(sql: string): string[] {
+  return ifConditions(sql).filter((c) => (/TG_TABLE_NAME/.test(c) && /\b(NEW|OLD)\./.test(c)) || (/TG_OP/.test(c) && /\bOLD\./.test(c)));
+}
+
+describe("最終点検の指摘（91-6）", () => {
+  it("M1：トリガー関数の IF の条件に、表の名前・TG_OP の判定と列の読み取りを混ぜない（混ぜると15本すべての書き込みが失敗する）", () => {
+    expect(badTriggerConditions(mig)).toEqual([]);
+    // 検査が効いていること（直す前の書き方は落ちる）
+    expect(badTriggerConditions("IF TG_TABLE_NAME = 'okr_checkins' AND NEW.confirmed_by IS NOT NULL THEN")).toHaveLength(1);
+    expect(badTriggerConditions("IF TG_OP = 'UPDATE' AND NEW.kr_id IS NOT DISTINCT FROM OLD.kr_id THEN")).toHaveLength(1);
+    expect(badTriggerConditions("IF TG_TABLE_NAME = 'okr_checkins' THEN\n IF NEW.confirmed_by IS NOT NULL THEN")).toEqual([]);
+  });
+
+  it("M3・M8・M4：確定は回ごとに直列・取り消し済みの回は例外・同じ記述は1つにまとめ、取り消し済みは復活させない", () => {
+    const f = code(body(mig, "fn_okr_confirm_checkin"));
+    expect(f).toContain("pg_advisory_xact_lock(hashtext('okr_confirm_checkin:' || v_ci::text))");
+    expect(f).toMatch(/c\.id = v_ci AND c\.is_deleted\) THEN\s+RAISE EXCEPTION/);
+    expect(f).toContain("SELECT DISTINCT ON (x ->> 'kr_id', x ->> 'note_key')");
+    expect(f).toContain("WHERE n.is_deleted = false");
+    expect(f).not.toMatch(/is_deleted = false, deleted_at = NULL/);
+    expect(f.indexOf("pg_advisory_xact_lock")).toBeLessThan(f.indexOf("INSERT INTO public.okr_checkins"));
+  });
+
+  it("M6・M7・M9：成果の記述にも部署の一致・claims は仕事の部署に記述の部署が含まれること・取り消した人は必ず本人", () => {
+    expect(mig).toContain("'okr_kr_assessments', 'okr_learnings', 'okr_outcome_notes'] LOOP");
+    expect(code(mig)).toMatch(/okr_outcome_claims_insert[\s\S]{0,400}public\.task_group_ids\(task_id\) @> ARRAY\[group_id\]/);
+    const s = code(body(mig, "fn_okr_stamp_member"));
+    expect(s).toMatch(/ELSIF NEW\.is_deleted AND NOT OLD\.is_deleted THEN\s+NEW\.deleted_by := v_me;/);
+    expect(s).toMatch(/ELSIF NEW\.is_deleted AND OLD\.is_deleted THEN\s+NEW\.deleted_by := OLD\.deleted_by;/);
   });
 });
