@@ -37,6 +37,7 @@ import { isAssignedTo } from "../../lib/taskMeta";
 import { Avatar } from "../auth/UserSelectScreen";
 import { ConsultationPanel } from "../consultation/ConsultationPanel";
 import { OkrModeIntroModal } from "../okr/OkrModeIntroModal";
+import { OkrMapSidebar } from "../okr/map/OkrMapSidebar";
 import { shouldShowOkrModeIntro, hasApprovedOkrModeIntro, markOkrModeIntroApproved } from "../../lib/okr/okrModeGate";
 // GuideModeViewは全props省略可能な既定値付きコンポーネントのため、withChunkDownloadGate<P>への
 // P推論がTS上うまくいかず object に落ちてしまう。型のみをimportして明示的に指定する（実行時の
@@ -2565,10 +2566,11 @@ function Sidebar({
             <NavItem active={activeLabView === "mypage"} icon={<span style={{ fontSize: "13px" }}>🧩</span>} label={t("layout.lab.mypage.label")} tooltip={t("layout.lab.mypage.desc")} onClick={onOpenMyPage} collapsed={c} />
           </div>
         )}
-      </>) : null}
-      {/* 【2026-08-10】OKRモードの「OKR管理：KR一覧」（フィルター用）は、OKRモードが個人OKR
-          1画面だけになりKR選択の受け手が無くなったため撤去した。sidebar上はappMode==="okr"の
-          間、このスクロール領域には何も表示しない（下のラボ/AI相談/設定ボタン列は常時表示のまま）。 */}
+      </>) : (
+        /* OKRモード：地図のメニュー（チーム／わたし）・KR一覧・資料を読ませる。中身は遅延読み込みの
+           地図の画面が bridge に載せたものを描くだけ（Section 91） */
+        <OkrMapSidebar collapsed={c} />
+      )}
 
       </div>
       {/* ↑ モードトグル〜ラボサブメニューまでのスクロール領域はここまで */}

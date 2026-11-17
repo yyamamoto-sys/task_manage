@@ -77,6 +77,7 @@ const ALLOWED: Record<string, { count: number; reason: string }> = {
   "components/list/ListView.tsx": { count: 1, reason: "行・CSV・担当者別のまとめの名前解決。絞り込みの選択肢と一括変更の候補は表示部署" },
   "components/meeting/MeetingImportPanel.tsx": { count: 1, reason: "既存タスクの担当者名の解決。候補・AIに渡す一覧は selectScopedMembers" },
   "components/okr/GroupOkrDashboardArchived.tsx": { count: 1, reason: "OKR系（アーカイブ済み画面）" },
+  "components/okr/map/OkrMapView.tsx": { count: 1, reason: "OKRの地図の担当者・TFリーダー・決定事項の担当の名前解決のみ（候補一覧は持たない）" },
   "components/project/ProjectCreateModal.tsx": { count: 1, reason: "オーナーのチップ・タスク行の担当者の名前解決。候補は selectScopedMembers" },
   "components/project/ProjectSettingsModal.tsx": { count: 1, reason: "オーナーのチップ・「関わるメンバー」（このPJの参加者一覧）・権限判定。オーナーの追加候補は selectScopedMembers" },
   "components/settings/NotificationSettingsSection.tsx": { count: 1, reason: "本人の設定（対象外）" },
