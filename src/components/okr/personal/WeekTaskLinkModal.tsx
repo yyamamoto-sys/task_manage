@@ -120,7 +120,7 @@ export function WeekTaskLinkModal({
         </div>
 
         <div style={{ ...MODAL_FOOTER_STYLE, padding: "12px 18px", borderTop: "1px solid var(--color-border-primary)", display: "flex", justifyContent: "flex-end" }}>
-          <button onClick={onClose} style={{ padding: "8px 16px", fontSize: "12px", background: "var(--color-brand)", color: "#fff", border: "none", borderRadius: "var(--radius-md)", cursor: "pointer" }}>閉じる</button>
+          <button onClick={onClose} style={{ padding: "8px 16px", fontSize: "12px", background: "var(--color-brand)", color: "#fff", border: "none", borderRadius: "var(--radius-full)", cursor: "pointer" }}>閉じる</button>
         </div>
       </div>
     </div>

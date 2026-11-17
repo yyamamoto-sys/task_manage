@@ -25,13 +25,8 @@ import { resolveBandDisplay } from "../../../lib/personalOkr/bandDisplay";
 import { readStoredOutlookPayload } from "../../../lib/ai/personalOkrOutlookExtractor";
 import { GuestAiQuotaNotice } from "../../common/GuestAiQuotaNotice";
 import { BandOverridePicker } from "./BandOverridePicker";
+import { OKR_RULE_STYLE as ruleStyle } from "../okrTheme";
 
-const sectionHeadStyle: React.CSSProperties = {
-  display: "flex", alignItems: "center", gap: "9px", margin: "20px 0 9px",
-  fontSize: "11.5px", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase",
-  color: "var(--color-text-tertiary)",
-};
-const ruleStyle: React.CSSProperties = { flex: 1, height: "1px", background: "var(--color-border-primary)" };
 
 interface Props {
   facts: AheadFacts;
@@ -74,7 +69,7 @@ export function AheadBlock({
 
   return (
     <div data-tour-id="okr-ahead" style={{ marginTop: "20px" }}>
-      <div style={sectionHeadStyle}>
+      <div className="okr-sec">
         <span>これから</span>
         <span style={ruleStyle} />
         <span style={{ display: "inline-flex", alignItems: "center", gap: "7px", fontSize: "10.5px", color: "var(--color-text-tertiary)", fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>

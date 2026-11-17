@@ -31,17 +31,8 @@ import { computeActualActivitiesDirty, toActualActivitiesSaveValue } from "../..
 import { isActualActivitiesColumnMissing, ACTUAL_ACTIVITIES_MISSING_MESSAGE } from "../../../lib/personalOkr/actualActivitiesSaveError";
 import type { ActualActivitiesAvailability } from "../../../lib/personalOkr/actualActivitiesAvailability";
 import { formatErrorForUser } from "../../../lib/errorMessage";
+import { OKR_CARD_STYLE as cardStyle, OKR_RULE_STYLE as ruleStyle } from "../okrTheme";
 
-const sectionHeadStyle: React.CSSProperties = {
-  display: "flex", alignItems: "center", gap: "9px", margin: "20px 0 9px",
-  fontSize: "11.5px", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase",
-  color: "var(--color-text-tertiary)",
-};
-const ruleStyle: React.CSSProperties = { flex: 1, height: "1px", background: "var(--color-border-primary)" };
-const cardStyle: React.CSSProperties = {
-  background: "var(--color-bg-primary)", border: "1px solid var(--color-border-primary)",
-  borderRadius: "var(--radius-md)", padding: "14px 16px",
-};
 const textareaStyle: React.CSSProperties = {
   width: "100%", minHeight: "88px", fontFamily: "inherit", fontSize: "12.5px", lineHeight: 1.6,
   padding: "8px 10px", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)",
@@ -125,7 +116,7 @@ export function ActualActivitiesBlock({
     }
     return (
       <div style={{ marginTop: "20px" }}>
-        <div style={sectionHeadStyle}><span>実施記録</span><span style={ruleStyle} /></div>
+        <div className="okr-sec"><span>実施記録</span><span style={ruleStyle} /></div>
         <div style={cardStyle}>{body}</div>
       </div>
     );
@@ -183,7 +174,7 @@ export function ActualActivitiesBlock({
 
   return (
     <div data-tour-id="okr-actual" style={{ marginTop: "20px" }}>
-      <div style={sectionHeadStyle}><span>実施記録</span><span style={ruleStyle} /></div>
+      <div className="okr-sec"><span>実施記録</span><span style={ruleStyle} /></div>
       <div style={cardStyle}>{content}</div>
     </div>
   );

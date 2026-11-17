@@ -66,22 +66,13 @@ import { ActualActivitiesBlock } from "./ActualActivitiesBlock";
 import { MonthReviewBlock } from "./MonthReviewBlock";
 import { PersonalOkrReviewDraftModal } from "./PersonalOkrReviewDraftModal";
 import { PersonalOkrPlanDraftModal, type PlanDraftFields } from "./PersonalOkrPlanDraftModal";
+import { OKR_CARD_STYLE as cardStyle, OKR_RULE_STYLE as ruleStyle } from "../okrTheme";
 
 const KR_KIND_LABEL: Record<string, string> = {
   group_kr: "グループKR紐づけ", general: "全般", company_common: "全社共通",
   om_common: "OM共通", agm_common: "AGM共通", leader_common: "リーダー共通",
 };
 
-const sectionHeadStyle: React.CSSProperties = {
-  display: "flex", alignItems: "center", gap: "9px", margin: "20px 0 9px",
-  fontSize: "11.5px", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase",
-  color: "var(--color-text-tertiary)",
-};
-const ruleStyle: React.CSSProperties = { flex: 1, height: "1px", background: "var(--color-border-primary)" };
-const cardStyle: React.CSSProperties = {
-  background: "var(--color-bg-primary)", border: "1px solid var(--color-border-primary)",
-  borderRadius: "var(--radius-md)", padding: "14px 16px",
-};
 const textareaStyle: React.CSSProperties = {
   width: "100%", fontFamily: "inherit", fontSize: "12.5px", lineHeight: 1.6,
   padding: "8px 10px", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)",
@@ -658,7 +649,8 @@ export function PersonalKrPanel({
   };
 
   return (
-    <div style={{ background: "var(--color-bg-secondary)", border: "1px solid var(--color-border-primary)", borderTop: "none", borderRadius: "0 0 var(--radius-md) var(--radius-md)", padding: "16px 20px 22px" }}>
+    // 地図と同じく、地の色（bg-secondary）の上にカードを並べる。タブに接した囲みは持たない（Section 91-4）
+    <div style={{ padding: "12px 0 22px" }}>
       {/* 🔴🔴 サンプル表示中の明示（CLAUDE.md Section 24）。保存経路は呼び出し元
           （PersonalOkrView.tsx）がno-opに差し替えているため、これは案内表示のみの役割。 */}
       {readOnly && (
@@ -759,7 +751,7 @@ export function PersonalKrPanel({
           {/* 今月の計画。🔴 見出しはmonthLabelを使う（2026-08-26：過去月も編集可になったため
               「今月の計画」という固定文言だと過去月で嘘になる。CLAUDE.md Section 24） */}
           <div data-tour-id="okr-month-plan" style={{ marginTop: "20px" }}>
-            <div style={sectionHeadStyle}>
+            <div className="okr-sec">
               <span>{slot.monthStart.getMonth() + 1}月の計画</span><span style={ruleStyle} />
               <span>{monthRecord?.source_label ? "Kintone取込（編集可・正本はKintone）" : "手入力（KintoneからのPDF取込も可）"}</span>
               {/* 🔴 Kintoneへ貼るための「全文をコピー」（山本さんの依頼・v3.103）。画面に見えている
@@ -862,7 +854,7 @@ export function PersonalKrPanel({
                 </div>
               </div>
               {monthEditable && (
-                <button onClick={handleSaveMonthPlan} disabled={savingMonth} style={{ marginTop: "12px", fontSize: "12px", fontWeight: 700, padding: "7px 16px", background: "var(--color-brand)", color: "#fff", border: "none", borderRadius: "var(--radius-md)", cursor: "pointer" }}>
+                <button onClick={handleSaveMonthPlan} disabled={savingMonth} style={{ marginTop: "12px", fontSize: "12px", fontWeight: 700, padding: "7px 16px", background: "var(--color-brand)", color: "#fff", border: "none", borderRadius: "var(--radius-full)", cursor: "pointer" }}>
                   {savingMonth ? "保存中…" : `${slot.monthStart.getMonth() + 1}月の計画を保存`}
                 </button>
               )}
@@ -871,7 +863,7 @@ export function PersonalKrPanel({
 
           {/* 週の目標状態。🔴 週次は任意の補助機能（使う場合のみ記入。CLAUDE.md Section 24・2026-08-26） */}
           <div data-tour-id="okr-week-cards" style={{ marginTop: "20px" }}>
-            <div style={sectionHeadStyle}><span>週の目標状態</span><span style={ruleStyle} /><span>★アプリで設定（Kintoneに無い層）</span></div>
+            <div className="okr-sec"><span>週の目標状態</span><span style={ruleStyle} /><span>★アプリで設定（Kintoneに無い層）</span></div>
             <p style={{ fontSize: "10.5px", color: "var(--color-text-tertiary)", margin: "-5px 0 8px" }}>
               週ごとの目標状態と自己評価は任意です。使う場合のみ記入してください。
             </p>
@@ -954,7 +946,7 @@ export function PersonalKrPanel({
               </div>
               <button
                 onClick={onOpenAiPanel}
-                style={{ fontFamily: "inherit", fontSize: "12px", fontWeight: 700, padding: "7px 16px", background: "var(--color-brand)", color: "#fff", border: "none", borderRadius: "var(--radius-md)", cursor: "pointer", whiteSpace: "nowrap" }}
+                style={{ fontFamily: "inherit", fontSize: "12px", fontWeight: 700, padding: "7px 16px", background: "var(--color-brand)", color: "#fff", border: "none", borderRadius: "var(--radius-full)", cursor: "pointer", whiteSpace: "nowrap" }}
               >AIパネルを開く</button>
             </div>
           )}
@@ -1041,7 +1033,7 @@ function MemoSection({ kr, currentUser, memos, onSaveMemo, readOnly = false }: {
 
   return (
     <div style={{ marginTop: "20px" }}>
-      <div style={sectionHeadStyle}><span>メモ</span><span style={ruleStyle} /><span>このKR専用・自分だけが見えます</span></div>
+      <div className="okr-sec"><span>メモ</span><span style={ruleStyle} /><span>このKR専用・自分だけが見えます</span></div>
       {error && <div style={{ fontSize: "12px", color: "var(--color-text-danger)", marginBottom: "8px" }}>{error}</div>}
       <textarea
         value={draft}
@@ -1051,7 +1043,7 @@ function MemoSection({ kr, currentUser, memos, onSaveMemo, readOnly = false }: {
         style={{ ...textareaStyle, minHeight: "72px", opacity: readOnly ? 0.6 : 1 }}
       />
       <div style={{ display: "flex", alignItems: "center", gap: "10px", marginTop: "7px" }}>
-        <button onClick={handleAdd} disabled={readOnly || saving || !draft.trim()} style={{ fontSize: "12px", fontWeight: 700, padding: "6px 14px", background: "var(--color-brand)", color: "#fff", border: "none", borderRadius: "var(--radius-md)", cursor: readOnly ? "default" : "pointer", opacity: readOnly ? 0.6 : 1 }}>
+        <button onClick={handleAdd} disabled={readOnly || saving || !draft.trim()} style={{ fontSize: "12px", fontWeight: 700, padding: "6px 14px", background: "var(--color-brand)", color: "#fff", border: "none", borderRadius: "var(--radius-full)", cursor: readOnly ? "default" : "pointer", opacity: readOnly ? 0.6 : 1 }}>
           {saving ? "保存中…" : "追加"}
         </button>
       </div>

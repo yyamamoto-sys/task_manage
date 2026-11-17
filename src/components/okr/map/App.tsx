@@ -19,19 +19,14 @@ import { TeamBand } from "./parts/TeamBand";
 import { OBlock, RecentLearnings } from "./parts/OBlock";
 import { GoalsScreen } from "./screens/GoalsScreen";
 import { Modal, useNarrow } from "./ui";
+import { OkrLogo } from "../okrTheme";
 
 function Header({ padRight }: { padRight?: string }) {
   const { setModal, locked } = useMock();
   return (
     <header className="mk-head print-hide" style={padRight ? { paddingRight: padRight } : undefined}>
       <div className="mk-head-title">
-        <svg width={34} height={34} viewBox="-17 -17 34 34" aria-hidden="true">
-          <circle r={15} fill="#3b6fd4" opacity={0.15} />
-          <circle cx={-6} cy={5} r={4} fill="#e08a00" />
-          <circle cx={7} cy={-6} r={4} fill="#1a9a6b" />
-          <circle cx={8} cy={8} r={3} fill="#c2338a" />
-          <path d="M-6 5 C-2 -4 2 -6 7 -6 M-6 5 C0 9 4 9 8 8" stroke="#3b6fd4" strokeWidth={2} fill="none" strokeLinecap="round" />
-        </svg>
+        <OkrLogo />
         <div>
           <h1 className="mk-h1" style={{ margin: 0 }}>
             OKRモード

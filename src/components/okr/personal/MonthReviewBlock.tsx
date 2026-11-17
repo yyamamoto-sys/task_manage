@@ -27,17 +27,8 @@ import { registerUnsavedEditor, unregisterUnsavedEditor } from "../../../lib/edi
 import { formatErrorForUser } from "../../../lib/errorMessage";
 import { showToast } from "../../common/Toast";
 import { BandOverridePicker } from "./BandOverridePicker";
+import { OKR_CARD_STYLE as cardStyle, OKR_RULE_STYLE as ruleStyle } from "../okrTheme";
 
-const sectionHeadStyle: React.CSSProperties = {
-  display: "flex", alignItems: "center", gap: "9px", margin: "20px 0 9px",
-  fontSize: "11.5px", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase",
-  color: "var(--color-text-tertiary)",
-};
-const ruleStyle: React.CSSProperties = { flex: 1, height: "1px", background: "var(--color-border-primary)" };
-const cardStyle: React.CSSProperties = {
-  background: "var(--color-bg-primary)", border: "1px solid var(--color-border-primary)",
-  borderRadius: "var(--radius-md)", padding: "14px 16px",
-};
 const textareaStyle: React.CSSProperties = {
   width: "100%", minHeight: "140px", fontFamily: "inherit", fontSize: "12.5px", lineHeight: 1.6,
   padding: "8px 10px", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)",
@@ -161,7 +152,7 @@ export function MonthReviewBlock({
 
   return (
     <div data-tour-id="okr-month-review" style={{ marginTop: "20px" }}>
-      <div style={sectionHeadStyle}>
+      <div className="okr-sec">
         <span>📝 振り返り</span><span style={ruleStyle} />
         <span>{monthStatus === "past" ? "過去月・編集可" : "今月の振り返り"}</span>
         {/* 🔴 Kintoneへ貼るための「全文をコピー」（山本さんの依頼・v3.103）。画面に見えている
