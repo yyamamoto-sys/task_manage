@@ -39,7 +39,7 @@
 |---|---|---|
 | フロントエンド | TypeScript + React | 型安全・AI補助開発との相性 |
 | データベース | Supabase（PostgreSQL） | 無料枠で十分・多対多リレーション対応・RLS設定可 |
-| AI連携 | Anthropic Claude API（AI相談の本体＝`claude-sonnet-5-5`・effort=medium・構造化出力・プロンプトキャッシュ。`invokeAI` 経由のその他の機能＝個人OKR関連などは従来の `claude-sonnet-4-6`／一部 `claude-haiku-4-5` のまま） | OKR/PJ/タスクの相談・分析・レポート生成等に使用（2026-05-13以降 OKR関連情報も投入可）。`invokeAI` は `content[0].text` を読むため、thinking ブロックが先頭に来る Sonnet 5.5 へは未移行（docs/dev/sections/s6_ai-integration.md 6-18） |
+| AI連携 | Anthropic Claude API（AI相談の本体＝`claude-sonnet-5-5`・effort=medium・構造化出力・プロンプトキャッシュ。`invokeAI` 経由のその他の機能＝個人OKR関連などは従来の `claude-sonnet-4-6`／一部 `claude-haiku-4-5` のまま。OKRの地図（Section 91・段階3）は `invokeAI` 経由で `claude-sonnet-5-5`） | OKR/PJ/タスクの相談・分析・レポート生成等に使用（2026-05-13以降 OKR関連情報も投入可）。`invokeAI` は返答の text ブロックだけを残して返す（Sonnet 5.5 の先頭の thinking ブロックを除く）。構造化出力は `invokeAI` の第6引数で渡せる（docs/dev/sections/s6_ai-integration.md 6-18・s91 91-3） |
 | AI中継 | Supabase Edge Function（ai-consult） | APIキーをサーバーサイドにのみ保持するため |
 | 通知連携 | Web Push＋アプリ内通知（Edge Function push-reminders・backup-daily） | 期限リマインド・管理者向け通知（Section 66〜68）。Teams 通知は v3.136 で撤去（KRレポートの「Teams送信」ボタンは別機能で残る） |
 | ホスティング | Vercel | GitHubへのpushで自動デプロイ（main branch） |
@@ -162,7 +162,7 @@
 | 88 | 88. タスクの親子を任意の深さにする：Phase A（表示）＋A'（下回り）（v3.195）＋Phase B（編集操作・v3.196） | 親子2段固定を撤廃。木順・N段の集計（末端数え）・子孫全体の移動/選択/複製・循環防止（Phase A）／親欄1つ・ドラッグ・Tab/Shift+Tab・＋子タスク・AI の parent_task（Phase B・MIN_CLIENT_VERSION を 3.196 へ） | docs/dev/sections/s88_task-tree-depth.md |
 | 89 | 89. 依存関係の種類（FS/SS/FF/SF）とずらし日数（v3.197） | 依存に種類とラグ（暦日・負＝リード）。自動ずらし・完了ゲート・着手警告・ガント矢印を4種へ一般化。MSPDI取り込みの土台 | docs/dev/sections/s89_dependency-type-lag.md |
 | 90 | 90. WBS取り込みの拡張：MS Project XML・各種ツールのCSV（v3.198） | 取り込みの中間表現を N 段・依存の種類／ラグ・グループ有無へ一般化。MSPDI（XMLは自前の小さなパーサ）・汎用CSV／xlsx＋列の対応づけ画面・Shift_JIS・M/D/YYYY | docs/dev/sections/s90_wbs-import-formats.md |
-| 91 | 91. OKRモードの作り直し 段階1：モックの「地図」を本番の OKR モードに差し替える | components/okr/map/ に移設。adapter（状態・TFの四半期・本人・task_task_forces の扱い）・dataset の差し替え・新しい表の入口 OkrMapRepository（段階1は空実装）・サイドバーは bridge 経由。段階2＝記録の表15本（20261117_okr_map_records.sql）と supabaseRepository・副担当・個人OKRの矢印・実際のサイドバー幅 | docs/dev/sections/s91_okr-map-stage1.md |
+| 91 | 91. OKRモードの作り直し 段階1：モックの「地図」を本番の OKR モードに差し替える | components/okr/map/ に移設。adapter（状態・TFの四半期・本人・task_task_forces の扱い）・dataset の差し替え・新しい表の入口 OkrMapRepository（段階1は空実装）・サイドバーは bridge 経由。段階2＝記録の表15本（20261117_okr_map_records.sql）と supabaseRepository・副担当・個人OKRの矢印・実際のサイドバー幅。段階3＝資料を AI に読ませる（intent okr-checkin-extract／okr-map-suggest・okr_resources）・Kintone の取り込みと「Kintone に合わせる」 | docs/dev/sections/s91_okr-map-stage1.md |
 
 ---
 

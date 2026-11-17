@@ -45,10 +45,12 @@ export interface OkrMapRecords {
   assess: Record<string, AssessEntry[]>;
   learnings: Learning[];
   checkins: Checkin[];
+  /** 資料を読ませたが、まだ何も確定していない回（「資料を読ませる」で選べる） */
+  openCheckins?: Checkin[];
   /** 回ごとに、最後に確定した人 */
   confirmedBy?: Record<string, string>;
   decisions: Decision[];
-  /** 読ませた資料のAIの読み取り結果（段階3で作る） */
+  /** 読ませた資料のAIの読み取り結果（okr_resources） */
   resources: Resource[];
   /** Kintone の PDF から読んだ今期のTF。読み取りの仕組みが無いあいだは null */
   kintoneRows: KintoneRow[] | null;
@@ -115,10 +117,29 @@ export interface OkrMapRepository {
    */
   saveUser(viewerId: string, before: UserState, after: UserState): Promise<void>;
   saveConfirm(c: ConfirmSave): Promise<void>;
+  /** 資料1件の読み取り結果を保存する（回がまだ無ければ未確定の回として作る） */
+  saveResource(a: { groupId: string | null; viewerId: string; checkin: Checkin; resource: Resource }): Promise<void>;
   /** 今期のTF構成の確定 */
   saveLock(l: { groupId: string | null; viewerId: string; year: number; quarter: Quarter; lockedOn: string; snapshot: OkrItem[] }): Promise<void>;
-  /** KRの段の基準文・証拠・手がかりの定め（手入力。段階3でAIの取り込みからも書く） */
+  /**
+   * KRの段の基準文・証拠・手がかりの定め（手入力と Kintone の取り込み）。
+   * 他の人が先に直した・同時に初めて作ったときは KrDefConflictError（最新の内容つき）を投げる
+   */
   saveKrDef(krId: string, def: KrDef, hint: HintDef | null, viewerId: string): Promise<void>;
+}
+
+/** KRの定めの保存の競合。読み直した最新の内容を持つ（画面はそれに差し替えて知らせる） */
+export class KrDefConflictError extends Error {
+  krId: string;
+  def: KrDef;
+  hint: HintDef | null;
+  constructor(krId: string, def: KrDef, hint: HintDef | null) {
+    super("ほかの人が先にこのKRの段の基準を保存していました。最新の内容を読み直したので、確かめてからもう一度保存してください。");
+    this.name = "KrDefConflictError";
+    this.krId = krId;
+    this.def = def;
+    this.hint = hint;
+  }
 }
 
 /** 段の基準文がまだ無いKRに使う形。60 は必ずあるので 60・70・80 の3段を空文で持つ */
@@ -133,6 +154,7 @@ export function emptyRecords(krIds: string[]): OkrMapRecords {
     assess: {},
     learnings: [],
     checkins: [],
+    openCheckins: [],
     confirmedBy: {},
     decisions: [],
     resources: [],
@@ -161,6 +183,7 @@ export const memoryRepository: OkrMapRepository = {
   load: async ({ krIds }) => emptyRecords(krIds),
   saveUser: async () => {},
   saveConfirm: async () => {},
+  saveResource: async () => {},
   saveLock: async () => {},
   saveKrDef: async () => {},
 };

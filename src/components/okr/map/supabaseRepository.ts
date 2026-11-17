@@ -4,10 +4,11 @@
 // 行 → 画面の形への組み立ては純粋関数 buildRecords に分けてある（テストはこちらを確かめる）。
 import { supabase } from "../../../lib/supabase/client";
 import { fetchAllRows, type FetchAllRowsResult } from "../../../lib/supabase/fetchAllRows";
-import { saveWithLock } from "../../../lib/supabase/store";
+import { ConflictError, saveWithLock } from "../../../lib/supabase/store";
+import { readingOf } from "./checkinAi";
 import { answerKey, howKey } from "./logic";
 import type { History } from "./reach";
-import { emptyRecords, type ConfirmSave, type HintDef, type OkrMapLoadArgs, type OkrMapRecords, type OkrMapRepository, type UserRecord } from "./repository";
+import { emptyRecords, KrDefConflictError, type ConfirmSave, type HintDef, type OkrMapLoadArgs, type OkrMapRecords, type OkrMapRepository, type UserRecord } from "./repository";
 import type {
   AssessEntry,
   BasisItem,
@@ -24,6 +25,7 @@ import type {
   OutcomeLink,
   PastWeek,
   PersonalOkr,
+  Resource,
   Source,
 } from "./types";
 import { claimKey, type UserState } from "./userState";
@@ -110,6 +112,15 @@ export interface ProposalRow {
 export interface PersonalLinkRow {
   personal_kr_id: string;
   kr_id: string;
+  /** 外した矢印も読む（行があれば、個人OKR画面の紐づけ key_result_id を初期値にしない） */
+  is_deleted?: boolean;
+}
+export interface ResourceRow {
+  id: string;
+  checkin_id: string;
+  file_name: string;
+  kind: string;
+  reading: unknown;
 }
 export interface AnswerRow {
   week_start: string;
@@ -127,6 +138,8 @@ export interface PersonalKrRow {
   id: string;
   label: string;
   member_id: string;
+  /** 個人OKR画面の取込でついた KR への紐づけ。矢印の行が無いときの初期値（表示だけ） */
+  key_result_id?: string | null;
 }
 
 export interface LoadedRows {
@@ -145,6 +158,7 @@ export interface LoadedRows {
   picks: PickRow[];
   lock: LockRow | null;
   personalKrs: PersonalKrRow[];
+  resources?: ResourceRow[];
 }
 
 // ---------- 行 → 画面の形（純粋関数） ----------
@@ -202,14 +216,62 @@ export function hintDefOf(r: KrDefRow): HintDef | null {
 
 const byDate = <T extends { date: string }>(a: T, b: T) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
 
+const objList = (v: unknown): Record<string, unknown>[] => (Array.isArray(v) ? v.filter((x): x is Record<string, unknown> => !!x && typeof x === "object" && !Array.isArray(x)) : []);
+const strOf = (v: unknown) => (typeof v === "string" ? v : "");
+
+/** okr_resources の行 → 資料1件の読み取り結果。地図に無い KR の分は捨てる（壊れた値も落とす） */
+export function resourceOf(row: ResourceRow, kr: Set<string>): Resource {
+  const r = row.reading && typeof row.reading === "object" ? (row.reading as Record<string, unknown>) : {};
+  const src = (v: unknown): Source => asSource(v) ?? { doc: row.file_name, page: "" };
+  return {
+    id: row.id,
+    name: row.file_name,
+    kind: row.kind,
+    checkinId: row.checkin_id,
+    drafts: objList(r.drafts).flatMap((d) => {
+      const value = num(d.value as number | string | null);
+      return kr.has(strOf(d.krId)) && value !== null ? [{ krId: strOf(d.krId), value, source: src(d.source) }] : [];
+    }),
+    assessments: objList(r.assessments).flatMap((a) => {
+      const as = a.assessment && typeof a.assessment === "object" ? (a.assessment as Record<string, unknown>) : null;
+      const value = as ? num(as.value as number | string | null) : null;
+      return kr.has(strOf(a.krId)) && as && value !== null ? [{ krId: strOf(a.krId), assessment: { value, basis: asBasis(as.basis), summary: strOf(as.summary) }, source: src(a.source) }] : [];
+    }),
+    learnings: objList(r.learnings).flatMap((l) =>
+      kr.has(strOf(l.krId)) && (l.kind === "分かったこと" || l.kind === "次に試すこと") && strOf(l.text) ? [{ krId: strOf(l.krId), kind: l.kind as LearningKind, text: strOf(l.text), source: src(l.source) }] : [],
+    ),
+    notes: objList(r.notes).flatMap((n) =>
+      kr.has(strOf(n.krId)) && strOf(n.key) ? [{ key: strOf(n.key), krId: strOf(n.krId), change: strOf(n.change), excerpt: strOf(n.excerpt), source: src(n.source), links: asLinks(n.links) }] : [],
+    ),
+    decisions: objList(r.decisions).flatMap((d) =>
+      (d.kind === "決定" || d.kind === "宿題") && strOf(d.text)
+        ? [
+            {
+              kind: d.kind as "決定" | "宿題",
+              text: strOf(d.text),
+              ownerId: typeof d.ownerId === "string" && d.ownerId ? d.ownerId : null,
+              source: src(d.source),
+              krIds: (Array.isArray(d.krIds) ? d.krIds : []).filter((k): k is string => typeof k === "string" && kr.has(k)),
+            },
+          ]
+        : [],
+    ),
+  };
+}
+
 /** 読んだ行を、画面が読む記録の形に組み立てる。krIds にない KR の行は捨てる */
 export function buildRecords(rows: LoadedRows, args: Pick<OkrMapLoadArgs, "krIds" | "viewerId" | "weekStart">): OkrMapRecords {
   const { krIds, viewerId, weekStart } = args;
   const out = emptyRecords(krIds);
   const kr = new Set(krIds);
-  const checkins: Checkin[] = rows.checkins.map((c) => ({ id: c.id, date: c.checkin_date, title: c.title })).sort(byDate);
-  const dateOf = new Map(checkins.map((c) => [c.id, c.date]));
-  out.checkins = checkins;
+  const allCheckins: Checkin[] = rows.checkins.map((c) => ({ id: c.id, date: c.checkin_date, title: c.title })).sort(byDate);
+  const dateOf = new Map(allCheckins.map((c) => [c.id, c.date]));
+  // 資料を読ませただけで何も確定していない回は「回」に数えない（最新の回の日付・未更新の判定を動かさない）
+  const used = new Set([...rows.assessments, ...rows.learnings, ...rows.decisions].map((x) => x.checkin_id));
+  const confirmed = new Set(rows.checkins.filter((c) => c.confirmed_by).map((c) => c.id));
+  out.checkins = allCheckins.filter((c) => confirmed.has(c.id) || used.has(c.id));
+  out.openCheckins = allCheckins.filter((c) => !confirmed.has(c.id) && !used.has(c.id));
+  out.resources = (rows.resources ?? []).filter((r) => dateOf.has(r.checkin_id)).map((r) => resourceOf(r, kr));
   out.confirmedBy = Object.fromEntries(rows.checkins.filter((c) => c.confirmed_by).map((c) => [c.id, c.confirmed_by as string]));
 
   const hintDefs = new Map<string, HintDef>();
@@ -305,7 +367,15 @@ export function buildRecords(rows: LoadedRows, args: Pick<OkrMapLoadArgs, "krIds
   const overrides: Record<string, Record<string, string[]>> = {};
   for (const l of rows.links) (overrides[l.updated_by || viewerId] ??= {})[l.task_id] = (l.kr_ids ?? []).filter((k) => kr.has(k));
   out.overrides = overrides;
-  out.personalLinks = { [viewerId]: rows.personalLinks.filter((l) => kr.has(l.kr_id)).map((l) => ({ personalId: l.personal_kr_id, krId: l.kr_id })) };
+  // 矢印の行が1つも無い個人OKR（外した行も含めて）は、個人OKR画面の紐づけ（key_result_id）を初期値として見せる。
+  // 書き込みは本人が矢印を操作したときだけ（diffUser がその個人OKRの矢印をまとめて書く）
+  const touchedPersonal = new Set(rows.personalLinks.map((l) => l.personal_kr_id));
+  out.personalLinks = {
+    [viewerId]: [
+      ...rows.personalLinks.filter((l) => !l.is_deleted && kr.has(l.kr_id)).map((l) => ({ personalId: l.personal_kr_id, krId: l.kr_id })),
+      ...rows.personalKrs.filter((p) => !touchedPersonal.has(p.id) && p.key_result_id && kr.has(p.key_result_id)).map((p) => ({ personalId: p.id, krId: p.key_result_id as string })),
+    ],
+  };
   out.picks = rows.picks.length > 0 ? { [viewerId]: rows.picks.map((p) => p.task_id) } : {};
   out.personalOkrs = rows.personalKrs.map((p): PersonalOkr => ({ id: p.id, ownerId: p.member_id, text: p.label }));
   out.lock = rows.lock ? { locked: true, lockedAt: rows.lock.locked_on } : { locked: false, lockedAt: null };
@@ -360,6 +430,9 @@ export function diffUser(b: UserState, a: UserState): UserDiff {
   const al = new Set(a.personalLinks.map(lk));
   for (const l of a.personalLinks) if (!bl.has(lk(l))) d.personalLinks.push({ ...l, deleted: false });
   for (const l of b.personalLinks) if (!al.has(lk(l))) d.personalLinks.push({ ...l, deleted: true });
+  // 触った個人OKRは、残した矢印も書く（key_result_id 由来の初期値は行が無いので、書かないと開き直したときに消える）
+  const touched = new Set(d.personalLinks.map((l) => l.personalId));
+  for (const l of a.personalLinks) if (touched.has(l.personalId) && bl.has(lk(l))) d.personalLinks.push({ ...l, deleted: false });
   for (const k of new Set([...Object.keys(b.answers), ...Object.keys(a.answers)])) {
     const x = b.answers[k];
     const y = a.answers[k];
@@ -396,6 +469,11 @@ async function rows<Row>(p: Promise<FetchAllRowsResult<Row>>): Promise<Row[]> {
   return data ?? [];
 }
 
+/** PostgreSQL の一意制約違反（23505） */
+export function isUniqueViolation(e: unknown): boolean {
+  return !!e && typeof e === "object" && (e as { code?: unknown }).code === "23505";
+}
+
 const deletedCols = (on: boolean, by: string) => (on ? { is_deleted: true, deleted_at: new Date().toISOString(), deleted_by: by } : { is_deleted: false, deleted_at: null, deleted_by: null });
 
 export function createSupabaseRepository(): OkrMapRepository {
@@ -417,18 +495,21 @@ export function createSupabaseRepository(): OkrMapRepository {
         rows(fetchAllRows<TaskLinkRow>((o) => supabase.from("okr_task_kr_links").select("id,task_id,kr_ids,updated_by", o).eq("is_deleted", false), { label: "okr_task_kr_links" })),
         rows(fetchAllRows<HowRow>((o) => supabase.from("okr_task_kr_how").select("id,task_id,kr_id,body", o).eq("member_id", viewerId).eq("is_deleted", false), { label: "okr_task_kr_how" })),
         rows(fetchAllRows<ProposalRow>((o) => supabase.from("okr_proposal_choices").select("id,task_id,kr_id,choice", o).eq("member_id", viewerId).eq("is_deleted", false), { label: "okr_proposal_choices" })),
-        rows(fetchAllRows<PersonalLinkRow>((o) => supabase.from("okr_personal_kr_links").select("id,personal_kr_id,kr_id", o).eq("member_id", viewerId).eq("is_deleted", false), { label: "okr_personal_kr_links" })),
+        rows(fetchAllRows<PersonalLinkRow>((o) => supabase.from("okr_personal_kr_links").select("id,personal_kr_id,kr_id,is_deleted", o).eq("member_id", viewerId), { label: "okr_personal_kr_links" })),
         rows(fetchAllRows<AnswerRow>((o) => supabase.from("okr_weekly_answers").select("id,week_start,kr_id,effect,match_answer", o).eq("member_id", viewerId), { label: "okr_weekly_answers" })),
         rows(fetchAllRows<PickRow>((o) => supabase.from("okr_weekly_picks").select("id,task_id", o).eq("member_id", viewerId).eq("week_start", weekStart).eq("is_deleted", false), { label: "okr_weekly_picks" })),
-        rows(fetchAllRows<PersonalKrRow>((o) => supabase.from("personal_krs").select("id,label,member_id", o).eq("member_id", viewerId).eq("fiscal_year", year).eq("quarter", quarter).eq("is_deleted", false).order("display_order"), { label: "personal_krs" })),
+        rows(fetchAllRows<PersonalKrRow>((o) => supabase.from("personal_krs").select("id,label,member_id,key_result_id", o).eq("member_id", viewerId).eq("fiscal_year", year).eq("quarter", quarter).eq("is_deleted", false).order("display_order"), { label: "personal_krs" })),
         must<LockRow>(supabase.from("okr_tf_locks").select("locked_on").eq("group_id", groupId).eq("fiscal_year", year).eq("quarter", quarter).eq("is_deleted", false).maybeSingle()),
       ]);
+      const resources = await rows(
+        fetchAllRows<ResourceRow>((o) => supabase.from("okr_resources").select("id,checkin_id,file_name,kind,reading", o).eq("group_id", groupId).eq("is_deleted", false), { label: "okr_resources" }),
+      );
       const claims = notes.length === 0 ? [] : await rows(fetchAllRows<ClaimRow>((o) => supabase.from("okr_outcome_claims").select("id,note_id,task_id,member_id,status", o).in("note_id", notes.map((n) => n.id)), { label: "okr_outcome_claims" }));
       noteIds.clear();
       for (const n of notes) noteIds.set(n.note_key, n.id);
       defMeta.clear();
       for (const d of defs) defMeta.set(d.kr_id, { id: d.id, updatedAt: d.updated_at });
-      return buildRecords({ defs, checkins, assessments, learnings, decisions, notes, claims, links, how, proposals, personalLinks, answers, picks, lock, personalKrs }, args);
+      return buildRecords({ defs, checkins, assessments, learnings, decisions, notes, claims, links, how, proposals, personalLinks, answers, picks, lock, personalKrs, resources }, args);
     },
 
     async saveUser(viewerId, before, after) {
@@ -563,6 +644,19 @@ export function createSupabaseRepository(): OkrMapRepository {
       }
     },
 
+    async saveResource({ groupId, viewerId, checkin, resource }) {
+      if (!groupId) throw new Error("部署が選ばれていないため、資料の読み取り結果を保存できません");
+      // 回がまだ無ければ未確定の回として作る（あれば何もしない。確定した人・日時は saveConfirm が書く）
+      await must(
+        supabase
+          .from("okr_checkins")
+          .upsert({ id: checkin.id, group_id: groupId, checkin_date: checkin.date, title: checkin.title, updated_by: viewerId }, { onConflict: "id", ignoreDuplicates: true }),
+      );
+      await must(
+        supabase.from("okr_resources").insert({ id: resource.id, checkin_id: checkin.id, file_name: resource.name, kind: resource.kind, reading: readingOf(resource), updated_by: viewerId }),
+      );
+    },
+
     async saveLock(l) {
       if (!l.groupId) throw new Error("部署が選ばれていないため、確定を保存できません");
       await must(
@@ -595,7 +689,19 @@ export function createSupabaseRepository(): OkrMapRepository {
         hint_direction: hint?.direction ?? null,
         updated_by: viewerId,
       };
-      const updatedAt = await saveWithLock("okr_kr_defs", row, meta?.updatedAt);
+      let updatedAt: string;
+      try {
+        updatedAt = await saveWithLock("okr_kr_defs", row, meta?.updatedAt);
+      } catch (e) {
+        // 2人がほぼ同時に初めて作った（kr_id の一意制約）・先に直された（楽観ロック）＝競合。読み直して最新を返す
+        if (!isUniqueViolation(e) && !(e instanceof ConflictError)) throw e;
+        const fresh = await must<KrDefRow>(
+          supabase.from("okr_kr_defs").select("id,kr_id,bands,evidence,hint_unit,hint_start,hint_target,hint_direction,updated_at").eq("kr_id", krId).maybeSingle(),
+        );
+        if (!fresh) throw e;
+        defMeta.set(krId, { id: fresh.id, updatedAt: fresh.updated_at });
+        throw new KrDefConflictError(krId, { bands: asBands(fresh.bands), evidence: fresh.evidence ?? "" }, hintDefOf(fresh));
+      }
       defMeta.set(krId, { id: row.id, updatedAt });
     },
   };

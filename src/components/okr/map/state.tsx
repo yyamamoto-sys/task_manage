@@ -3,11 +3,15 @@ import { useOkrMapBridge } from "./bridge";
 import { flowAllInit, setFlowAllFor, SIDEBAR_AUTO_COLLAPSE_PX, sidebarWidth, switchPage, type FlowAll } from "./nav";
 import { addOutcomeNotes, confirmSaveOf, detectConflicts, mergeAssessments, mergeDecisions, mergeDrafts, mergeLearnings, notesOfResources } from "./confirm";
 import { formatErrorForUser } from "../../../lib/errorMessage";
-import { activeData, krBands, setActiveData, type OkrMapData } from "./dataset";
-import { applyConfirm, compareOkr, defaultKrIdsOfTask, importKintone, type LinkCtx } from "./logic";
+import { activeData, krBands, PERSONAL_NAME, setActiveData, type OkrMapData } from "./dataset";
+import { applyConfirm, compareOkr, defaultKrIdsOfTask, howKey, importKintone, krIdsOfTask, PERSONAL_PJ, type LinkCtx } from "./logic";
 import { crossedStep, currentAssessment, deltaText, type CurrentAssessment } from "./steps";
-import { memoryRepository, type HintDef, type OkrMapRepository } from "./repository";
-import type { AssessEntry, Checkin, ClaimStatus, Decision, KintoneRow, KrAnswer, KrDef, KrRecord, Learning, OkrItem, OutcomeNote, Task } from "./types";
+import { KrDefConflictError, memoryRepository, type HintDef, type OkrMapRepository } from "./repository";
+import type { AiCandidate, AssessEntry, Checkin, ClaimStatus, Decision, KintoneRow, KrAnswer, KrDef, KrRecord, Learning, OkrItem, OutcomeNote, Resource, Task } from "./types";
+import type { OkrMapAi } from "./aiClient";
+import { orderTasksForAi, resourceKindOf, type CheckinAiContext } from "./checkinAi";
+import { planKintoneApply, readingFromImport, type KintoneApplyPlan, type KintoneReading } from "./kintone";
+import type { SuggestKr } from "./suggestAi";
 import { addHistory, registeredTasks, type History, type Reach } from "./reach";
 import * as U from "./userState";
 
@@ -63,8 +67,24 @@ interface MockState {
   lockedAt: string;
   imported: boolean;
   setImported: (v: boolean) => void;
-  /** Kintone（正式な内容）を取り込んで確定する */
-  importFromKintone: () => void;
+  /** Kintone（正式な内容）に合わせて確定する（本番は O・KR・TF・段の基準文を書いてからロック）。うまくいったら true */
+  importFromKintone: () => Promise<boolean>;
+  /** AI を使えるか（ゲスト・テストでは使わない。固定データのまま動く） */
+  aiReady: boolean;
+  /** Kintone の PDF・テキストを読む（AI）。失敗は例外 */
+  readKintone: (file: File) => Promise<void>;
+  /** 読んだ Kintone の内容（O・KR・段の基準文・取り込めないTF） */
+  kintoneReading: KintoneReading | null;
+  /** 読ませた資料（全回分） */
+  resources: Resource[];
+  /** 資料を読ませただけで、まだ確定していない回 */
+  openCheckins: Checkin[];
+  /** 資料を1件ずつ AI に読ませて保存する。読めなかった資料の理由を返す */
+  readResources: (files: File[], checkin: Checkin, onProgress?: (done: number) => void) => Promise<string[]>;
+  /** どのKRにもつながらない仕事の、つなぎ先の候補を AI に出させる（PJごと・保存しない） */
+  suggestCandidates: (task: Task) => Promise<void>;
+  /** 仕事がKRにどう役立つかの案を AI に出させる（保存しない） */
+  suggestHow: (task: Task, krId: string) => Promise<void>;
   unlockDemo: () => void;
   kintone: KintoneRow[];
   records: Record<string, KrRecord>;
@@ -162,6 +182,8 @@ export function MockProvider({
   data: dataProp,
   onOpenPersonalOkr,
   repository = memoryRepository,
+  ai = null,
+  applyKintone,
 }: {
   children: ReactNode;
   initial?: InitialView;
@@ -169,15 +191,27 @@ export function MockProvider({
   onOpenPersonalOkr?: () => void;
   /** 記録の保存先。既定はメモリ（テスト・ゲスト）。本番は supabaseRepository */
   repository?: OkrMapRepository;
+  /** AI の呼び出し。null（既定・ゲスト・テスト）は AI を使わず、データにある内容だけで動く */
+  ai?: OkrMapAi | null;
+  /** 「Kintone に合わせる」で O・KR・TF 本体を書く（本番は appStore の保存関数を通す） */
+  applyKintone?: (plan: KintoneApplyPlan) => Promise<void>;
 }) {
   const loaded = dataProp ?? activeData();
   if (!loaded) throw new Error("地図のデータがありません");
-  // 段の基準文は画面で直せるので、直した分を重ねたものを「いまのデータ」にする
+  // 段の基準文・読ませた資料・AIの候補・Kintone の読み取りは画面で増える・直るので、その分を重ねたものを「いまのデータ」にする
   const [krDefsState, setKrDefs] = useState(loaded.krDefs);
-  const data = useMemo(() => (krDefsState === loaded.krDefs ? loaded : { ...loaded, krDefs: krDefsState }), [loaded, krDefsState]);
+  const [resources, setResources] = useState<Resource[]>(loaded.resources);
+  const [aiCands, setAiCands] = useState<Record<string, AiCandidate[]>>(loaded.aiCandidates);
+  const [howOpts, setHowOpts] = useState<Record<string, string[]>>(loaded.howOptions);
+  const [kintoneReading, setKintoneReading] = useState<KintoneReading | null>(null);
+  const data = useMemo(() => {
+    if (krDefsState === loaded.krDefs && resources === loaded.resources && aiCands === loaded.aiCandidates && howOpts === loaded.howOptions && !kintoneReading) return loaded;
+    return { ...loaded, krDefs: krDefsState, resources, aiCandidates: aiCands, howOptions: howOpts, kintoneRows: kintoneReading ? kintoneReading.rows : loaded.kintoneRows };
+  }, [loaded, krDefsState, resources, aiCands, howOpts, kintoneReading]);
   // 子の部品は dataset.ts から読む。子より先に描画されるここで、いまのデータに差し替える
   setActiveData(data);
-  const { tasks: allTasks, nextCheckin, resources, weekStart: WEEK_START } = data;
+  const { tasks: allTasks, nextCheckin, weekStart: WEEK_START } = data;
+  const [openCheckins, setOpenCheckins] = useState<Checkin[]>(loaded.openCheckins ?? []);
   const [viewerId, setViewerId] = useState(initial?.viewerId ?? data.viewerId);
   const [mode, setModeState] = useState<ViewMode>(initial?.mode ?? "team");
   const [flowAll, setFlowAllState] = useState<FlowAll>(() => flowAllInit(initial?.flowAll));
@@ -317,13 +351,105 @@ export function MockProvider({
       lockedAt: data.lock.lockedAt ?? "",
       imported,
       setImported,
-      importFromKintone: () => {
+      importFromKintone: async () => {
         const rows = data.kintoneRows;
-        if (!rows) return;
+        if (!rows) return false;
         const next = importKintone(items, rows, data.currentQuarter.quarter);
-        setItems(next);
+        const lock = { groupId: data.groupId, viewerId, year: Number(data.today.slice(0, 4)), quarter: data.currentQuarter.quarter, lockedOn: data.today, snapshot: next };
+        if (!kintoneReading || !applyKintone) {
+          // テスト（架空データ）：画面の上だけで差し替える
+          setItems(next);
+          setLocked(true);
+          persist(repository.saveLock(lock));
+          return true;
+        }
+        const plan = planKintoneApply(kintoneReading, items, krDefsState);
+        // アプリにだけあるTFは消さないので、確定の記録にも残す
+        lock.snapshot = [...next, ...items.filter((i) => i.kind === "tf" && !rows.some((r) => r.id === i.id))];
+        try {
+          await applyKintone(plan);
+          for (const b of plan.bands) {
+            const cur = krDefsState[b.krId] ?? { bands: b.bands, evidence: "" };
+            const h = records[b.krId]?.hint;
+            const def: KrDef = { ...cur, bands: b.bands };
+            await repository.saveKrDef(b.krId, def, h ? { unit: h.unit, start: h.start, target: h.target, direction: h.direction } : null, viewerId);
+            setKrDefs((p) => ({ ...p, [b.krId]: def }));
+          }
+          await repository.saveLock(lock);
+        } catch (e) {
+          if (e instanceof KrDefConflictError) setKrDefs((p) => ({ ...p, [e.krId]: e.def }));
+          showToast(formatErrorForUser("Kintone の内容に合わせられませんでした", e));
+          return false;
+        }
+        // O・KR・TF は appStore に書いたので、地図はそちらから作り直される（画面の上での差し替えはしない）
+        setItems(null);
         setLocked(true);
-        persist(repository.saveLock({ groupId: data.groupId, viewerId, year: Number(data.today.slice(0, 4)), quarter: data.currentQuarter.quarter, lockedOn: data.today, snapshot: next }));
+        return true;
+      },
+      aiReady: ai !== null,
+      kintoneReading,
+      readKintone: async (file) => {
+        if (!ai) return;
+        const analysis = await ai.readKintone(file);
+        setKintoneReading(readingFromImport(analysis, items, file.name));
+        setImported(true);
+      },
+      resources,
+      openCheckins,
+      readResources: async (files, checkin, onProgress) => {
+        if (!ai) return [];
+        const errors: string[] = [];
+        const krItems = items.filter((i) => i.kind === "kr");
+        const nameOfId = (id: string | null) => (id ? (data.members.find((m) => m.id === id)?.name ?? "") : "");
+        const pjName = (id: string) => (id === PERSONAL_PJ ? PERSONAL_NAME : (data.pjs.find((p) => p.id === id)?.name ?? ""));
+        const ordered = orderTasksForAi(allTasks);
+        const memberIds = new Set([viewerId, ...ordered.flatMap((t) => t.assigneeIds ?? [t.assigneeId])]);
+        const ctx: CheckinAiContext = {
+          krs: krItems.map((k) => ({ id: k.id, label: k.label, text: k.text, def: krDefsState[k.id] ?? null, hint: records[k.id]?.hint ?? null, current: assess[k.id]?.cur.assessment.value ?? null })),
+          tasks: ordered.map((t) => ({ id: t.id, title: t.title, assignee: nameOfId(t.assigneeId), pj: pjName(t.pjId) })),
+          members: data.members.filter((m) => memberIds.has(m.id)).map((m) => ({ id: m.id, name: m.name })),
+        };
+        let done = 0;
+        for (const file of files) {
+          try {
+            const id = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `res-${Date.now()}-${done}`;
+            const res = await ai.readResource(file, ctx, { id, name: file.name, kind: resourceKindOf(file.name), checkinId: checkin.id });
+            await repository.saveResource({ groupId: data.groupId, viewerId, checkin, resource: res });
+            setResources((p) => [...p, res]);
+            setOpenCheckins((p) => (p.some((c) => c.id === checkin.id) || checkins.some((c) => c.id === checkin.id) ? p : [...p, checkin]));
+          } catch (e) {
+            errors.push(formatErrorForUser(`${file.name} を読めませんでした`, e));
+          }
+          done += 1;
+          onProgress?.(done);
+        }
+        return errors;
+      },
+      suggestCandidates: async (task) => {
+        if (!ai) return;
+        const krs = suggestKrs(items, krDefsState);
+        const pjName = task.pjId === PERSONAL_PJ ? PERSONAL_NAME : (data.pjs.find((p) => p.id === task.pjId)?.name ?? "");
+        const titles = allTasks.filter((t) => t.pjId === task.pjId && t.status !== "完了" && krIdsOfTask(t, linkCtx).length === 0).map((t) => t.title);
+        try {
+          const list = await ai.suggestCandidates(krs, pjName, titles.length > 0 ? titles : [task.title]);
+          setAiCands((p) => ({ ...p, [task.pjId]: list }));
+          if (list.length === 0) showToast("役立ちそうなKRの候補は見つかりませんでした");
+        } catch (e) {
+          showToast(formatErrorForUser("AIの候補を出せませんでした", e));
+        }
+      },
+      suggestHow: async (task, krId) => {
+        if (!ai) return;
+        const kr = suggestKrs(items, krDefsState).find((k) => k.id === krId);
+        if (!kr) return;
+        const pjName = task.pjId === PERSONAL_PJ ? PERSONAL_NAME : (data.pjs.find((p) => p.id === task.pjId)?.name ?? "");
+        try {
+          const list = await ai.suggestHow(kr, pjName, task.title);
+          setHowOpts((p) => ({ ...p, [howKey(task.id, krId)]: list }));
+          if (list.length === 0) showToast("案を出せませんでした。もう一度試してください");
+        } catch (e) {
+          showToast(formatErrorForUser("AIの案を出せませんでした", e));
+        }
       },
       unlockDemo: () => {
         setItems(null);
@@ -341,8 +467,12 @@ export function MockProvider({
       confirmImport: (resourceIds, picks, values) => {
         const selected = resources.filter((r) => resourceIds.includes(r.id));
         if (selected.length === 0) return [];
-        const ci = selected[0].checkinId === nextCheckin.id ? nextCheckin : checkins.find((c) => c.id === selected[0].checkinId);
+        const ci =
+          selected[0].checkinId === nextCheckin.id
+            ? nextCheckin
+            : (checkins.find((c) => c.id === selected[0].checkinId) ?? openCheckins.find((c) => c.id === selected[0].checkinId));
         if (!ci) return [];
+        setOpenCheckins((p) => p.filter((c) => c.id !== ci.id));
         const conflicts = detectConflicts(selected, records, ci.date);
         const drafts = mergeDrafts(selected, conflicts, picks);
         const assessed = selected.flatMap((r) => r.assessments.map((a) => ({ krId: a.krId, source: a.source })));
@@ -416,29 +546,47 @@ export function MockProvider({
       confirmedLinks,
       krDefs: krDefsState,
       saveKrDef: async (krId, def, hint) => {
+        const apply = (d: KrDef, h: HintDef | null) => {
+          setKrDefs((p) => ({ ...p, [krId]: d }));
+          setRecords((p) => {
+            const r = p[krId] ?? { krId, updatedAt: "", prevAt: "", source: null };
+            const rec: KrRecord = { ...r };
+            if (h) rec.hint = { ...h, value: r.hint?.value ?? h.start, prev: r.hint?.prev ?? h.start };
+            else delete rec.hint;
+            return { ...p, [krId]: rec };
+          });
+        };
         try {
           await repository.saveKrDef(krId, def, hint, viewerId);
         } catch (e) {
-          showToast(formatErrorForUser("保存できませんでした", e));
+          // 競合：生のエラーは出さず、読み直した最新の内容に差し替えて知らせる
+          if (e instanceof KrDefConflictError) {
+            apply(e.def, e.hint);
+            showToast(e.message);
+          } else {
+            showToast(formatErrorForUser("保存できませんでした", e));
+          }
           return false;
         }
-        setKrDefs((p) => ({ ...p, [krId]: def }));
-        setRecords((p) => {
-          const r = p[krId] ?? { krId, updatedAt: "", prevAt: "", source: null };
-          const rec: KrRecord = { ...r };
-          if (hint) rec.hint = { ...hint, value: r.hint?.value ?? hint.start, prev: r.hint?.prev ?? hint.start };
-          else delete rec.hint;
-          return { ...p, [krId]: rec };
-        });
+        apply(def, hint);
         showToast("保存しました");
         return true;
       },
       toast,
       showToast,
     }),
-    [data, onOpenPersonalOkr, repository, persist, updateUsers, krDefsState, allTasks, nextCheckin, resources, WEEK_START, viewerId, reach, regTasks, history, assessHist, assess, learnings, mode, setMode, flowAll, setFlowAll, sidebarCollapsed, sel, guideOpen, drawerOpen, modal, junctionOnly, celebrations, changes, decisionsOpen, newDecisions, items, locked, imported, records, checkins, decisions, confirmedBy, linkCtx, me, outcomeNotes, confirmedLinks, toast, showToast],
+    [data, onOpenPersonalOkr, repository, ai, applyKintone, kintoneReading, openCheckins, persist, updateUsers, krDefsState, allTasks, nextCheckin, resources, WEEK_START, viewerId, reach, regTasks, history, assessHist, assess, learnings, mode, setMode, flowAll, setFlowAll, sidebarCollapsed, sel, guideOpen, drawerOpen, modal, junctionOnly, celebrations, changes, decisionsOpen, newDecisions, items, locked, imported, records, checkins, decisions, confirmedBy, linkCtx, me, outcomeNotes, confirmedLinks, toast, showToast],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+}
+
+function suggestKrs(items: OkrItem[], defs: Record<string, KrDef>): SuggestKr[] {
+  return items.filter((i) => i.kind === "kr").map((k) => ({ id: k.id, label: k.label, text: k.text, def: defs[k.id] ?? null }));
+}
+
+/** 右の AI 相談パネルの幅（閉じているとき・見本では 0） */
+export function useConsultPx(): number {
+  return useOkrMapBridge((s) => s.consultPx);
 }
 
 /** いまのサイドバーの幅。本番は MainLayout が bridge に載せた実際の幅、見本（テスト）は自分のサイドバーの幅 */

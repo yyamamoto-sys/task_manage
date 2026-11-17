@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { aiCandidates, howOptions, krBands, krDefs, krStyle, MINE_COLOR, PERIOD_END, PERIOD_START, pjsInit, PERSONAL_NAME, TODAY } from "../dataset";
 import { routeTfIds } from "../flow";
 import {
@@ -25,7 +25,7 @@ import { proposalKey } from "../userState";
 import { KrDefEditor } from "./KrDefEditor";
 import { TrendChart } from "./Trend";
 import { panelNarrowPx } from "../nav";
-import { useSidebarPx } from "../state";
+import { useConsultPx, useSidebarPx } from "../state";
 import { hintText, JunctionMark, KrDot, KrDots, krLabel, krListText, krName, krText, nameOf, signed, StatusChip, StepScale, useFocusTrap, useNarrow } from "../ui";
 
 function KrPanel({ krId }: { krId: string }) {
@@ -301,9 +301,20 @@ function hintTextOrNone(r: { hint?: { value: number; target: number; unit: strin
 }
 
 function TaskPanel({ taskId }: { taskId: string }) {
-  const { linkCtx, items, overrides, setOverride, proposals, takeProposal, setProposal, how, setHow, viewerId, setSel, mode, tasks } = useMock();
+  const { linkCtx, items, overrides, setOverride, proposals, takeProposal, setProposal, how, setHow, viewerId, setSel, mode, tasks, aiReady, suggestCandidates, suggestHow } = useMock();
+  // AI に候補・案を出させている最中のもの（"cand" か KR の ID）
+  const [asking, setAsking] = useState<string | null>(null);
   const t = tasks.find((x) => x.id === taskId);
   if (!t) return null;
+  const ask = async (key: string, run: () => Promise<void>) => {
+    setAsking(key);
+    try {
+      await run();
+    } finally {
+      setAsking(null);
+    }
+  };
+  const howOf = (k: string) => howOptions[howKey(t.id, k)] ?? howOptions[k] ?? [];
   const pj = pjsInit.find((p) => p.id === t.pjId);
   const pjLabel = t.pjId === PERSONAL_PJ ? PERSONAL_NAME : pj?.name;
   const krs = krIdsOfTask(t, linkCtx);
@@ -357,7 +368,17 @@ function TaskPanel({ taskId }: { taskId: string }) {
         mine && mode === "self" ? (
           <>
             <h4 className="mk-panel-sub">AIの提案</h4>
-            {cands.length === 0 && <p className="mk-muted">提案はありません。</p>}
+            {cands.length === 0 &&
+              (aiReady ? (
+                <div className="mk-row">
+                  <button type="button" className="mk-btn mk-btn-sm" disabled={asking !== null} onClick={() => void ask("cand", () => suggestCandidates(t))}>
+                    {asking === "cand" ? "考えています…" : "AIにつなぎ先の候補を出してもらう"}
+                  </button>
+                  <span className="mk-muted">候補は保存しません。</span>
+                </div>
+              ) : (
+                <p className="mk-muted">提案はありません。</p>
+              ))}
             {cands.map((c) => {
               const state = proposals[proposalKey(t.id, c.krId)];
               return (
@@ -412,13 +433,23 @@ function TaskPanel({ taskId }: { taskId: string }) {
           </div>
           <p className="mk-muted">つなぎ先から外したKRの「どう役立つか」だけが消えます。</p>
           {krs
-            .filter((k) => (howOptions[k] ?? []).length > 0)
+            .filter((k) => howOf(k).length > 0 || aiReady || how[howKey(t.id, k)] !== undefined)
             .map((k) => (
             <div key={k}>
               <h4 className="mk-panel-sub">この仕事は{krLabel(k)}にどう役立つか（AIの案から選ぶ）</h4>
+              {howOf(k).length === 0 && aiReady && (
+                <button type="button" className="mk-btn mk-btn-sm" disabled={asking !== null} onClick={() => void ask(k, () => suggestHow(t, k))}>
+                  {asking === k ? "考えています…" : "AIに案を出してもらう"}
+                </button>
+              )}
               <fieldset className="mk-fieldset">
                 <legend className="mk-sr">{krLabel(k)}にどう役立つか</legend>
-                {(howOptions[k] ?? []).map((h) => (
+                {how[howKey(t.id, k)] !== undefined && !howOf(k).includes(how[howKey(t.id, k)]) && (
+                  <label className="mk-opt is-on">
+                    <input type="radio" name={`how-${t.id}-${k}`} checked onChange={() => {}} /> {how[howKey(t.id, k)]}
+                  </label>
+                )}
+                {howOf(k).map((h) => (
                   <label key={h} className={`mk-opt${how[howKey(t.id, k)] === h ? " is-on" : ""}`}>
                     <input type="radio" name={`how-${t.id}-${k}`} checked={how[howKey(t.id, k)] === h} onChange={() => setHow(t.id, k, h)} /> {h}
                   </label>
@@ -559,7 +590,7 @@ function PjPanel({ pjId }: { pjId: string }) {
  */
 export function DetailPanel() {
   const { sel, setSel } = useMock();
-  const narrow = useNarrow(panelNarrowPx(useSidebarPx()));
+  const narrow = useNarrow(panelNarrowPx(useSidebarPx(), useConsultPx()));
   const ref = useRef<HTMLElement>(null);
   const key = sel ? `${sel.type}:${sel.id}` : "";
 

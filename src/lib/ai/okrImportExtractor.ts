@@ -30,6 +30,8 @@ export interface OkrImportTaskForce {
 export interface OkrImportKeyResult {
   title: string;
   task_forces: OkrImportTaskForce[];
+  /** 評価基準バンドの文（"60"〜"100"）。withBands のときだけ読む（OKRの地図の取り込み）。無ければ null */
+  bands?: Partial<Record<"60" | "70" | "80" | "90" | "100", string>> | null;
 }
 
 export interface OkrImportObjective {
@@ -114,6 +116,22 @@ export interface ExtractOkrImportParams {
   transcript: string;
   /** PDF等の添付。テキストが無くても添付があれば解析可 */
   attachment?: FileAttachment | null;
+  /** KRごとの評価基準バンド（60〜100の文）も取り出す（OKRの地図の Kintone 取り込み。s91 91-3） */
+  withBands?: boolean;
+  /** 未指定は Edge Function の既定モデル */
+  model?: string;
+}
+
+// 地図の取り込みでは、評価基準バンドを「抽出しない」から「抽出する」に差し替える
+const BANDS_PROMPT = `
+
+【追加：評価基準バンドも抽出する（上の「抽出しないもの」のうち評価基準バンドだけは抽出する）】
+- 各KRの評価基準バンド（60/70/80/90/100 の各段の達成状態の説明文）を key_results[].bands に入れる。
+- 形は {"60": "…", "70": "…", "80": "…", "90": "…", "100": "…"}。資料に無い段のキーは書かない。バンドが1つも無いKRは null。
+- 文は原文の趣旨を保って1〜2文に整える（数値・社名・条件は落とさない）。`;
+
+export function okrImportSystemPrompt(withBands: boolean): string {
+  return withBands ? SYSTEM_PROMPT + BANDS_PROMPT : SYSTEM_PROMPT;
 }
 
 /**
@@ -146,15 +164,27 @@ function validateTaskForce(data: unknown, path: string): OkrImportTaskForce {
   };
 }
 
+const BAND_KEYS = ["60", "70", "80", "90", "100"] as const;
+
+function validateBands(v: unknown): OkrImportKeyResult["bands"] {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+  const o = v as Record<string, unknown>;
+  const out: NonNullable<OkrImportKeyResult["bands"]> = {};
+  for (const k of BAND_KEYS) if (typeof o[k] === "string" && (o[k] as string).trim()) out[k] = (o[k] as string).trim();
+  return Object.keys(out).length > 0 ? out : null;
+}
+
 function validateKeyResult(data: unknown, path: string): OkrImportKeyResult {
   if (!data || typeof data !== "object") throw new Error(`${path}が不正な形式です。`);
   const d = data as Record<string, unknown>;
   if (typeof d.title !== "string" || !d.title.trim()) throw new Error(`${path}.titleが取得できませんでした。`);
   if (!Array.isArray(d.task_forces)) throw new Error(`${path}.task_forcesが取得できませんでした。`);
-  return {
+  const kr: OkrImportKeyResult = {
     title: d.title,
     task_forces: d.task_forces.map((tf, i) => validateTaskForce(tf, `${path}.task_forces[${i}]`)),
   };
+  if ("bands" in d) kr.bands = validateBands(d.bands);
+  return kr;
 }
 
 export function validateOkrImportAnalysis(data: unknown): OkrImportAnalysis {
@@ -186,7 +216,8 @@ export async function extractOkrImportData(params: ExtractOkrImportParams): Prom
   // 添付（PDF等）がある場合は document ブロックとして同梱
   const content = buildMessageContent(userMessage, params.attachment ?? null);
   // OKRは大きく引用符が多いため、出力切れを避けるため max_tokens を広めに取る
-  const res = await invokeAI(SYSTEM_PROMPT, [{ role: "user", content }], 8192, "okr-import");
+  const system = okrImportSystemPrompt(params.withBands === true);
+  const res = await invokeAI(system, [{ role: "user", content }], 8192, "okr-import", params.model);
   assertNotTruncated(res, TRUNCATED_OKR_IMPORT_MESSAGE);
   const text = res.content[0].text;
 
@@ -208,7 +239,7 @@ export async function extractOkrImportData(params: ExtractOkrImportParams): Prom
           `コードブロックや説明文は一切付けないこと。`,
       },
     ];
-    const retry = await invokeAI(SYSTEM_PROMPT, repairMessages, 8192, "okr-import");
+    const retry = await invokeAI(system, repairMessages, 8192, "okr-import", params.model);
     assertNotTruncated(retry, TRUNCATED_OKR_IMPORT_MESSAGE);
     return validateOkrImportAnalysis(parseJsonSafe<unknown>(retry.content[0].text));
   }

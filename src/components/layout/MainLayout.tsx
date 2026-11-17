@@ -377,6 +377,10 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   const [consultPanelWidth, setConsultPanelWidth] = useState(() => {
     try { return Math.min(800, Math.max(300, parseInt(localStorage.getItem(KEYS.CONSULT_PANEL_WIDTH) ?? "400", 10) || 400)); } catch { return 400; }
   });
+  // OKRモードの地図は、開いている AI 相談パネルの幅もふまえて「図と詳細を並べられるか」を決める（Section 91）
+  useEffect(() => {
+    useOkrMapBridge.getState().setConsultPx(!isMobile && isConsultOpen ? consultPanelWidth : 0);
+  }, [isMobile, isConsultOpen, consultPanelWidth]);
   // AIパネルをドラッグでリサイズ中はwidth/rightの遷移アニメを切る（カーソル追従の遅延を防ぐ）
   const [isConsultResizing, setIsConsultResizing] = useState(false);
   // ラボ系ビュー（体制図・関係性グラフ・カレンダー・マイページ）は同時に1つだけ開く。

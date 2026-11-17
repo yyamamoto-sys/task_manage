@@ -34,6 +34,8 @@
 // │   "okr-personal-chat"   — 個人OKR用AIパネルの対話（相談） │
 // │   "okr-personal-review-draft" — 個人OKR月末の振り返り下書き生成（明示ボタン） │
 // │   "okr-personal-plan-draft"   — 個人OKR翌月の計画ドラフト生成（明示ボタン） │
+// │   "okr-checkin-extract" — OKRの地図：チェックイン資料1件から見立て等を抽出 │
+// │   "okr-map-suggest"     — OKRの地図：つなぎ先の候補・どう役立つかの案     │
 // │  新機能を追加するときは AIIntent に新タグを追加し、prompt builder │
 // │  に「何のデータを渡しているか」をコメントで明示する。タグ無しは   │
 // │  コンパイルエラー。                                              │
@@ -72,7 +74,15 @@ export type AIIntent =
   | "okr-personal-chat"         // 個人OKR用AIパネルの対話形式の相談（明示操作・ターンごとに発生）
   | "okr-personal-review-draft" // 個人OKR月末の振り返り下書き生成（明示ボタン・月に1回程度）
   | "okr-personal-plan-draft"   // 個人OKR翌月の計画ドラフト生成（明示ボタン・月に1回程度）
-  | "okr-personal-period-review-draft"; // 個人OKR「全体」タブ：月全体・四半期全体の振り返り本文の下書き生成（明示ボタン）
+  | "okr-personal-period-review-draft" // 個人OKR「全体」タブ：月全体・四半期全体の振り返り本文の下書き生成（明示ボタン）
+  | "okr-checkin-extract"       // OKRの地図：チェックイン資料1件（本文）＋KRの段の基準・部署の仕事の題名/担当/PJ・メンバー名から、見立て・学び・成果の記述・決定事項を抽出（明示ボタン）
+  | "okr-map-suggest";          // OKRの地図：KRの題名・段の基準と仕事の題名/PJから、つなぎ先の候補・「どう役立つか」の案を出す（明示ボタン・保存しない）
+
+/** 構造化出力（output_config）。Edge Function が format と effort だけを通す（docs/dev/sections/s6_ai-integration.md 6-18） */
+export interface InvokeAIOptions {
+  outputSchema?: Record<string, unknown>;
+  effort?: "low" | "medium" | "high";
+}
 
 export interface AIRawResponse {
   content: { type: "text"; text: string }[];
@@ -146,6 +156,7 @@ export async function invokeAI(
   maxTokens: number,
   intent: AIIntent,
   model?: string,
+  options?: InvokeAIOptions,
 ): Promise<AIRawResponse> {
   // ゲスト（サンプル閲覧）は初めてAIを使うときだけ匿名セッションを遅延生成する（Phase 3・
   // CLAUDE.md Section 23）。回数制限・実際のゲスト判定はEdge Function側（JWTの
@@ -170,8 +181,16 @@ export async function invokeAI(
   }
   // intent はゲスト分の利用ログ記録にEdge Function側で使う（Section 23）。
   // 認証済みユーザーは既存どおりクライアント側でlogAIUsage()が記録するため未使用。
+  const outputConfig = {
+    ...(options?.outputSchema ? { format: { type: "json_schema", schema: options.outputSchema } } : {}),
+    ...(options?.effort ? { effort: options.effort } : {}),
+  };
   const { data, error, response: httpResponse } = await supabase.functions.invoke("ai-consult", {
-    body: { system, messages, max_tokens: maxTokens, intent, ...(model ? { model } : {}) },
+    body: {
+      system, messages, max_tokens: maxTokens, intent,
+      ...(model ? { model } : {}),
+      ...(Object.keys(outputConfig).length > 0 ? { output_config: outputConfig } : {}),
+    },
   });
 
   if (error) {
@@ -181,15 +200,21 @@ export async function invokeAI(
     throw new Error(await buildInvokeErrorMessage(data, error, httpResponse));
   }
 
-  const response = data as AIRawResponse;
+  const raw = data as (Omit<AIRawResponse, "content"> & { content?: { type?: string; text?: string }[] }) | null;
   // 全 AI 呼び出しの使用量を ai_usage_logs に記録（fire-and-forget）
   // intent をそのまま consultation_type 列に保存することで、AdminView の
   // 「AI使用量」タブで全機能の使用量が反映される（CLAUDE.md Section 6-1b 参照）。
   // 返答が空でもAPIは呼ばれて課金済みのため、空の判定より前に記録する（v3.185）。
-  logAIUsage(intent, response?.usage);
+  logAIUsage(intent, raw?.usage);
 
-  const text: string = response?.content?.[0]?.text ?? "";
+  // Sonnet 5.5 は先頭に thinking ブロック（text なし）が来るので、text ブロックだけを残す。
+  // 呼び出し側はこれまでどおり content[0].text を読める（s6 6-18）
+  const textBlocks = (raw?.content ?? []).filter(
+    (b): b is { type: "text"; text: string } => (b?.type === undefined || b.type === "text") && typeof b?.text === "string" && b.text !== "",
+  );
+  const text: string = textBlocks[0]?.text ?? "";
   if (!text) throw new Error("AIからの応答が空でした。");
+  const response: AIRawResponse = { ...(raw as Omit<AIRawResponse, "content">), content: textBlocks.map((b) => ({ type: "text", text: b.text })) };
 
   // ゲスト（サンプル閲覧）の回数表示（参考値）を、成功時だけ加算する（v3.31・
   // CLAUDE.md Section 23）。ここに到達するのは非2xxエラーを通過した後なので、

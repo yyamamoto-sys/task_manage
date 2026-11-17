@@ -3,7 +3,9 @@ import { useOkrMapBridge } from "./bridge";
 import type { OkrMapData } from "./dataset";
 import { panelNarrowPx, scrollToId, sidebarKrRows } from "./nav";
 import type { OkrMapRepository } from "./repository";
-import { MockProvider, useMock, useSidebarPx, type InitialView } from "./state";
+import type { OkrMapAi } from "./aiClient";
+import type { KintoneApplyPlan } from "./kintone";
+import { MockProvider, useConsultPx, useMock, useSidebarPx, type InitialView } from "./state";
 import { CompareTable } from "./parts/CompareTable";
 import { DecisionsFold } from "./parts/DecisionsFold";
 import { DetailPanel } from "./parts/DetailPanel";
@@ -137,7 +139,7 @@ function PublishSidebar() {
 function Shell({ embedded, headerPadRight }: { embedded: boolean; headerPadRight?: string }) {
   const { toast, mode, pageAnchor, sidebarCollapsed, drawerOpen, modal, setModal } = useMock();
   // 本番は MainLayout のサイドバーの実際の幅で、図と詳細を並べられるかを決める（見本は mock4.css の幅）
-  const narrow = useNarrow(panelNarrowPx(useSidebarPx()));
+  const narrow = useNarrow(panelNarrowPx(useSidebarPx(), useConsultPx()));
 
   // ページを切り替えたら先頭へ戻す（場所を指定されたときはそこへ）。最初の表示では動かさない
   const mainRef = useRef<HTMLElement>(null);
@@ -212,11 +214,15 @@ export interface OkrMapAppProps {
   onOpenPersonalOkr?: () => void;
   /** 記録の保存先（既定はメモリ） */
   repository?: OkrMapRepository;
+  /** AI の呼び出し（既定は null＝使わない。ゲスト・テスト） */
+  ai?: OkrMapAi | null;
+  /** 「Kintone に合わせる」で O・KR・TF 本体を書く */
+  applyKintone?: (plan: KintoneApplyPlan) => Promise<void>;
 }
 
-export default function App({ initial, data, embedded = false, headerPadRight, onOpenPersonalOkr, repository }: OkrMapAppProps) {
+export default function App({ initial, data, embedded = false, headerPadRight, onOpenPersonalOkr, repository, ai, applyKintone }: OkrMapAppProps) {
   return (
-    <MockProvider initial={initial} data={data} onOpenPersonalOkr={onOpenPersonalOkr} repository={repository}>
+    <MockProvider initial={initial} data={data} onOpenPersonalOkr={onOpenPersonalOkr} repository={repository} ai={ai} applyKintone={applyKintone}>
       <Shell embedded={embedded} headerPadRight={headerPadRight} />
     </MockProvider>
   );

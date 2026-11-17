@@ -1,32 +1,56 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { CONSULT_ATTACHMENT_ACCEPT } from "../../../../lib/ai/consultationAttachmentLoader";
 import { detectConflicts, mergeAssessments, mergeDrafts, notesOfResources, unresolved } from "../confirm";
-import { DEMO, krBands, nextCheckin, resources } from "../dataset";
+import { DEMO, krBands, nextCheckin, TODAY } from "../dataset";
 import { formatMd } from "../logic";
 import { currentAssessment, moveText } from "../steps";
 import { useMock } from "../state";
+import type { Checkin } from "../types";
 import { hintText, krLabel, krName, nameOf, useFocusTrap } from "../ui";
 
-/** 「資料を読ませる」の引き出し。資料を選ぶ（複数可）→ AIの下書き → 資料どうしの食い違いを選ぶ → まとめて確定 */
+const NEW_CI = "__new__";
+const newId = () => (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `ci-${Date.now()}`);
+
+/**
+ * 「資料を読ませる」の引き出し。回を選ぶ（または新しく作る）→ 資料を加えて AI に読ませる（複数可）→
+ * 読み取った資料を選ぶ → AIの下書き → 資料どうしの食い違いを選ぶ → まとめて確定。
+ * AI を使えないとき（ゲスト・テスト）は、データにある資料だけで同じ流れを見せる
+ */
 export function DocDrawer() {
-  const { records, items, assessHist, assess, confirmImport, confirmedBy, setDrawerOpen, showToast, tasks, reach } = useMock();
+  const { records, items, assessHist, assess, confirmImport, confirmedBy, setDrawerOpen, showToast, tasks, reach, aiReady, resources, openCheckins, checkins, readResources } = useMock();
   const [resIds, setResIds] = useState<string[]>([]);
   const [read, setRead] = useState(false);
   const [values, setValues] = useState<Record<string, number>>({});
   const [picks, setPicks] = useState<Record<string, number>>({});
   const ref = useRef<HTMLDivElement>(null);
-  const selected = useMemo(() => resources.filter((r) => resIds.includes(r.id)), [resIds]);
+
+  // 回の選択（AI を使えるときだけ）。資料を読ませた未確定の回があれば、いちばん新しいものを最初に選ぶ
+  const [newCi, setNewCi] = useState<Checkin>(() => ({ id: newId(), date: TODAY, title: `${formatMd(TODAY)}のチェックイン` }));
+  const pool = useMemo(() => [...openCheckins, ...checkins].sort((a, b) => (a.date < b.date ? 1 : -1)), [openCheckins, checkins]);
+  const [ciId, setCiId] = useState<string>(() => [...openCheckins].sort((a, b) => (a.date < b.date ? 1 : -1))[0]?.id ?? NEW_CI);
+  const ci: Checkin = !aiReady ? nextCheckin : ciId === NEW_CI ? newCi : (pool.find((c) => c.id === ciId) ?? newCi);
+  const listed = useMemo(() => (aiReady ? resources.filter((r) => r.checkinId === ci.id) : resources), [aiReady, resources, ci.id]);
+
+  const [files, setFiles] = useState<File[]>([]);
+  const [busy, setBusy] = useState<{ done: number; total: number } | null>(null);
+  const [errors, setErrors] = useState<string[]>([]);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const selected = useMemo(() => listed.filter((r) => resIds.includes(r.id)), [listed, resIds]);
   const krs = items.filter((i) => i.kind === "kr");
-  const close = () => setDrawerOpen(false);
-  const checkinDate = nextCheckin.date;
-  const conflicts = useMemo(() => detectConflicts(selected, records, checkinDate), [selected, records, checkinDate]);
+  const close = () => {
+    if (busy) return;
+    setDrawerOpen(false);
+  };
+  const conflicts = useMemo(() => detectConflicts(selected, records, ci.date), [selected, records, ci.date]);
   const drafts = useMemo(() => mergeDrafts(selected, conflicts, picks), [selected, conflicts, picks]);
   const open = unresolved(conflicts, picks);
   const notes = useMemo(() => notesOfResources(selected), [selected]);
   const assessedKrs = useMemo(() => [...new Set(selected.flatMap((r) => r.assessments.map((a) => a.krId)))], [selected]);
-  const merged = useMemo(() => mergeAssessments(assessHist, selected, nextCheckin, krBands), [assessHist, selected]);
+  const merged = useMemo(() => mergeAssessments(assessHist, selected, ci, krBands), [assessHist, selected, ci]);
   const learnList = useMemo(() => selected.flatMap((r) => r.learnings.map((l, i) => ({ ...l, id: `${r.id}-${i}` }))), [selected]);
   // 他の人がいるときだけ出す（1人だけが使っている状態では、確定済みの案内は要らない）
-  const confirmer = reach === "solo" ? undefined : confirmedBy[nextCheckin.id];
+  const confirmer = reach === "solo" ? undefined : confirmedBy[ci.id];
 
   useEffect(() => {
     const prev = document.activeElement as HTMLElement | null;
@@ -35,11 +59,38 @@ export function DocDrawer() {
   }, []);
   useFocusTrap(ref, true);
 
-  const toggle = (id: string) => {
-    setResIds((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
+  const resetPick = () => {
     setRead(false);
     setValues({});
     setPicks({});
+  };
+  const toggle = (id: string) => {
+    setResIds((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
+    resetPick();
+  };
+  const chooseCi = (id: string) => {
+    setCiId(id);
+    setResIds([]);
+    resetPick();
+  };
+
+  const runRead = async () => {
+    if (files.length === 0 || busy) return;
+    const target = ci;
+    setErrors([]);
+    setBusy({ done: 0, total: files.length });
+    const errs = await readResources(files, target, (done) => setBusy({ done, total: files.length }));
+    setBusy(null);
+    setErrors(errs);
+    setFiles([]);
+    if (fileRef.current) fileRef.current.value = "";
+    // 新しい回に読ませたら、その回を選んだ状態にし、次の「新しい回」は別の回にする
+    if (ciId === NEW_CI && errs.length < files.length) {
+      setCiId(target.id);
+      setNewCi({ id: newId(), date: TODAY, title: `${formatMd(TODAY)}のチェックイン` });
+    }
+    const ok = files.length - errs.length;
+    if (ok > 0) showToast(`${ok}件の資料を読み取りました。下の一覧で選んで、下書きを確かめてください`);
   };
 
   return (
@@ -51,20 +102,20 @@ export function DocDrawer() {
       }}
     >
       <button type="button" className="mk-drawer-scrim" aria-label="引き出しを閉じる" tabIndex={-1} onClick={close} />
-      <div ref={ref} tabIndex={-1} className="mk-drawer" role="dialog" aria-modal="true" aria-labelledby="mk-drawer-h">
+      <div ref={ref} tabIndex={-1} className="mk-drawer" role="dialog" aria-modal="true" aria-labelledby="mk-drawer-h" aria-busy={busy !== null}>
         <div className="mk-row">
           <h2 id="mk-drawer-h" className="mk-h2" style={{ margin: 0 }}>
             資料を読ませる
           </h2>
           <span className="mk-spacer" />
-          <button type="button" className="mk-btn mk-btn-sm" onClick={close}>
+          <button type="button" className="mk-btn mk-btn-sm" onClick={close} disabled={busy !== null}>
             閉じる
           </button>
         </div>
         <p className="mk-muted">チェックインの後に使います。資料から、AIの見立て・手がかりの数字・学び・決定事項・宿題の下書きを取り出します。直したい数字だけ直して、まとめて確定します。見立ては資料の記述だけから決まり、そのまま確定されます。誰でも操作できます。</p>
         {confirmer && (
           <div className="mk-card mk-note" role="status">
-            この回（{formatMd(nextCheckin.date)} {nextCheckin.title}）は{nameOf(confirmer)}さんが確定済みです。続けて別の資料を確定すると、決定事項と宿題は資料ごとに足し合わされます。
+            この回（{formatMd(ci.date)} {ci.title}）は{nameOf(confirmer)}さんが確定済みです。続けて別の資料を確定すると、決定事項と宿題は資料ごとに足し合わされます。
           </div>
         )}
         {DEMO && (
@@ -73,33 +124,93 @@ export function DocDrawer() {
           </div>
         )}
 
-        {resources.length === 0 ? (
-          <div className="mk-card" role="note">
-            資料（PowerPoint・PDF・議事録や文字起こし）をAIに読ませる機能は、準備ができしだい使えるようになります。それまでは、地図と仕事のつながりをそのまま使えます。
-          </div>
+        {aiReady && (
+          <>
+            <h3 className="mk-h3">1. 回を選ぶ</h3>
+            <fieldset className="mk-fieldset" disabled={busy !== null}>
+              <legend className="mk-small">資料を読ませる回</legend>
+              <label className={`mk-opt${ciId === NEW_CI ? " is-on" : ""}`}>
+                <input type="radio" name="ci" checked={ciId === NEW_CI} onChange={() => chooseCi(NEW_CI)} /> 新しい回
+              </label>
+              {ciId === NEW_CI && (
+                <div className="mk-row" style={{ margin: "4px 0 8px 22px", flexWrap: "wrap" }}>
+                  <label className="mk-small">
+                    日付{" "}
+                    <input type="date" className="mk-input" value={newCi.date} onChange={(e) => e.target.value && setNewCi((p) => ({ ...p, date: e.target.value }))} />
+                  </label>
+                  <label className="mk-small">
+                    名前{" "}
+                    <input type="text" className="mk-input" value={newCi.title} maxLength={60} onChange={(e) => setNewCi((p) => ({ ...p, title: e.target.value }))} />
+                  </label>
+                </div>
+              )}
+              {pool.slice(0, 6).map((c) => (
+                <label key={c.id} className={`mk-opt${ciId === c.id ? " is-on" : ""}`}>
+                  <input type="radio" name="ci" checked={ciId === c.id} onChange={() => chooseCi(c.id)} /> {formatMd(c.date)} {c.title}
+                  {openCheckins.some((o) => o.id === c.id) && <span className="mk-muted">（まだ確定していません）</span>}
+                </label>
+              ))}
+            </fieldset>
+
+            <h3 className="mk-h3">2. 資料を加えて、AIに読ませる</h3>
+            <p className="mk-small mk-muted">PowerPoint・PDF・Word・議事録や文字起こしのテキストを、複数選べます。文字だけを取り出して送ります（画像・旧形式は読めません）。1件ずつ読むので、件数が多いと時間がかかります。</p>
+            <div className="mk-row" style={{ flexWrap: "wrap" }}>
+              <input
+                ref={fileRef}
+                type="file"
+                multiple
+                accept={CONSULT_ATTACHMENT_ACCEPT}
+                aria-label="読ませる資料のファイル"
+                disabled={busy !== null}
+                onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
+              />
+              <button type="button" className="mk-btn mk-btn-primary" disabled={files.length === 0 || busy !== null || (ciId === NEW_CI && !newCi.title.trim())} onClick={() => void runRead()}>
+                {busy ? `読み取り中…（${busy.done}／${busy.total}）` : "読み取る"}
+              </button>
+            </div>
+            {errors.length > 0 && (
+              <div className="mk-card mk-note" role="alert">
+                {errors.map((e) => (
+                  <div key={e} className="mk-small" style={{ whiteSpace: "pre-wrap" }}>
+                    {e}
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {listed.length === 0 ? (
+          aiReady ? (
+            <p className="mk-muted">この回に読ませた資料はまだありません。上で資料を選んで「読み取る」を押してください。</p>
+          ) : (
+            <div className="mk-card" role="note">
+              資料（PowerPoint・PDF・議事録や文字起こし）をAIに読ませる機能は、ログインして使うときに使えます。それまでは、地図と仕事のつながりをそのまま使えます。
+            </div>
+          )
         ) : (
           <>
-            <h3 className="mk-h3">1. 資料を選ぶ（複数選べます）</h3>
+            <h3 className="mk-h3">{aiReady ? "3. 読み取った資料を選ぶ（複数選べます）" : "1. 資料を選ぶ（複数選べます）"}</h3>
             <fieldset className="mk-fieldset">
               <legend className="mk-small">{DEMO ? "読ませる資料（架空の2件・どちらも同じ回のもの）" : "読ませる資料"}</legend>
-              {resources.map((r) => (
+              {listed.map((r) => (
                 <label key={r.id} className={`mk-opt${resIds.includes(r.id) ? " is-on" : ""}`}>
                   <input type="checkbox" name="res" checked={resIds.includes(r.id)} onChange={() => toggle(r.id)} /> {r.name} <span className="mk-muted">{r.kind}</span>
                 </label>
               ))}
             </fieldset>
             <button type="button" className="mk-btn mk-btn-primary" style={{ marginTop: 8 }} disabled={selected.length === 0} onClick={() => setRead(true)}>
-              {DEMO ? "読み取る（模擬）" : "読み取る"}
+              {DEMO ? "読み取る（模擬）" : "下書きを見る"}
             </button>
           </>
         )}
 
         {selected.length > 0 && read && (
           <>
-            <h3 className="mk-h3">2. AIが読み取った下書き</h3>
+            <h3 className="mk-h3">AIが読み取った下書き</h3>
             <h4 className="mk-panel-sub">AIの見立て（資料の記述だけから。60が出発点）</h4>
             {assessedKrs.length === 0 ? (
-              <p className="mk-muted">この資料からは、見立てを取り出せませんでした。</p>
+              <p className="mk-muted">この資料からは、見立てを取り出せませんでした（段の基準文がまだ無いKRは、見立てを出しません）。</p>
             ) : (
               <ul className="mk-list">
                 {assessedKrs.map((k) => {
@@ -140,8 +251,7 @@ export function DocDrawer() {
                     </thead>
                     <tbody>
                       {drafts.map((d) => {
-                        const r = records[d.krId];
-                        const h = r.hint;
+                        const h = records[d.krId]?.hint;
                         if (!h) return null;
                         const cur = values[d.krId] ?? d.value;
                         const inConflict = conflicts.some((c) => c.krId === d.krId);
@@ -212,7 +322,7 @@ export function DocDrawer() {
                     {c.options.map((o, i) => (
                       <label key={i} className={`mk-opt${picks[c.krId] === i ? " is-on" : ""}`}>
                         <input type="radio" name={`conf-${c.krId}`} checked={picks[c.krId] === i} onChange={() => setPicks((p) => ({ ...p, [c.krId]: i }))} />{" "}
-                        <strong>{records[c.krId].hint ? hintText(records[c.krId].hint!, o.value) : o.value}</strong>{" "}
+                        <strong>{records[c.krId]?.hint ? hintText(records[c.krId].hint!, o.value) : o.value}</strong>{" "}
                         <span className="mk-muted">
                           {o.existing ? "すでに確定済みの値：" : ""}
                           {o.source.doc} {o.source.page}
@@ -224,47 +334,55 @@ export function DocDrawer() {
               </>
             )}
 
-            <h3 className="mk-h3">3. 成果の記述と、関係しそうな仕事</h3>
+            <h3 className="mk-h3">成果の記述と、関係しそうな仕事</h3>
             <p className="mk-muted">資料の中の成果の記述と、AIが推定した関連の仕事です。ここでは読むだけで、確定しません。「まとめて確定」すると、推定された結びつきが各仕事の担当者本人に「確かめてください」として届きます。</p>
-            <ul className="mk-list">
-              {notes.map((n) => (
-                <li key={n.key}>
-                  <strong>{krLabel(n.krId)}</strong> {n.change} 「{n.excerpt}」{" "}
-                  <span className="mk-muted">{n.sources.map((x) => `${x.doc} ${x.page}`).join("／")}</span>
-                  {n.links.length === 0 ? (
-                    <div className="mk-small mk-muted">関係しそうな仕事は見つかりませんでした（結びつきは届きません）。</div>
-                  ) : !n.links.some((l) => tasks.some((x) => x.id === l.taskId)) ? (
-                    <div className="mk-small mk-muted">関係しそうな仕事は登録にありません。</div>
-                  ) : (
-                    <ul className="mk-list mk-list-tight">
-                      {n.links.filter((l) => tasks.some((x) => x.id === l.taskId)).map((l) => {
-                        const t = tasks.find((x) => x.id === l.taskId);
-                        return (
-                          <li key={l.taskId}>
-                            {t?.title} <span className="mk-muted">担当：{nameOf(t?.assigneeId ?? null)}｜{l.reason}</span>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  )}
-                </li>
-              ))}
-            </ul>
-
-            <h3 className="mk-h3">4. 決定事項と宿題の取り出し結果</h3>
-            <ul className="mk-list">
-              {selected.flatMap((res) =>
-                res.decisions.map((d, i) => (
-                  <li key={`${res.id}-${i}`}>
-                    <span className={`mk-chip ${d.kind === "決定" ? "mk-chip-blue" : "mk-chip-yellow"}`}>{d.kind}</span> {d.text}
-                    {d.ownerId ? ` 担当：${nameOf(d.ownerId)}` : ""}{" "}
-                    <span className="mk-muted">
-                      {d.source.doc} {d.source.page}
-                    </span>
+            {notes.length === 0 ? (
+              <p className="mk-muted">この資料からは、成果の記述を取り出せませんでした。</p>
+            ) : (
+              <ul className="mk-list">
+                {notes.map((n) => (
+                  <li key={n.key}>
+                    <strong>{krLabel(n.krId)}</strong> {n.change} 「{n.excerpt}」{" "}
+                    <span className="mk-muted">{n.sources.map((x) => `${x.doc} ${x.page}`).join("／")}</span>
+                    {n.links.length === 0 ? (
+                      <div className="mk-small mk-muted">関係しそうな仕事は見つかりませんでした（結びつきは届きません）。</div>
+                    ) : !n.links.some((l) => tasks.some((x) => x.id === l.taskId)) ? (
+                      <div className="mk-small mk-muted">関係しそうな仕事は登録にありません。</div>
+                    ) : (
+                      <ul className="mk-list mk-list-tight">
+                        {n.links.filter((l) => tasks.some((x) => x.id === l.taskId)).map((l) => {
+                          const t = tasks.find((x) => x.id === l.taskId);
+                          return (
+                            <li key={l.taskId}>
+                              {t?.title} <span className="mk-muted">担当：{nameOf(t?.assigneeId ?? null)}｜{l.reason}</span>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
                   </li>
-                )),
-              )}
-            </ul>
+                ))}
+              </ul>
+            )}
+
+            <h3 className="mk-h3">決定事項と宿題の取り出し結果</h3>
+            {selected.every((r) => r.decisions.length === 0) ? (
+              <p className="mk-muted">この資料からは、決定事項と宿題を取り出せませんでした。</p>
+            ) : (
+              <ul className="mk-list">
+                {selected.flatMap((res) =>
+                  res.decisions.map((d, i) => (
+                    <li key={`${res.id}-${i}`}>
+                      <span className={`mk-chip ${d.kind === "決定" ? "mk-chip-blue" : "mk-chip-yellow"}`}>{d.kind}</span> {d.text}
+                      {d.ownerId ? ` 担当：${nameOf(d.ownerId)}` : ""}{" "}
+                      <span className="mk-muted">
+                        {d.source.doc} {d.source.page}
+                      </span>
+                    </li>
+                  )),
+                )}
+              </ul>
+            )}
 
             <div className="mk-row" style={{ marginTop: 14 }}>
               <button

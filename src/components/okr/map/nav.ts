@@ -18,9 +18,10 @@ export const sidebarWidth = (collapsed: boolean) => (collapsed ? SIDEBAR_W_COLLA
 /**
  * ウィンドウ幅がこの値以下だと、図と詳細は並べられない（詳細は右から出る引き出しになる）。
  * sidebarPx は実際のサイドバーの幅（本番は MainLayout が bridge に載せる 140〜420・折りたたみ 48）。
- * 見本（テスト）は 160／48 で、mock4.css の2つの幅（1373／1261）と同じ値になる
+ * consultPx は右の AI 相談パネルの幅（開いているときだけ。メイン領域がその分狭くなる）。
+ * 見本（テスト）は 160／48・AI 相談なしで、mock4.css の2つの幅（1373／1261）と同じ値になる
  */
-export const panelNarrowPx = (sidebarPx: number) => sidebarPx + MAIN_SIDE_PADDING + MAIN_NEEDS - 1;
+export const panelNarrowPx = (sidebarPx: number, consultPx = 0) => sidebarPx + consultPx + MAIN_SIDE_PADDING + MAIN_NEEDS - 1;
 
 /** ページを切り替える。開いていた詳細は閉じる。同じページを押しても何も変えない */
 export function switchPage(view: { mode: ViewMode; sel: Selection }, to: ViewMode): { mode: ViewMode; sel: Selection } {

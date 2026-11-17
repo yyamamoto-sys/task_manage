@@ -1,13 +1,16 @@
 // 本番の OKR モードの地図。appStore の実データを adapter.ts で地図の形に変え、記録は repository.ts から読む。
 // 記録の保存先は、ログイン中は Supabase（supabaseRepository.ts）、ゲストはメモリ（Supabase に触れない。Section 23）。
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Member as AppMember } from "../../../lib/localData/types";
 import { currentQuarter, todayStr } from "../../../lib/date";
 import { formatErrorForUser } from "../../../lib/errorMessage";
 import { isGuestMode } from "../../../lib/guestMode";
+import { pickCurrentObjectiveForGroup } from "../../../lib/okr/deptScope";
 import { selectScopedProjects, selectScopedTasks, useAppStore } from "../../../stores/appStore";
 import App from "./App";
 import { buildOkrMapCore } from "./adapter";
+import { createOkrMapAi, type OkrMapAi } from "./aiClient";
+import { writeKintonePlan, type KintoneApplyPlan } from "./kintone";
 import type { OkrMapData } from "./dataset";
 import { formatMd } from "./logic";
 import { fillRecords, memoryRepository, type OkrMapRecords, type OkrMapRepository } from "./repository";
@@ -37,6 +40,26 @@ export function OkrMapView({ currentUser, headerPadRight, onOpenPersonalOkr, rep
   const quarter = currentQuarter();
   const [defaultRepo] = useState<OkrMapRepository>(() => (isGuestMode() ? memoryRepository : createSupabaseRepository()));
   const repository = repoProp ?? defaultRepo;
+  // ゲストは AI を呼ばない（固定データのまま動く。Section 23）
+  const [ai] = useState<OkrMapAi | null>(() => (isGuestMode() ? null : createOkrMapAi()));
+  const applyKintone = useCallback(
+    async (plan: KintoneApplyPlan) => {
+      const s = useAppStore.getState();
+      await writeKintonePlan(plan, {
+        objective: pickCurrentObjectiveForGroup(s.objectives, s.currentGroupId),
+        keyResults: s.keyResults,
+        taskForces: s.taskForces,
+        saveObjective: s.saveObjective,
+        saveKeyResult: s.saveKeyResult,
+        saveTaskForce: s.saveTaskForce,
+        viewerId: currentUser.id,
+        quarter: currentQuarter(),
+        now: new Date().toISOString(),
+        newId: () => crypto.randomUUID(),
+      });
+    },
+    [currentUser.id],
+  );
 
   const core = useMemo(
     () =>
@@ -83,7 +106,7 @@ export function OkrMapView({ currentUser, headerPadRight, onOpenPersonalOkr, rep
   // 部署やKRの顔ぶれが変わったら、記録の状態を作り直す（記録は MockProvider の中で初期値として持つため）
   return (
     <div style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-      <App key={loadKey} data={data} embedded headerPadRight={headerPadRight} onOpenPersonalOkr={onOpenPersonalOkr} repository={repository} />
+      <App key={loadKey} data={data} embedded headerPadRight={headerPadRight} onOpenPersonalOkr={onOpenPersonalOkr} repository={repository} ai={ai} applyKintone={ai ? applyKintone : undefined} />
     </div>
   );
 }

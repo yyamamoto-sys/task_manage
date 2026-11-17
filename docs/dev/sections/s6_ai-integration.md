@@ -278,6 +278,7 @@ return {
 - **Edge Function（ai-consult）の入力検証**：`system` は文字列（旧クライアント互換・型だけ見る）または text ブロック1〜4個（`cache_control` は `{type:"ephemeral"}` のみ・合計20万字まで）。ブロックは作り直して既知のキーだけ渡す。`output_config` は `format`（`type:"json_schema"`＋`schema`。schema の根は object・JSON化して2万字まで）と `effort`（low/medium/high）だけ通し、他のキー・値は 400（`INVALID_REQUEST`）。ALLOWED_MODELS に `claude-sonnet-5-5` を追加。
 - **使用量**：返答の `usage` はそのまま素通しなので `cache_creation_input_tokens`／`cache_read_input_tokens` も届く。クライアントは `AIConsultationUsage` として保持するが、`ai_usage_logs` には従来どおり `input_tokens`（キャッシュ境界より後ろの分だけ）と `output_tokens` を記録する（列は増やしていない。キャッシュの読み書き分は入力トークン数に含まれない）。
 - **デプロイ順は Edge Function が先**。新クライアント＋旧 Edge の組み合わせでも、旧 Edge は `output_config` を捨て、`claude-sonnet-5-5` を既定（sonnet-4-6）に置き換え、system の配列はそのまま Anthropic に渡すので動く（構造化出力が効かないだけ）。旧クライアント＋新 Edge は文字列の system がそのまま通る。
+- **`invokeAI` も Sonnet 5.5 を使える**（2026-11-17・OKRの地図 段階3・feature/okr-v2）：返答の `content` から text ブロックだけを残して返す（先頭の thinking ブロックを除く。`type` の無い text も残す）ので、呼び出し側はこれまでどおり `content[0].text` を読める。構造化出力と effort は第6引数 `options`（`{ outputSchema, effort }`）で渡し、`output_config` として送る。指定しない呼び出しは `output_config` を送らない（従来どおり）。Edge Function の変更は不要（intent は許可リストで縛っていない・`claude-sonnet-5-5` は ALLOWED_MODELS にある）。
 
 ### 6-20. PJに紐づくOKRの渡し方（v3.214・2026-11-10）
 

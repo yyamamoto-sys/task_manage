@@ -131,6 +131,67 @@ SELECT column_name, udt_name FROM information_schema.columns
 
 ### 未解決・判断待ち
 
-- `okr_resources.reading` の形（段階3で決める）。それまで読み込みは資料を返さない。
+- ~~`okr_resources.reading` の形（段階3で決める）~~ → 91-3 で決めた。
 - 過去の週の「AIのまとめ」は保存しない（その週に動いた仕事から作り直す）。仕事の状態が後で変わると、まとめも変わる。
-- `personal_krs.key_result_id` を矢印の初期値にするか。
+- ~~`personal_krs.key_result_id` を矢印の初期値にするか~~ → 91-3 で「使う（表示だけ）」。
+
+---
+
+## 91-3. 段階3：資料を AI に読ませる（2026-11-17・feature/okr-v2・版は上げない・マイグレーションの追加なし）
+
+モックの `DocDrawer`（固定データ）・つなぎ先の候補・「どう役立つか」の案・Kintone の取り込みを、`invokeAI` 経由の AI で動かす。**ゲストとテストは AI を呼ばない**（`OkrMapView` がゲストのとき `ai=null` を渡す。Section 23。`App`／`MockProvider` の `ai` の既定も null）。
+
+### ファイル
+
+| ファイル | 中身 |
+|---|---|
+| `checkinAi.ts` | 資料1件の読み取り：システムプロンプト・本文の組み立て（`buildCheckinUserText`）・構造化出力のスキーマ（`CHECKIN_SCHEMA`）・返答の解釈（`parseCheckinReading`）・保存形（`readingOf`）。純粋関数 |
+| `suggestAi.ts` | つなぎ先の候補（PJ単位）と「どう役立つか」の案（仕事×KR）のプロンプト・スキーマ・解釈。純粋関数 |
+| `kintone.ts` | Kintone の読み取り結果 → 突き合わせの行（`readingFromImport`）・書き込み計画（`planKintoneApply`）・O・KR の文言の違い（`headDiffs`）・既存の保存関数での書き込み（`writeKintonePlan`） |
+| `aiClient.ts` | `OkrMapAi`（`createOkrMapAi()`）。ファイルの文字の抽出（`checkConsultAttachFile`→`loadConsultAttachment`）と `invokeAI` の呼び出し |
+
+### AI の呼び方（Section 6・16）
+
+- intent は2つ足した：`okr-checkin-extract`（資料1件）と `okr-map-suggest`（候補・案）。Kintone は既存の `okr-import` を流用（`extractOkrImportData` に `withBands`・`model` を足した。管理画面の取込は従来どおり）。
+- モデルはすべて `claude-sonnet-5-5`（AI相談と同じ `DEFAULT_CONSULT_MODEL`）。資料・候補・案は構造化出力（`invokeAI` の第6引数）・effort=low。Kintone は従来のプロンプトでの JSON（自己修正リトライつき）。
+- max_tokens：資料は 8192（添付を伴う抽出の既定。s6 6-1c）。上限で切れたら「資料を分けて」の例外（`assertNotTruncated`）。候補・案は 4096。
+- 送るもの：KR の番号・題名・段の基準文・証拠として見るもの・手がかりの定めといまの値・いまの見立て／部署の仕事（末端・中止を除く）を「終わっていない仕事→完了は新しい順」で最大300件、題名・主担当の名前・PJ名／仕事の担当者になっている人と本人の名前／資料の本文。**資料の本文と仕事の題名は `sanitizeComment` を通す**。仕事は `t1` などの番号で送り、返ってきた番号を ID に戻す（ID を AI に見せない）。
+- 空の資料・KR が無い地図は AI を呼ばずに止める（`checkReadable`）。文字の無い PDF は AI相談の添付と同じく、200KB までは PDF のまま送る。
+
+### 返答の解釈（`parseCheckinReading`）
+
+- 見立ては**資料の記述だけ**から（プロンプトで仕事の一覧・完了率を使わないよう指示）。**段の基準文が1つも無い KR の見立ては捨てる**。値は 60 未満を 60 に、最上段を超えたら最上段に。**60〜70 の間は AI の整数のまま、70 以上は満たした段の値（`stepBelow`）にそろえる**（統括の指示「60 を下限に、60〜70 の間は AI が状況から決めてよい」をそのまま強制した）。根拠（basis）は2〜4個まで、「まだ」の引用は空にする。
+- 一覧に無い KR・仕事の番号・種類の値は捨てる。決定事項の担当は名前で照合（空白・「さん」を除く。一意に決まらなければ担当なし）。
+- 成果の記述の `key` は資料ごと（`{資料ID}-n{i}`）。資料をまたいだ同じ出来事の突き合わせは AI に任せていない（足し合わせで1つにならない）。
+- 壊れた JSON・JSON でない返答は「もう一度読み取る／資料を分ける」の案内の例外。
+
+### 保存（マイグレーションの追加なし。段階2の表で足りた）
+
+- **`okr_resources.reading`** ＝ `{ version: 1, drafts, assessments, learnings, notes, decisions }`（画面の `Resource` から id・name・kind・checkinId を除いたもの。KR・仕事・担当者は本番の ID）。読み込み（`resourceOf`）は形が崩れていても落ちず、地図に無い KR の分を捨てる。
+- 資料を読ませると `saveResource` が、回（`okr_checkins`）が無ければ未確定の回として作り（`ignoreDuplicates`・確定した人は空）、資料の行を入れる。**読ませただけで何も確定していない回は `checkins` に数えない**（`openCheckins` として別に返す。最新の回の日付・「未更新」の判定を動かさない）。確定は段階2の `confirmImport`→`saveConfirm` のまま（食い違いを選ぶまで確定できない）。
+- 候補・案は保存しない（画面を開き直すと消える）。選んだ「どう役立つか」は段階2の表に残るので、案が無いときも選んだ文は出す。案は `howOptions[howKey(仕事, KR)]`（モックの KR 単位の固定データも読める）。
+
+### 画面
+
+- 資料を読ませる：1. 回を選ぶ（新しい回＝日付と名前を入れる／未確定の回／確定済みの回の新しい6件）→ 2. 資料を加えて読み取る（複数・1件ずつ・進み具合を出す・読めなかった資料は理由を並べる）→ 3. 読み取った資料を選ぶ（その回の資料だけ）→ 下書き → まとめて確定。未確定の回があれば、いちばん新しいものを最初に選ぶ。
+- 仕事の詳細（本人・「わたし」）：つながらない仕事は「AIにつなぎ先の候補を出してもらう」、つながる仕事は KR ごとに「AIに案を出してもらう」。
+- O・KRの取り込み：「PDFを選ぶ」→ AI が O・KR・TF と段の基準文を読む → 違い（今期のTF・O と KR の文言）と、段の基準文を読み取った KR・取り込めない TF を見せる → **「Kintone に合わせる」を押したときだけ**、`writeKintonePlan` が appStore の `saveObjective`／`saveKeyResult`／`saveTaskForce` で O・KR・TF を書き、段の基準文を `saveKrDef` で `okr_kr_defs` に書き、`okr_tf_locks` に1行（その時点の並び）。
+  - 対応づけ：KR は並び順、TF は番号（`TF{KR番号}-{tf_number}`）。アプリに無い TF は今期で新しく作る（リーダーは空）。**アプリにだけある TF は消さない**（期中の PJ の紐づけを壊さないため。モックの「取り込むとアプリから外れる」とは違う）。アプリに無い KR は作らない（その KR の TF は「取り込めない」と出す）。
+  - Kintone の読み取り結果は保存しない（ロックの記録だけが残る）。
+
+### 段階2の判断待ちへの統括の答え（対応済み）
+
+- `personal_krs.key_result_id`：その個人OKRに `okr_personal_kr_links` の行が1つも無いとき（外した行も含めて）だけ、矢印の初期値にする（表示だけ）。本人がその個人OKRの矢印を触ったときに、残した初期値の矢印も一緒に書く（`diffUser`。書かないと開き直したときに消える）。そのため矢印は外した行も読む。
+- 詳細の列の境目：`panelNarrowPx(sidebarPx, consultPx)`。MainLayout が開いている AI 相談パネルの幅（モバイル・閉じているときは 0）を `bridge.ts` の `consultPx` に載せる。
+- `okr_kr_defs` の同時の初回作成：一意制約（23505）と楽観ロックの競合（`ConflictError`）は、行を読み直して `KrDefConflictError`（最新の内容つき）にする。画面は最新の内容に差し替え、「ほかの人が先に…確かめてからもう一度保存してください」と出す（生のエラーは出さない）。次の保存は読み直した行の ID と updated_at で楽観ロックする。
+
+### Edge Function（ai-consult）
+
+変更なし。intent は許可リストで縛っていない（ゲスト分のログに使うだけ）、`claude-sonnet-5-5` は ALLOWED_MODELS にある、`output_config`（format＋effort）は 6-18 で通すようにしてある。スキーマは根が object・2万字以内（`stage3.test.ts` が見る）。
+
+### 未解決・判断待ち
+
+- Sonnet 5.5（effort=low）で資料1件の読み取りが Edge Function の実行時間の上限に収まるかは、実機で確かめていない。長い資料で 546／タイムアウトが出るなら、資料を分けて読ませる案内か、モデルを Haiku 5.5 に下げる。
+- アプリにだけある TF を「合わせる」で消さない判断（上記）。消すなら `deleteTaskForce`（論理削除）を足す。
+- Kintone にあってアプリに無い KR は作らない（半期固定の前提）。
+- 成果の記述を資料をまたいで1つにまとめる（同じ出来事の `key` をそろえる）仕組みは無い。

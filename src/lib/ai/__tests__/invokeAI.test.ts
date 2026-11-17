@@ -196,6 +196,27 @@ describe("invokeAI：ゲストのAI利用回数表示（参考値）の加算（
     expect(mockRecordGuestAiUse).toHaveBeenCalledTimes(1);
   });
 
+  it("Sonnet 5.5 の先頭の thinking ブロックを飛ばし、content[0].text で本文を読める（s6 6-18・OKRの地図 段階3）", async () => {
+    setGuestMode(false);
+    mockInvoke.mockResolvedValue({
+      data: { content: [{ type: "thinking", thinking: "", signature: "x" }, { type: "text", text: "{\"a\":1}" }], usage: { input_tokens: 1, output_tokens: 1 }, stop_reason: "end_turn" },
+      error: null,
+    });
+    const res = await invokeAI("s", [{ role: "user", content: "hi" }], 1000, "okr-checkin-extract", "claude-sonnet-5-5", { outputSchema: { type: "object" }, effort: "low" });
+    expect(res.content[0].text).toBe("{\"a\":1}");
+    expect(res.stop_reason).toBe("end_turn");
+    const body = mockInvoke.mock.calls[0][1].body;
+    expect(body.output_config).toEqual({ format: { type: "json_schema", schema: { type: "object" } }, effort: "low" });
+    expect(body.model).toBe("claude-sonnet-5-5");
+  });
+
+  it("output_config を指定しないときは送らない（旧来の呼び出しは変わらない）", async () => {
+    setGuestMode(false);
+    mockInvoke.mockResolvedValue({ data: { content: [{ type: "text", text: "ok" }] }, error: null });
+    await invokeAI("s", [{ role: "user", content: "hi" }], 1000, "kr-report");
+    expect(mockInvoke.mock.calls[0][1].body).not.toHaveProperty("output_config");
+  });
+
   it("Edge Functionがエラーを返したときはrecordGuestAiUseを呼ばない（GUEST_DAILY_LIMIT_EXCEEDED）", async () => {
     setGuestMode(true);
     mockInvoke.mockResolvedValue({
