@@ -54,7 +54,7 @@ export function TeamBand() {
   const krs = items.filter((i) => i.kind === "kr").map((k) => k.id);
   const none = krs.every((k) => !assess[k]);
   return (
-    <section className="mk-card mk-band" aria-labelledby="mk-band-h">
+    <section className="mk-card mk-band" aria-labelledby="mk-band-h" data-tour-id="okr-map-band">
       <h2 id="mk-band-h" className="mk-h2 mk-h2-big">
         <svg width={22} height={22} viewBox="-12 -12 24 24" aria-hidden="true">
           <circle r={10} fill="#3b6fd4" opacity={0.18} />

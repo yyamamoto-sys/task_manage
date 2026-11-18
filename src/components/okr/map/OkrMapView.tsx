@@ -15,9 +15,36 @@ import type { OkrMapData } from "./dataset";
 import { formatMd } from "./logic";
 import { fillRecords, memoryRepository, type OkrMapRecords, type OkrMapRepository } from "./repository";
 import { createSupabaseRepository } from "./supabaseRepository";
+import { useTour } from "../../tour/TourProvider";
+import { OKR_MAP_TOUR_ID } from "../../tour/tours";
+import { OKR_MAP_INTRO_TOUR_ID } from "../../tour/tours/okr-map-intro";
+import { useOkrMapBridge } from "./bridge";
 import "../okrTheme.css";
 import "./mock.css";
 import "./mock4.css";
+
+/**
+ * 地図が表示されたときの、地図のガイドツアーの起動口（地図のデータが読めて App が出るときだけマウントされる）。
+ * ・ガイドから再生したとき（mapTourPending）は、既読でも最初から始める。
+ * ・自動：未読で、他のツアーが進行中でないとき1回。お知らせツアー（okr-map-intro）と重ならないよう、
+ *   お知らせを見終えた人には自動で出さず、自動で出すときはお知らせを既読にして後から出ないようにする（どちらか1本だけ）。
+ */
+function OkrMapTourStarter() {
+  const tour = useTour();
+  const pending = useOkrMapBridge((s) => s.mapTourPending);
+  useEffect(() => {
+    if (pending) {
+      useOkrMapBridge.getState().setMapTourPending(false);
+      tour.start(OKR_MAP_TOUR_ID);
+      return;
+    }
+    if (tour.isRunning || tour.isCompleted(OKR_MAP_TOUR_ID) || tour.isCompleted(OKR_MAP_INTRO_TOUR_ID)) return;
+    tour.markCompleted(OKR_MAP_INTRO_TOUR_ID);
+    tour.start(OKR_MAP_TOUR_ID);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pending]);
+  return null;
+}
 
 interface Props {
   currentUser: AppMember;
@@ -119,6 +146,7 @@ export function OkrMapView({ currentUser, headerPadRight, onOpenPersonalOkr, rep
   // 部署・本人・週・四半期が変わったら、記録の状態を作り直す（記録は MockProvider の中で初期値として持つため）
   return (
     <div style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+      <OkrMapTourStarter />
       <App
         key={baseKey}
         data={data}

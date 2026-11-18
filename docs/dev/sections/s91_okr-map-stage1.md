@@ -345,3 +345,7 @@ SELECT tgname FROM pg_trigger WHERE tgrelid = 'public.key_results'::regclass AND
 - 煙試験・RPC・トリガーは実際の DB で流していない（dev で適用→煙試験の順に山本さんが行う）。
 - C9：初回の紹介で「承認しない」を選ぶと `personalTourPending` が立ったまま残り、次に OKR モードへ入ったときに個人OKRの記録とツアーが開く。
 - C5 の `adopt` は単体のテストが無い（読み込みの経路をモックするのが重いため。世代の確認は OkrMapView の1か所）。
+
+### 91-7 地図のガイドツアー（v3.217）
+
+* 地図の画面用に `okr-map` ツアーを追加（`tours/okr-map.ts`）。個人OKRの記録のツアー `okr-intro` は別のまま（起動は PersonalOkrView）。ガイドからの再生は bridge の `mapTourPending`（地図のツアー）と `personalTourPending`（個人OKRの記録）で使い分ける。

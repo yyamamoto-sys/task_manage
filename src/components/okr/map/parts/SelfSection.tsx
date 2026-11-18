@@ -269,7 +269,7 @@ export function SelfHead() {
       </p>
       {onOpenPersonalOkr && (
         <p className="mk-row">
-          <button type="button" className="mk-btn mk-btn-sm" onClick={onOpenPersonalOkr}>
+          <button type="button" className="mk-btn mk-btn-sm" data-tour-id="okr-map-personal" onClick={onOpenPersonalOkr}>
             個人OKRの記録を開く
           </button>
           <span className="mk-muted">KRごとの月次の計画・週の目標と自己評価・メモ</span>
@@ -300,7 +300,7 @@ export function SelfSection() {
         {nameOf(viewerId)}さんだけの振り返り
       </h2>
       <ClaimsList />
-      <h3 id="mk-reflect-h" className="mk-h3">
+      <h3 id="mk-reflect-h" className="mk-h3" data-tour-id="okr-map-reflect">
         今週の振り返り
       </h3>
       <Reflect />

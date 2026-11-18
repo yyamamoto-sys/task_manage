@@ -2,7 +2,8 @@
 //
 // ⚠ 文面・絵文字・番号・ステップ構成を変える前に必ず読む：docs/dev/tour-guidelines.md
 //
-// OKRモード（個人OKR）を初めて選んだときに自動で始まるガイドツアー（CLAUDE.md Section 24）。
+// 個人OKRの記録の画面（地図の「わたし」→「個人OKRの記録を開く」）を初めて開いたときに自動で始まるガイドツアー
+// （CLAUDE.md Section 24）。地図の画面のツアーは okr-map.ts。
 // 起動条件・サンプル差し込み・再生導線の実装は src/components/okr/personal/PersonalOkrView.tsx
 // （tour.start() の呼び出し元）を参照。ターゲットは data-tour-id 属性で指定。
 //
@@ -14,14 +15,14 @@ import type { Tour } from "./types";
 
 export const okrIntroTour: Tour = {
   id: "okr-intro",
-  title: "OKRモード ガイドツアー",
+  title: "個人OKRの記録 ガイドツアー",
   estimatedSeconds: 120,
   steps: [
     {
       id: "okr-welcome",
       placement: "center",
-      title: "🎯 OKRモードとは",
-      body: "Kintoneが正本のOKRを、月ごとに「計画 → 実施記録 → 振り返り」で記録するモードです。週ごとの目標・自己評価は、使いたい人だけが使う任意の機能です。\n\n所要2分ほど。いつでも✕で終了でき、サイドバー最下部「⋯」→「📖 ガイド」からまた再生できます。",
+      title: "🎯 個人OKRの記録とは",
+      body: "OKRモードの地図の「わたし」→「個人OKRの記録を開く」から開く画面です。Kintoneが正本のOKRを、月ごとに「計画 → 実施記録 → 振り返り」で記録します。週ごとの目標・自己評価は、使いたい人だけが使う任意の機能です。\n\n所要2分ほど。いつでも✕で終了でき、サイドバー最下部「⋯」→「📖 ガイド」からまた再生できます。",
     },
     {
       id: "okr-period",

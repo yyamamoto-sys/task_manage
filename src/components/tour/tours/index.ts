@@ -9,12 +9,14 @@
 import type { Tour, TourStep } from "./types";
 import { firstTimeTour } from "./first-time";
 import { okrIntroTour } from "./okr-intro";
+import { okrMapTour } from "./okr-map";
 import { feedbackIntroTour } from "./feedback-intro";
 import { okrMapIntroTour } from "./okr-map-intro";
 import { ANNOUNCEMENT_TOURS, canSeeAnnouncement, visibleAnnouncementEntries, type AnnouncementViewer } from "./announcements";
 
 export const ALL_TOURS: Record<string, Tour> = {
   [firstTimeTour.id]: firstTimeTour,
+  [okrMapTour.id]: okrMapTour,
   [okrIntroTour.id]: okrIntroTour,
   // お知らせツアー（新機能の紹介）。公開範囲は announcements.ts の audience。buildTours が見えない人の分を外す
   [feedbackIntroTour.id]: feedbackIntroTour,
@@ -24,11 +26,14 @@ export const ALL_TOURS: Record<string, Tour> = {
 /** ガイドのツアー一覧に表示する順序（重要度の高い順） */
 export const TOUR_LIST: Tour[] = [
   firstTimeTour,
+  okrMapTour,
   okrIntroTour,
 ];
 
 export const FIRST_TIME_TOUR_ID = firstTimeTour.id;
+/** 個人OKRの記録のツアー（PersonalOkrView が始める）。地図のツアーは OKR_MAP_TOUR_ID */
 export const OKR_TOUR_ID = okrIntroTour.id;
+export const OKR_MAP_TOUR_ID = okrMapTour.id;
 
 /**
  * 【設計意図】ゲスト（サンプル閲覧）向けにツアー定義を差し替える純粋関数。
@@ -41,9 +46,9 @@ export const OKR_TOUR_ID = okrIntroTour.id;
  * 新しいオブジェクトを組み立てて返すことで、通常ユーザーの ALL_TOURS には
  * 影響しない。
  *
- * 🔴 okrIntroTour（OKRモードのガイドツアー）はゲスト向けの改変が不要
+ * 🔴 okrMapTour・okrIntroTour（OKRモードのガイドツアー2本）はゲスト向けの改変が不要
  * （FABの参照も実演アクションも持たない）。ゲスト分岐でも ALL_TOURS の一部だけを
- * 差し替えるのではなく必ず両方のツアーを返すこと（片方だけ返すとゲストのガイドから
+ * 差し替えるのではなく必ず3本とも返すこと（欠けるとゲストのガイドから
  * OKRツアーが再生できなくなる）。
  */
 export function buildTours(opts: { isGuest: boolean; isSuperAdmin?: boolean }): Record<string, Tour> {
@@ -87,7 +92,7 @@ export function buildTours(opts: { isGuest: boolean; isSuperAdmin?: boolean }): 
 
   const guestFirstTimeTour: Tour = { ...firstTimeTour, steps: guestSteps };
 
-  return { [guestFirstTimeTour.id]: guestFirstTimeTour, [okrIntroTour.id]: okrIntroTour };
+  return { [guestFirstTimeTour.id]: guestFirstTimeTour, [okrMapTour.id]: okrMapTour, [okrIntroTour.id]: okrIntroTour };
 }
 
 /** ガイドの「ほかのツアー」に並べるお知らせツアー（見える人の分だけ。ゲストには空） */

@@ -35,7 +35,7 @@ function Header({ padRight }: { padRight?: string }) {
         </div>
       </div>
       <span className="mk-spacer" />
-      <button type="button" className="mk-iconbtn" aria-label={`O・KRの取り込み${locked ? "" : "（確定待ち）"}`} title="O・KRの取り込み" onClick={() => setModal("goals")}>
+      <button type="button" className="mk-iconbtn" data-tour-id="okr-map-goals" aria-label={`O・KRの取り込み${locked ? "" : "（確定待ち）"}`} title="O・KRの取り込み" onClick={() => setModal("goals")}>
         <svg width={18} height={18} viewBox="-10 -10 20 20" aria-hidden="true">
           <circle r={3} fill="none" stroke="currentColor" strokeWidth={1.8} />
           <path

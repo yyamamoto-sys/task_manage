@@ -37,6 +37,16 @@ export function OkrDashboardView({ currentUser }: Props) {
     if (tourPending) setPersonalOpen(true);
   }, [tourPending]);
 
+  // ガイドから地図のツアーを再生するときは、個人OKRの記録を開いていても地図へ戻す。未保存の編集を捨てない場合は取り下げる
+  const mapTourPending = useOkrMapBridge((s) => s.mapTourPending);
+  useEffect(() => {
+    if (!mapTourPending || !personalOpen) return;
+    void confirmDiscardUnsavedEdits().then(ok => {
+      if (ok) setPersonalOpen(false);
+      else useOkrMapBridge.getState().setMapTourPending(false);
+    });
+  }, [mapTourPending, personalOpen]);
+
   if (!personalOpen) {
     return (
       <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>

@@ -7,7 +7,7 @@
 // - buildTours({isGuest:true}) 呼び出し後も元の firstTimeTour が書き換わっていないこと
 
 import { describe, it, expect } from "vitest";
-import { buildTours, ALL_TOURS, FIRST_TIME_TOUR_ID, OKR_TOUR_ID } from "..";
+import { buildTours, ALL_TOURS, FIRST_TIME_TOUR_ID, OKR_TOUR_ID, OKR_MAP_TOUR_ID, TOUR_LIST } from "..";
 
 describe("buildTours", () => {
   it("非ゲストでお知らせツアーが全部見える人（super_admin）にはALL_TOURSをそのまま返す", () => {
@@ -79,5 +79,17 @@ describe("buildTours", () => {
     const nonGuest = buildTours({ isGuest: false })[OKR_TOUR_ID];
     const guest = buildTours({ isGuest: true })[OKR_TOUR_ID];
     expect(guest).toBe(nonGuest);
+  });
+
+  it("地図のツアー（okr-map）はゲスト・非ゲストとも含まれ、ゲスト版も改変されない。ガイドの一覧（TOUR_LIST）にも載る", () => {
+    const nonGuest = buildTours({ isGuest: false })[OKR_MAP_TOUR_ID];
+    expect(nonGuest).toBeDefined();
+    expect(buildTours({ isGuest: true })[OKR_MAP_TOUR_ID]).toBe(nonGuest);
+    expect(TOUR_LIST.map(t => t.id)).toContain(OKR_MAP_TOUR_ID);
+  });
+
+  it("起動口の id が混ざらない（地図＝okr-map・個人OKRの記録＝okr-intro）", () => {
+    expect(OKR_MAP_TOUR_ID).toBe("okr-map");
+    expect(OKR_TOUR_ID).toBe("okr-intro");
   });
 });

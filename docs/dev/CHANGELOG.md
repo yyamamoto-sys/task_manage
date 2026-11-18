@@ -8772,3 +8772,10 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 * マイグレーション `supabase/migrations/20261117_okr_map_records.sql`（新しい表15本・RLS・トリガー・RPC・GRANT。`schemaChecks.ts` に3項目）。**山本さんが本番へ適用してから main へ合流する**（適用前に 91-2 の確認クエリ3本を流す）。
 * `MIN_CLIENT_VERSION` は据え置き：新しい表・関数の追加だけで、既存の表・列・RLS・Edge の入出力は変えておらず、旧版の画面は壊れないため。
 * `uiGuide.ts` の OKR モードの記述を地図に書き直し（Section 17）。お知らせツアー `okr-map-intro` を1本追加（目標対象なしの3段・Section 83）。ガイド（`docs/guides`）・`okr/ARCHIVED.md` に置き換えを1〜2行反映。
+
+# v3.217（2026-11-18）：OKRモードの地図にガイドツアーを追加
+
+* OKRモードの地図の画面用ガイドツアー `okr-map`（tours/okr-map.ts・10段）を新設。地図・サイドバーの部品に `data-tour-id`（okr-map-menu／band／flow／kr-list／docs／goals／personal／reflect）を付けた。起動は OkrMapView 内の OkrMapTourStarter（地図のデータが読めて表示されたとき、未読なら1回自動／ガイドからは bridge の `mapTourPending` で地図へ戻して最初から再生）。
+* 旧 `okr-intro` は「個人OKRの記録 ガイドツアー」へ改題（起動は従来どおり PersonalOkrView・`personalTourPending`）。
+* お知らせツアー `okr-map-intro` との重なり：自動起動は他のツアー実行中は動かない（既存）。加えて、お知らせを見終えた人には地図ツアーを自動で出さず、地図ツアーを自動で出すときはお知らせを既読にする（どちらか1本）。
+* `uiGuide.ts` に地図ツアーの1行。テスト：okrMapTour.test.ts 新設・buildTours.test.ts 追記。`MIN_CLIENT_VERSION` は据え置き。DB・Edge の変更なし。

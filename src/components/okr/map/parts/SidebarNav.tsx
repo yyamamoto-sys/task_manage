@@ -23,7 +23,7 @@ const PAGES: { id: ViewMode; icon: string; label: string; note?: string }[] = [
 export function SidebarNav({ mode, krs, selKrId, collapsed, onMode, onKr, onDocs }: SidebarNavProps) {
   return (
     <>
-      <nav aria-labelledby="mk-sb-menu-h">
+      <nav aria-labelledby="mk-sb-menu-h" data-tour-id="okr-map-menu">
         {!collapsed && (
           <div id="mk-sb-menu-h" className="mk-sb-h">
             メニュー
@@ -58,7 +58,7 @@ export function SidebarNav({ mode, krs, selKrId, collapsed, onMode, onKr, onDocs
         })}
       </nav>
 
-      <div className="mk-sb-section" role="group" aria-labelledby="mk-sb-kr-h">
+      <div className="mk-sb-section" role="group" aria-labelledby="mk-sb-kr-h" data-tour-id="okr-map-kr-list">
         {!collapsed && (
           <div id="mk-sb-kr-h" className="mk-sb-h">
             KR
@@ -95,7 +95,7 @@ export function SidebarNav({ mode, krs, selKrId, collapsed, onMode, onKr, onDocs
         })}
       </div>
 
-      <button type="button" className="mk-sb-btn mk-sb-docs" aria-label="資料を読ませる" title="資料を読ませる（チェックインの後に）" onClick={onDocs}>
+      <button type="button" className="mk-sb-btn mk-sb-docs" data-tour-id="okr-map-docs" aria-label="資料を読ませる" title="資料を読ませる（チェックインの後に）" onClick={onDocs}>
         <span aria-hidden="true">📄</span>
         {!collapsed && <span className="mk-sb-label">資料を読ませる</span>}
       </button>

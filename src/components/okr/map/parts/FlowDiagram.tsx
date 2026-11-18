@@ -187,7 +187,7 @@ export function FlowDiagram() {
   const narrowPj = layout.cols.pj.w < 190;
 
   return (
-    <section className="mk-card mk-flow" aria-labelledby="mk-flow-h">
+    <section className="mk-card mk-flow" aria-labelledby="mk-flow-h" data-tour-id="okr-map-flow">
       <div className="mk-row">
         <h2 id="mk-flow-h" className="mk-h2 mk-h2-big" style={{ margin: 0 }}>
           <svg width={22} height={22} viewBox="-12 -12 24 24" aria-hidden="true">

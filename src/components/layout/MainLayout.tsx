@@ -57,7 +57,7 @@ import { ProjectCreateModal } from "../project/ProjectCreateModal";
 import { lazyWithRetry } from "../../lib/lazyWithRetry";
 import { withChunkDownloadGate } from "../common/ChunkDownloadGate";
 import { TourProvider, useTour } from "../tour/TourProvider";
-import { buildTours, announcementTourList, FIRST_TIME_TOUR_ID, OKR_TOUR_ID } from "../tour/tours";
+import { buildTours, announcementTourList, FIRST_TIME_TOUR_ID, OKR_TOUR_ID, OKR_MAP_TOUR_ID } from "../tour/tours";
 import { isInputFocused, isModalOpen } from "../../lib/autoUpdate";
 import { isPlainLetter, shouldIgnoreSingleKey } from "../../lib/shortcuts/keys";
 import { pickAutoStartAnnouncement, visibleAnnouncementEntries } from "../tour/tours/announcements";
@@ -658,6 +658,11 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   // OKRモードに切り替えて個人OKRの記録を開き、その画面がツアーを始める（Section 14.5・91-6 C9）
   const startTourFromGuide = (tourId: string) => {
     setIsGuideOpen(false);
+    if (tourId === OKR_MAP_TOUR_ID) {
+      useOkrMapBridge.getState().setMapTourPending(true);
+      if (appMode !== "okr") handleToggleAppMode();
+      return;
+    }
     if (tourId !== OKR_TOUR_ID) { tour.start(tourId); return; }
     useOkrMapBridge.getState().setPersonalTourPending(true);
     if (appMode !== "okr") handleToggleAppMode();
