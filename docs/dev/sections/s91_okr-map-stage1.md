@@ -356,3 +356,10 @@ SELECT tgname FROM pg_trigger WHERE tgrelid = 'public.key_results'::regclass AND
 
 * 長い文字起こし（1時間で数万字）は LONG_RESOURCE_CHARS を超える。本命は「Copilot にまとめさせてから読ませる」導線で、資料を読ませる引き出し（DocDrawer）のファイル選択の上に開閉式の欄を置いた。プロンプトは `copilotPrompt.ts` の `buildCopilotPrompt` が今期の KR（題名・段の要件）から組む。見出しの語は抽出側（checkinAi.ts）の basis の状態・learnings・decisions に合わせてある。抽出側の語を変えたらここも合わせる。
 * 補助として .vtt／.srt を読める（`lib/transcriptClean.ts`。AI 相談の添付にも効く）。時刻行・番号・タグを除き、話者ごとにまとめる。整形後も15000字を超えれば従来の長文の案内が出る。
+
+---
+
+### v3.222：文章を貼り付けて読ませる
+
+* DocDrawer の Copilot 用プロンプトの下に `PasteReadBox`。貼った本文は `pasteRead.ts` で File にして、ファイル選択と同じ `readFiles` に渡す（読み取りの経路は増やさない）。名前は「貼り付け_…」または、本文に「■KR」を含むとき「Copilot要約_…」（資料一覧と出典の doc に出る）。
+* 書きかけは unsavedEditorRegistry に載せ、引き出しを閉じる前に `guardUnsaved` の破棄確認が出る。成功時は欄を空にし、失敗時は本文を残してエラーを出す。ゲスト（AI を使えない）では欄を出さない。

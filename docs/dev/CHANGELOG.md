@@ -8806,3 +8806,10 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 * A（本命）：okr/map/copilotPrompt.ts の buildCopilotPrompt(krs)（今期の KR の題名・段の要件から日本語プロンプトを組む純粋関数。KR 0本は空文字）＋ parts/CopilotPromptHelp.tsx（開閉式の欄・手順3行・読み取り専用 textarea・「プロンプトをコピー」。clipboard 失敗時は全選択）を DocDrawer のファイル選択の上に置いた。見出しの語は checkinAi.ts の抽出（確認できた／一部／まだ・分かったこと／次に試すこと・決定／宿題）に合わせた。
 * B（補助）：CONSULT_ATTACHMENT_ACCEPT に .vtt,.srt を追加（AI 相談の添付にも効く）。resolveMediaType は vtt・srt を text/plain とする。lib/transcriptClean.ts の cleanTranscript(text, ext) で WEBVTT・NOTE・キュー番号・時刻行・タグを除き、`<v 話者>` を「話者：本文」にし、同じ話者の連続行を1行にまとめ、[mm:ss] は話者が変わる行だけ。字幕は先頭バイトで切らず全体を整形してから EXTRACT_CHAR_CAP をかける。longResourceNotice に Copilot でまとめる方法の一言を追加。uiGuide の FEATURE_LIST_SECTION を追随。
 * テスト：transcriptClean.test.ts・okr/map/__tests__/copilotPrompt.test.tsx。`MIN_CLIENT_VERSION` は据え置き。DB・Edge の変更なし。
+
+# v3.222（2026-11-18）：チェックインの資料の引き出しに「文章を貼り付けて読ませる」欄
+
+* 背景：v3.221 の Copilot 用プロンプトで要約を得ても貼る場所がなく、ファイルに保存して選ぶしかなかった。
+* 変更：parts/PasteReadBox.tsx（textarea 8行・文字数・「この文章を読ませる」。空白だけなら押せない）を CopilotPromptHelp の下に置いた。読み取りは新設せず、貼った本文から `new File([text], 名前, { type: "text/plain" })` を作り、DocDrawer の readFiles（ファイル選択の runRead と共通。readResources → aiClient → checkReadable → 抽出 → 保存・longResourceNotice もそのまま）へ渡す。資料名は pasteRead.ts の pastedFileName：「貼り付け_YYYYMMDD_HHmm.txt」、本文に「■KR」見出しを含めば「Copilot要約_YYYYMMDD_HHmm.txt」。成功（エラーなし）で欄を空にし、失敗は本文を残して既存のエラー表示（formatErrorForUser）。
+* 破棄確認：欄を unsavedEditorRegistry に載せ（空でなければ dirty）、引き出しを閉じる経路（閉じる・Esc・背景）は guardUnsaved 経由にした（Section 46）。ゲストは aiReady が false のため欄ごと出ない。
+* テスト：okr/map/__tests__/pasteRead.test.tsx。`MIN_CLIENT_VERSION` は据え置き。DB・Edge の変更なし。

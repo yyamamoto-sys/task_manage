@@ -27,8 +27,8 @@ export function CopilotPromptHelp({ krs }: { krs: CopilotPromptKr[] }) {
       <summary>会議の文字起こしは、Copilot にまとめさせてから読ませると確実です</summary>
       <ol className="mk-small">
         <li>Teams の会議の Copilot（または Microsoft 365 Copilot）に、下のプロンプトを貼る。</li>
-        <li>出てきた文章を .txt に保存するか、そのままコピーする。</li>
-        <li>ここで、その .txt を選んで読ませる（貼る場合は、テキストファイルに貼って保存してから選ぶ）。</li>
+        <li>出てきた回答をコピーする。</li>
+        <li>出てきた回答を下の欄に貼って「この文章を読ませる」を押す。</li>
       </ol>
       <textarea ref={areaRef} className="mk-input" readOnly rows={12} style={{ width: "100%" }} value={prompt} aria-label="Copilot に貼るプロンプト" onFocus={(e) => e.currentTarget.select()} />
       <div className="mk-row" style={{ marginTop: 6 }}>

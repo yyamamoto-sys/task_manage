@@ -39,6 +39,15 @@ export interface ReleaseNoteEntry {
 
 export const RELEASE_NOTES: ReleaseNoteEntry[] = [
   {
+    version: "v3.222",
+    date: "2026-11-18",
+    title: "チェックインに、文章を貼り付けて読ませられるようになりました",
+    highlights: [
+      "OKRの地図の「資料を読ませる」に、文章を貼り付けて読ませる欄を加えました。Copilot の回答や議事メモを、ファイルに保存せずそのまま貼れます。",
+      "貼った文章が残ったまま引き出しを閉じようとすると、確認が出ます。",
+    ],
+  },
+  {
     version: "v3.221",
     date: "2026-11-18",
     title: "OKRの地図のチェックインに、会議の文字起こしを読ませやすくしました",

@@ -1,4 +1,5 @@
 import { CopilotPromptHelp } from "./CopilotPromptHelp";
+import { PasteReadBox } from "./PasteReadBox";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CONSULT_ATTACHMENT_ACCEPT } from "../../../../lib/ai/consultationAttachmentLoader";
 import { LONG_RESOURCE_CHARS } from "../checkinAi";
@@ -7,7 +8,7 @@ import { detectConflicts, mergeAssessments, mergeDrafts, notesOfResources, unres
 import { DEMO, krBands, nextCheckin, TODAY } from "../dataset";
 import { formatMd } from "../logic";
 import { currentAssessment, moveText } from "../steps";
-import { useMock } from "../state";
+import { guardUnsaved, useMock } from "../state";
 import type { Checkin } from "../types";
 import { hintText, krLabel, krName, nameOf, useFocusTrap } from "../ui";
 
@@ -46,7 +47,8 @@ export function DocDrawer() {
   const krs = items.filter((i) => i.kind === "kr");
   const close = () => {
     if (busy) return;
-    setDrawerOpen(false);
+    // 貼り付け欄に書きかけがあれば、閉じる前に破棄確認が出る（unsavedEditorRegistry）
+    guardUnsaved(() => setDrawerOpen(false));
   };
   const conflicts = useMemo(() => detectConflicts(selected, records, ci.date), [selected, records, ci.date]);
   const drafts = useMemo(() => mergeDrafts(selected, conflicts, picks), [selected, conflicts, picks]);
@@ -80,25 +82,31 @@ export function DocDrawer() {
     resetPick();
   };
 
-  const runRead = async () => {
-    if (files.length === 0 || busy) return;
+  // ファイル選択も貼り付けも、この1本の経路で読ませる
+  const readFiles = async (list: File[]) => {
+    if (list.length === 0 || busy) return { errors: [] as string[], notices: [] as string[] };
     const target = ci;
     setErrors([]);
     setNotices([]);
-    setBusy({ done: 0, total: files.length });
-    const { errors: errs, notices: notes } = await readResources(files, target, (done) => setBusy({ done, total: files.length }));
+    setBusy({ done: 0, total: list.length });
+    const { errors: errs, notices: notes } = await readResources(list, target, (done) => setBusy({ done, total: list.length }));
     setBusy(null);
     setErrors(errs);
     setNotices(notes);
-    setFiles([]);
-    if (fileRef.current) fileRef.current.value = "";
     // 新しい回に読ませたら、その回を選んだ状態にし、次の「新しい回」は別の回にする
-    if (ciId === NEW_CI && errs.length < files.length) {
+    if (ciId === NEW_CI && errs.length < list.length) {
       setCiId(target.id);
       setNewCi({ id: newId(), date: TODAY, title: `${formatMd(TODAY)}のチェックイン` });
     }
-    const ok = files.length - errs.length;
+    const ok = list.length - errs.length;
     if (ok > 0) showToast(`${ok}件の資料を読み取りました。下の一覧で選んで、下書きを確かめてください`);
+    return { errors: errs, notices: notes };
+  };
+  const runRead = async () => {
+    if (files.length === 0 || busy) return;
+    await readFiles(files);
+    setFiles([]);
+    if (fileRef.current) fileRef.current.value = "";
   };
 
   return (
@@ -165,6 +173,7 @@ export function DocDrawer() {
               PowerPoint・PDF・Word・議事録や文字起こしのテキスト・字幕（.vtt／.srt）を、複数選べます。文字だけを取り出して送ります（画像・旧形式は読めません）。1件ずつ読むので、件数が多いと時間がかかります。長い資料（目安：{LONG_RESOURCE_CHARS / 1000}千字を超えるもの）は、前半と後半などに分けて読ませると確実です。
             </p>
             <CopilotPromptHelp krs={krs.map((k) => ({ label: k.label, text: k.text, def: krDefs[k.id] ?? null }))} />
+            <PasteReadBox readFiles={readFiles} disabled={busy !== null || (ciId === NEW_CI && !newCi.title.trim())} />
             <div className="mk-row" style={{ flexWrap: "wrap" }}>
               <input
                 ref={fileRef}
