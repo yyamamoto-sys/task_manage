@@ -349,3 +349,10 @@ SELECT tgname FROM pg_trigger WHERE tgrelid = 'public.key_results'::regclass AND
 ### 91-7 地図のガイドツアー（v3.217）
 
 * 地図の画面用に `okr-map` ツアーを追加（`tours/okr-map.ts`）。個人OKRの記録のツアー `okr-intro` は別のまま（起動は PersonalOkrView）。ガイドからの再生は bridge の `mapTourPending`（地図のツアー）と `personalTourPending`（個人OKRの記録）で使い分ける。
+
+---
+
+### v3.221：会議の文字起こしをチェックインで扱いやすくする
+
+* 長い文字起こし（1時間で数万字）は LONG_RESOURCE_CHARS を超える。本命は「Copilot にまとめさせてから読ませる」導線で、資料を読ませる引き出し（DocDrawer）のファイル選択の上に開閉式の欄を置いた。プロンプトは `copilotPrompt.ts` の `buildCopilotPrompt` が今期の KR（題名・段の要件）から組む。見出しの語は抽出側（checkinAi.ts）の basis の状態・learnings・decisions に合わせてある。抽出側の語を変えたらここも合わせる。
+* 補助として .vtt／.srt を読める（`lib/transcriptClean.ts`。AI 相談の添付にも効く）。時刻行・番号・タグを除き、話者ごとにまとめる。整形後も15000字を超えれば従来の長文の案内が出る。

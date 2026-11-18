@@ -22,7 +22,7 @@ export function resolveMediaType(file: { type: string; name: string }): string {
   // テキストの拡張子は file.type より優先する。Windows では .csv の type が Excel の
   // application/vnd.ms-excel になることがあり、type を信じるとテキストとして読めず拒否してしまう（v3.145）。
   const textByExt: Record<string, string> = {
-    md: "text/markdown", csv: "text/csv", tsv: "text/csv", txt: "text/plain", log: "text/plain",
+    md: "text/markdown", csv: "text/csv", tsv: "text/csv", txt: "text/plain", log: "text/plain", vtt: "text/plain", srt: "text/plain",
   };
   if (textByExt[ext]) return textByExt[ext];
   if (file.type) return file.type;

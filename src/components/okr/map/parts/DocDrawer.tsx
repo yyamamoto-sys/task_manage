@@ -1,3 +1,4 @@
+import { CopilotPromptHelp } from "./CopilotPromptHelp";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CONSULT_ATTACHMENT_ACCEPT } from "../../../../lib/ai/consultationAttachmentLoader";
 import { LONG_RESOURCE_CHARS } from "../checkinAi";
@@ -19,7 +20,7 @@ const newId = () => (typeof crypto !== "undefined" && "randomUUID" in crypto ? c
  * AI を使えないとき（ゲスト・テスト）は、データにある資料だけで同じ流れを見せる
  */
 export function DocDrawer() {
-  const { records, items, assessHist, assess, confirmImport, confirmedBy, setDrawerOpen, showToast, tasks, reach, aiReady, resources, openCheckins, checkins, readResources } = useMock();
+  const { records, items, assessHist, assess, confirmImport, confirmedBy, setDrawerOpen, showToast, tasks, reach, aiReady, resources, openCheckins, checkins, readResources, krDefs } = useMock();
   const [resIds, setResIds] = useState<string[]>([]);
   const [read, setRead] = useState(false);
   const [values, setValues] = useState<Record<string, number>>({});
@@ -161,8 +162,9 @@ export function DocDrawer() {
 
             <h3 className="mk-h3">2. 資料を加えて、AIに読ませる</h3>
             <p className="mk-small mk-muted">
-              PowerPoint・PDF・Word・議事録や文字起こしのテキストを、複数選べます。文字だけを取り出して送ります（画像・旧形式は読めません）。1件ずつ読むので、件数が多いと時間がかかります。長い資料（目安：{LONG_RESOURCE_CHARS / 1000}千字を超えるもの）は、前半と後半などに分けて読ませると確実です。
+              PowerPoint・PDF・Word・議事録や文字起こしのテキスト・字幕（.vtt／.srt）を、複数選べます。文字だけを取り出して送ります（画像・旧形式は読めません）。1件ずつ読むので、件数が多いと時間がかかります。長い資料（目安：{LONG_RESOURCE_CHARS / 1000}千字を超えるもの）は、前半と後半などに分けて読ませると確実です。
             </p>
+            <CopilotPromptHelp krs={krs.map((k) => ({ label: k.label, text: k.text, def: krDefs[k.id] ?? null }))} />
             <div className="mk-row" style={{ flexWrap: "wrap" }}>
               <input
                 ref={fileRef}

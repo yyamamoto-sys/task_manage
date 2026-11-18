@@ -8799,3 +8799,10 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 * 背景：本番で15回・6人が記録したが、ほぼ自己回復済み（遅れて届いた／差分取得で補完）で画面は同期していた。client_error_logs は fingerprint ごとに1行で context は初回のままのため、回ごとの結果も読めなかった。
 * 変更（realtimeEchoWatch.ts）：結果1・2は deps.log を呼ばず deps.info（App.tsx で console.info）に1行出す。結果3（60秒で realtime・差分取得とも届かず）だけを code="realtime-silent" で記録し、message を「自分の保存が60秒たっても画面に戻ってきませんでした（realtime・差分取得とも）」に変更（fingerprint は旧行と別）。60秒時点で hidden なら記録せず、セッション1回の枠も消費しない。onSlow・onStuck は従来どおり。
 * テスト：realtimeEchoWatch.test.ts に結果1・2で log なし／結果3 visible で1回／結果3 hidden で記録なし→その後 visible で記録を追加。修正前のコードで4件落ちることを確認済み。`MIN_CLIENT_VERSION` は据え置き。DB・Edge の変更なし。
+
+# v3.221（2026-11-18）：OKR地図のチェックインで会議の文字起こしを扱いやすくする
+
+* 背景：Teams の文字起こしは1時間で数万字あり、LONG_RESOURCE_CHARS（15000）を超えて「分けて読ませてください」になる。本命は「Copilot に要約させてから読ませる」導線、.vtt の直接読み込みは補助。
+* A（本命）：okr/map/copilotPrompt.ts の buildCopilotPrompt(krs)（今期の KR の題名・段の要件から日本語プロンプトを組む純粋関数。KR 0本は空文字）＋ parts/CopilotPromptHelp.tsx（開閉式の欄・手順3行・読み取り専用 textarea・「プロンプトをコピー」。clipboard 失敗時は全選択）を DocDrawer のファイル選択の上に置いた。見出しの語は checkinAi.ts の抽出（確認できた／一部／まだ・分かったこと／次に試すこと・決定／宿題）に合わせた。
+* B（補助）：CONSULT_ATTACHMENT_ACCEPT に .vtt,.srt を追加（AI 相談の添付にも効く）。resolveMediaType は vtt・srt を text/plain とする。lib/transcriptClean.ts の cleanTranscript(text, ext) で WEBVTT・NOTE・キュー番号・時刻行・タグを除き、`<v 話者>` を「話者：本文」にし、同じ話者の連続行を1行にまとめ、[mm:ss] は話者が変わる行だけ。字幕は先頭バイトで切らず全体を整形してから EXTRACT_CHAR_CAP をかける。longResourceNotice に Copilot でまとめる方法の一言を追加。uiGuide の FEATURE_LIST_SECTION を追随。
+* テスト：transcriptClean.test.ts・okr/map/__tests__/copilotPrompt.test.tsx。`MIN_CLIENT_VERSION` は据え置き。DB・Edge の変更なし。

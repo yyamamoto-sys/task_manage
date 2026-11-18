@@ -39,6 +39,15 @@ export interface ReleaseNoteEntry {
 
 export const RELEASE_NOTES: ReleaseNoteEntry[] = [
   {
+    version: "v3.221",
+    date: "2026-11-18",
+    title: "OKRの地図のチェックインに、会議の文字起こしを読ませやすくしました",
+    highlights: [
+      "チェックインに会議の文字起こし（.vtt・.srt）を読ませられるようになりました。時刻などは取り除き、話者ごとにまとめて読み込みます。",
+      "長い会議は、「資料を読ませる」に表示される Copilot 用のプロンプトでまとめてから読ませると確実です。プロンプトは今期のKRから自動で作られ、ボタンでコピーできます。",
+    ],
+  },
+  {
     version: "v3.220",
     date: "2026-11-18",
     title: "管理者向け：自動で回復した同期の遅れを、エラーとして記録しないようにしました",

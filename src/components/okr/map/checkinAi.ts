@@ -246,7 +246,7 @@ export const LONG_RESOURCE_CHARS = 15000;
 export function longResourceNotice(name: string, chars: number, truncatedNote?: string): string | null {
   const notes: string[] = [];
   if (truncatedNote) notes.push(truncatedNote);
-  if (chars > LONG_RESOURCE_CHARS) notes.push(`長い資料です（約${Math.round(chars / 1000)}千字）。読み取りが途中で止まる・抜けがあるときは、前半と後半など${LONG_RESOURCE_CHARS / 1000}千字くらいずつに分けて読ませてください`);
+  if (chars > LONG_RESOURCE_CHARS) notes.push(`長い資料です（約${Math.round(chars / 1000)}千字）。読み取りが途中で止まる・抜けがあるときは、前半と後半など${LONG_RESOURCE_CHARS / 1000}千字くらいずつに分けて読ませてください。会議の文字起こしなら、資料を読ませる画面の Copilot 用プロンプトでまとめてから読ませる方法もあります`);
   return notes.length > 0 ? `${name}：${notes.join("。")}` : null;
 }
 

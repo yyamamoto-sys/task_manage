@@ -14,8 +14,9 @@ import { isDocxFile, isXlsxFile, isPptxFile, isHtmlFile } from "../officeFileKin
 import { isPdfFile } from "../pdfTextFormat";
 import { decodeTextBytes } from "../textDecode";
 import { EXTRACT_CHAR_CAP, truncateSafely } from "../extractLimits";
+import { cleanTranscript } from "../transcriptClean";
 
-export const CONSULT_ATTACHMENT_ACCEPT = ".docx,.xlsx,.pptx,.pdf,.html,.htm,.txt,.md,.csv";
+export const CONSULT_ATTACHMENT_ACCEPT = ".docx,.xlsx,.pptx,.pdf,.html,.htm,.txt,.md,.csv,.vtt,.srt";
 
 /** 1ファイルの容量の上限（バイト）。超えたら読まずに断る。 */
 export const MAX_CONSULT_FILE_BYTES = 20 * 1024 * 1024;
@@ -57,7 +58,7 @@ export function checkConsultAttachFile(file: FileInfo): ConsultFileCheck {
   if (!supported) {
     return {
       ok: false,
-      reason: `${file.name}：この形式は添付できません。対応しているのは Word（.docx）・Excel（.xlsx）・PowerPoint（.pptx）・PDF・HTML・テキスト（.txt／.md／.csv）です。`,
+      reason: `${file.name}：この形式は添付できません。対応しているのは Word（.docx）・Excel（.xlsx）・PowerPoint（.pptx）・PDF・HTML・テキスト（.txt／.md／.csv）・字幕（.vtt／.srt）です。`,
     };
   }
   if (typeof file.size === "number" && file.size > MAX_CONSULT_FILE_BYTES) {
@@ -128,6 +129,14 @@ export async function loadConsultAttachment(file: File): Promise<FileAttachment>
     const text = htmlStringToText(decodeTextBytes(bytes, cut));
     const capped = truncateSafely(text, EXTRACT_CHAR_CAP);
     return asText(capped, cut || capped.length < text.length ? "大きい資料のため先頭だけを読みました" : undefined);
+  }
+  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+  if (ext === "vtt" || ext === "srt") {
+    // 字幕は時刻行などで量が膨らむため、先頭バイトで切らず全体を整形してから上限をかける（v3.221）
+    const { bytes, cut } = await readHead(file, MAX_CONSULT_FILE_BYTES);
+    const cleaned = cleanTranscript(decodeTextBytes(bytes, cut), ext);
+    const capped = truncateSafely(cleaned, EXTRACT_CHAR_CAP);
+    return asText(capped, cut || capped.length < cleaned.length ? "大きい資料のため先頭だけを読みました" : undefined);
   }
   const { bytes, cut } = await readHead(file, TEXT_READ_BYTES);
   const text = decodeTextBytes(bytes, cut);
