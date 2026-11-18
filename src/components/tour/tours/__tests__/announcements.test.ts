@@ -51,8 +51,8 @@ describe("公開範囲（audience）", () => {
     expect(canSeeAnnouncement(all, guest)).toBe(false);
   });
 
-  it("一般アカウントのガイド一覧（announcementTourList）に feedback-intro は無く（OKR地図の紹介だけ）・管理者には並ぶ", () => {
-    expect(announcementTourList(general).map(x => x.tour.id)).toEqual(["okr-map-intro"]);
+  it("一般アカウントのガイド一覧（announcementTourList）にお知らせは無く（OKR地図の紹介も管理者だけ）・管理者には並ぶ", () => {
+    expect(announcementTourList(general).map(x => x.tour.id)).toEqual([]);
     expect(announcementTourList(guest)).toEqual([]);
     const list = announcementTourList(admin);
     expect(list.map(x => x.tour.id)).toContain(FEEDBACK_INTRO_TOUR_ID);
@@ -66,7 +66,7 @@ describe("公開範囲（audience）", () => {
     expect(buildTours({ isGuest: false, isSuperAdmin: true })[FEEDBACK_INTRO_TOUR_ID]).toBeDefined();
     // 一般アカウントでも既存の2本は変わらず使える
     expect(Object.keys(buildTours({ isGuest: false, isSuperAdmin: false })).sort()).toEqual(
-      Object.keys(ALL_TOURS).filter(id => id !== FEEDBACK_INTRO_TOUR_ID).sort(),
+      Object.keys(ALL_TOURS).filter(id => id !== FEEDBACK_INTRO_TOUR_ID && id !== "okr-map-intro").sort(),
     );
   });
 

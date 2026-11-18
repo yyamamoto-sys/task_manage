@@ -26,7 +26,8 @@ export interface AnnouncementTour {
 export const ANNOUNCEMENT_TOURS: readonly AnnouncementTour[] = [
   // v3.159：まず管理者（super_admin）だけで確認する。全員へ広げるときは audience を "all" にする（これ1行）
   { tourId: FEEDBACK_INTRO_TOUR_ID, sinceVersion: "3.159", audience: "super_admin", autoStart: true },
-  { tourId: OKR_MAP_INTRO_TOUR_ID, sinceVersion: "3.216", audience: "all", autoStart: true },
+  // v3.216 で全員に出したが、山本さんの指示で取り消し、管理者だけに戻した（地図の画面用のガイドツアーを整えてから広げるか判断する）
+  { tourId: OKR_MAP_INTRO_TOUR_ID, sinceVersion: "3.216", audience: "super_admin", autoStart: true },
 ];
 
 export interface AnnouncementViewer {
