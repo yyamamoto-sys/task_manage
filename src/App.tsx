@@ -689,7 +689,7 @@ function AuthenticatedApp({
 
   // 「だんだん重くなる」の切り分け用の計測（5分ごと・閾値超過をセッション中1回だけ記録。Section 76）
   useEffect(() => {
-    // 自分の保存の realtime エコーが10秒以内に届くかの見張り（届かなければセッション中1回だけ記録。Section 76）
+    // 自分の保存の realtime エコーの見張り（60秒たっても届かない実害のときだけセッション中1回記録。Section 76）
     initRealtimeEchoWatch({
       now: () => Date.now(),
       setTimeout: (fn, ms) => window.setTimeout(fn, ms),
@@ -699,6 +699,7 @@ function AuthenticatedApp({
       isGuest: isGuestMode,
       onSlow: requestEchoSlowRecovery,
       onStuck: requestEchoStuckRecovery,
+      info: line => console.info(line),
       log: logDiagnostic,
     });
     const stopHealth = startHealthMonitor({

@@ -1,16 +1,19 @@
 // src/lib/diagnostics/realtimeEchoWatch.ts
 //
-// 自分の保存（tasks・projects の insert/update）の realtime エコーが届くかを見張り、セッション中1回だけ
-// client_error_logs へ code="realtime-silent" を記録する（v3.148・CLAUDE.md Section 76。v3.158 で遅延の切り分けと自己回復を追加）。
+// 自分の保存（tasks・projects の insert/update）の realtime エコーが届くかを見張る（v3.148・CLAUDE.md Section 76。
+// v3.158 で遅延の切り分けと自己回復、v3.220 で「記録するのは実害のあるときだけ」へ変更）。
 // 「他の人の変更がリロードするまで反映されない」の原因が、イベントがそもそも届いていないことなのかを
 // 利用者の実環境（会社のネットワーク・Teams 内など）から知るための見張り。
 //   - 自分の保存は DB にコミットされれば、同じ行の変更が自分の購読にも返ってくるはず（RLS が自分に見える行なので）。
 //   - 10秒（ECHO_TIMEOUT_MS）届かなければ「遅延」として待ち続け、自己回復（差分取得）を1回要求する。
-//   - 届いた時点（realtime／差分取得のどちらで届いたか付き）、または60秒（ECHO_GIVEUP_MS）で、1回だけ記録する。
-//     60秒時点で届いていなければ、チャンネルの張り直しを1回要求する（要求は「待ちがなくなるまで」の波ごとに1回ずつ。
-//     記録だけがセッション中1回で、記録後も見張りと自己回復は続ける）。
-//   - 保存した時点でタブが hidden の場合は見張らない（裏タブはタイマー・ハートビートが止まり、遅延と区別できない。
+//   - 60秒（ECHO_GIVEUP_MS）時点で届いていなければ、チャンネルの張り直しを1回要求する（要求は「待ちがなくなるまで」の
+//     波ごとに1回ずつ）。
+//   - 結果は3通り。1「遅れて届いた」2「realtimeでは届かず差分取得で補完」＝自己回復済みで画面は同期しているため
+//     client_error_logs へは記録せず console.info に1行だけ出す。3「60秒たっても realtime・差分取得とも届かず」＝
+//     実害ありとして code="realtime-silent" をセッション中1回だけ記録する（記録後も見張りと自己回復は続ける）。
+//   - 結果3でも、60秒時点でタブが hidden なら記録しない（裏タブはタイマーと差分取得が止まり、実害と区別できない。
 //     セッション1回の枠も消費しない）。
+//   - 保存した時点でタブが hidden の場合は見張らない（同上）。
 //   - realtime のエコーが保存の応答より先に届くことがある。直近のエコーを短時間覚えておき、保存の登録時に照合する。
 
 export const ECHO_TIMEOUT_MS = 10_000;
@@ -31,6 +34,8 @@ export interface EchoWatchDeps {
   onSlow: () => void;
   /** 60秒でも届かなかったとき：チャンネルの張り直しを1回要求する */
   onStuck: () => void;
+  /** 自己回復した遅延（結果1・2）を console.info に1行出す。記録（log）はしない */
+  info: (line: string) => void;
   log: (input: { source: "report"; code: string; message: string; context: string }) => void;
 }
 
@@ -77,15 +82,25 @@ export function createRealtimeEchoWatch(
   const finish = (key: string, p: Pending, outcome: string, waiting: number) => {
     pending.delete(key);
     resetEpisodeIfIdle();
-    if (reported) return; // 記録はセッション中1回。回復の要求は波ごとに続ける
+    const secs = Math.round((deps.now() - p.startedAt) / 1000);
+    deps.info(
+      `[realtime-echo] 表:${p.table} / チャンネル:${deps.channelState()} / ${outcome}（経過${secs}秒） / ` +
+      `10秒時点:${p.visAtSlow} 記録時点:${deps.visibility()} / 待ち${waiting}件`,
+    );
+  };
+  const finishUnrecovered = (key: string, p: Pending, waiting: number) => {
+    pending.delete(key);
+    resetEpisodeIfIdle();
+    // 裏タブはタイマー・差分取得が止まり実害と区別できない。枠も消費しない
+    if (reported || deps.visibility() === "hidden") return;
     reported = true;
     const secs = Math.round((deps.now() - p.startedAt) / 1000);
     deps.log({
       source: "report",
       code: "realtime-silent",
-      message: "自分の保存の realtime エコーが10秒以内に届きませんでした",
+      message: "自分の保存が60秒たっても画面に戻ってきませんでした（realtime・差分取得とも）",
       context:
-        `表:${p.table} / チャンネル:${deps.channelState()} / ${outcome}（経過${secs}秒） / ` +
+        `表:${p.table} / チャンネル:${deps.channelState()} / 60秒以内に届かず（経過${secs}秒） / ` +
         `10秒時点:${p.visAtSlow} 記録時点:${deps.visibility()} / 待ち${waiting}件`,
     });
   };
@@ -103,7 +118,7 @@ export function createRealtimeEchoWatch(
     if (!p) return;
     const waiting = pending.size;
     if (!stuckRequested) { stuckRequested = true; deps.onStuck(); }
-    finish(key, p, "60秒以内に届かず", waiting);
+    finishUnrecovered(key, p, waiting);
   };
 
   return {

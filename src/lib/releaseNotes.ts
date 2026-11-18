@@ -39,6 +39,15 @@ export interface ReleaseNoteEntry {
 
 export const RELEASE_NOTES: ReleaseNoteEntry[] = [
   {
+    version: "v3.220",
+    date: "2026-11-18",
+    title: "管理者向け：自動で回復した同期の遅れを、エラーとして記録しないようにしました",
+    highlights: [
+      "管理者向け：自分の保存が画面に戻るまで時間がかかっても、自動で回復した場合は管理画面の「エラー」に記録しないようにしました。",
+      "60秒たっても回復しなかった場合だけを記録します。",
+    ],
+  },
+  {
     version: "v3.219",
     date: "2026-11-18",
     title: "OKRモードを開くとエラーで表示できないことがある不具合を直しました",

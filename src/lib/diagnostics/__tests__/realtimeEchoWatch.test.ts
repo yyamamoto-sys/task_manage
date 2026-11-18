@@ -11,6 +11,7 @@ function setup(over: Partial<EchoWatchDeps> = {}) {
   const log = vi.fn();
   const onSlow = vi.fn();
   const onStuck = vi.fn();
+  const info = vi.fn();
   const vis = { v: "visible" };
   const deps: EchoWatchDeps = {
     now: () => now,
@@ -21,12 +22,13 @@ function setup(over: Partial<EchoWatchDeps> = {}) {
     isGuest: () => false,
     onSlow,
     onStuck,
+    info,
     log,
     ...over,
   };
   const w = createRealtimeEchoWatch(deps);
   return {
-    w, log, onSlow, onStuck, vis,
+    w, log, info, onSlow, onStuck, vis,
     // 1秒刻みで進める（タイマーの中で新しいタイマーが張られても、その時刻に正しく発火させるため）
     advance(ms: number) {
       for (let i = 0; i < ms; i += 1000) {
@@ -59,35 +61,35 @@ describe("realtime-silent", () => {
     expect(s.onStuck).not.toHaveBeenCalled();
     expect(s.pending()).toBe(1);
   });
-  it("遅れて届いたら、届くまでの秒数・可視状態・チャンネル状態つきで1回だけ記録する", () => {
+  it("遅れて届いた（自己回復）場合は記録せず、console.info に秒数・可視状態・チャンネル状態を1行出す", () => {
     const s = setup({ channelState: () => "SUBSCRIBED" });
     s.w.expectEcho("projects", "p1", "2026-10-14T00:00:05Z");
     s.advance(ECHO_TIMEOUT_MS);
     s.vis.v = "hidden";
     s.advance(14_000);
     s.w.noteEcho("projects", "p1", "2026-10-14T00:00:05Z");
-    expect(s.log).toHaveBeenCalledTimes(1);
-    const arg = s.log.mock.calls[0][0];
-    expect(arg).toMatchObject({ source: "report", code: "realtime-silent" });
-    expect(arg.context).toContain("表:projects");
-    expect(arg.context).toContain("チャンネル:SUBSCRIBED");
-    expect(arg.context).toContain("遅れて届いた（経過24秒）");
-    expect(arg.context).toContain("10秒時点:visible");
-    expect(arg.context).toContain("記録時点:hidden");
-    expect(arg.context).toContain("待ち1件");
+    expect(s.log).not.toHaveBeenCalled();
+    expect(s.onSlow).toHaveBeenCalledTimes(1);
+    expect(s.info).toHaveBeenCalledTimes(1);
+    const line = s.info.mock.calls[0][0] as string;
+    expect(line).toContain("表:projects");
+    expect(line).toContain("チャンネル:SUBSCRIBED");
+    expect(line).toContain("遅れて届いた（経過24秒）");
     expect(s.onStuck).not.toHaveBeenCalled();
     expect(s.pending()).toBe(0);
   });
-  it("差分取得で補完された場合は realtime ではなく補完と記録する（realtime の到着として数えない）", () => {
+  it("差分取得で補完された場合は realtime ではなく補完と見なす（realtime の到着として数えない）", () => {
     const s = setup();
     s.w.expectEcho("tasks", "t1", "2026-10-14T00:00:05Z");
     s.advance(ECHO_TIMEOUT_MS);
     s.w.noteEcho("tasks", "t1", "2026-10-14T00:00:05Z", "catchup");
-    expect(s.log.mock.calls[0][0].context).toContain("realtimeでは届かず差分取得で補完");
+    expect(s.log).not.toHaveBeenCalled();
+    expect(s.onSlow).toHaveBeenCalledTimes(1);
+    expect(s.info.mock.calls[0][0]).toContain("realtimeでは届かず差分取得で補完");
     s.w.expectEcho("tasks", "t1", "2026-10-14T00:00:05Z"); // 差分取得の行は「先着のエコー」に残らない
     expect(s.pending()).toBe(1);
   });
-  it("60秒届かなければ「60秒以内に届かず」を記録し、張り直しの要求を1回出す", () => {
+  it("60秒届かなければ（visible なら）新しい message で記録し、張り直しの要求を1回出す", () => {
     const s = setup({ channelState: () => "CLOSED" });
     s.w.expectEcho("tasks", "t1", "2026-10-14T00:00:05Z");
     s.w.expectEcho("tasks", "t2", "2026-10-14T00:00:05Z");
@@ -95,6 +97,11 @@ describe("realtime-silent", () => {
     expect(s.log).not.toHaveBeenCalled();
     s.advance(1000);
     expect(s.log).toHaveBeenCalledTimes(1);
+    expect(s.log.mock.calls[0][0]).toMatchObject({
+      source: "report",
+      code: "realtime-silent",
+      message: "自分の保存が60秒たっても画面に戻ってきませんでした（realtime・差分取得とも）",
+    });
     const ctx = s.log.mock.calls[0][0].context;
     expect(ctx).toContain("チャンネル:CLOSED");
     expect(ctx).toContain("60秒以内に届かず（経過60秒）");
@@ -116,6 +123,20 @@ describe("realtime-silent", () => {
     expect(s.onSlow).toHaveBeenCalledTimes(2);
     expect(s.onStuck).toHaveBeenCalledTimes(2);
     expect(s.pending()).toBe(0);
+  });
+  it("60秒の時点で hidden なら記録しない・枠も消費しない（回復の要求は出す）。その後 visible で起きた結果3は記録される", () => {
+    const s = setup();
+    s.w.expectEcho("tasks", "t1");
+    s.advance(ECHO_TIMEOUT_MS);
+    s.vis.v = "hidden";
+    s.advance(ECHO_GIVEUP_MS - ECHO_TIMEOUT_MS);
+    expect(s.log).not.toHaveBeenCalled();
+    expect(s.onStuck).toHaveBeenCalledTimes(1);
+    expect(s.pending()).toBe(0);
+    s.vis.v = "visible";
+    s.w.expectEcho("tasks", "t2");
+    s.advance(ECHO_GIVEUP_MS);
+    expect(s.log).toHaveBeenCalledTimes(1);
   });
   it("保存した時点で hidden なら見張らない（記録の枠も自己回復も使わない）", () => {
     const s = setup();
@@ -155,7 +176,7 @@ describe("realtime-silent", () => {
   });
   it("fingerprint は code ごとに束ねる（表名・チャンネル状態・経過秒が違っても同じ）／source は CHECK 制約の範囲", () => {
     const env = { route: "/", screen: "list", appVersion: "3.148", userAgent: "ua" };
-    const mk = (context: string) => buildClientErrorPayload({ source: "report", code: "realtime-silent", message: "自分の保存の realtime エコーが10秒以内に届きませんでした", context }, env);
+    const mk = (context: string) => buildClientErrorPayload({ source: "report", code: "realtime-silent", message: "自分の保存が60秒たっても画面に戻ってきませんでした（realtime・差分取得とも）", context }, env);
     expect(mk("表:tasks / チャンネル:SUBSCRIBED / 遅れて届いた（経過24秒） / 10秒時点:visible 記録時点:visible / 待ち1件").p_fingerprint)
       .toBe(mk("表:projects / チャンネル:CLOSED / 60秒以内に届かず（経過60秒） / 10秒時点:hidden 記録時点:hidden / 待ち3件").p_fingerprint);
     expect(["report", "boundary", "window", "promise"]).toContain(mk("x").p_source);

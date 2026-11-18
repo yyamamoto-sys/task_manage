@@ -46,6 +46,10 @@
   - **自己回復**（記録とは別に、待ちがなくなるまでの波ごとに1回）：10秒＝`catchUpRemoteChanges(Date.now())`（`fetchChangesSince` の差分取得・全件 load はしない・専用の `createResyncRunner` で30秒の最短間隔）。60秒＝購読 effect の世代 `realtimeEpoch` を進めてチャンネルを張り直す（5分に1回まで。最初の SUBSCRIBED の `onFirstSubscribed` が取りこぼしを差分取得で埋める）。要求先は `setEchoRecoveryRequesters`（appStore.ts・`setRemoteResyncRequester` と同じパターン）。**記録がセッション中1回でも、回復の要求は記録後も続く。**
   - **差分取得経由の到着は realtime の到着として数えない**：`handleRemoteChange` が `noteRemoteEcho(…, opts.noResync ? "catchup" : "realtime")`。差分取得の行は先着の記憶（`seen`）にも残さない。
   - **記録の読み方**：①「遅れて届いた（経過10〜60秒）」＝配信の遅延（Disk IO・負荷）。経過秒の分布を見る。②「realtimeでは届かず差分取得で補完」＝接続が実は切れている（SUBSCRIBED のまま）。チャンネル状態が SUBSCRIBED なら疑いが強い。③「60秒以内に届かず」＝差分取得でも埋まらない（保存自体が遅い・差分取得の失敗・RLS で自分に見えない行）。①〜③とも「10秒時点:hidden」なら裏タブの影響（保存後に隠した）を先に疑う。チャンネルが CLOSED／TIMED_OUT／CHANNEL_ERROR なら切断中の保存。
+- **v3.220：`realtime-silent` は「60秒たっても realtime・差分取得とも届かない」ときだけ記録する**（`realtimeEchoWatch.ts`）。
+  - 理由：本番の15回・6人はほぼ自己回復済み（遅れて届いた／差分取得で補完）で画面は同期しており、実害のない遅延が「未解決のエラー」として積み上がっていた。自己回復した遅延は記録せず `console.info` に1行だけ出す。
+  - 理由：`client_error_logs` は fingerprint ごとに1行しか残さず context は初回（10-14）のまま更新されないため、回ごとの結果を DB から読めなかった。記録を実害の1種類に絞れば行の意味が一意になる。message は「自分の保存が60秒たっても画面に戻ってきませんでした（realtime・差分取得とも）」に変え、fingerprint は旧行と別になる。
+  - 60秒時点で hidden のタブは記録せず、セッション1回の枠も消費しない（裏タブはタイマーと差分取得が止まり実害と区別できない）。回復の要求（onSlow・onStuck）は記録の要否にかかわらず従来どおり出す。
 
 ---
 
