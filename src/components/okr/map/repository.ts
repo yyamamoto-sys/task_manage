@@ -84,6 +84,8 @@ export interface OkrMapLoadArgs {
   quarter: Quarter;
   /** 今週の月曜 */
   weekStart: string;
+  /** 表示部署の仕事の ID（つなぎ先はこの分だけ読む）。無ければつなぎ先は読まない */
+  taskIds?: string[];
 }
 
 /** 手がかりの数字の定め（値は資料の確定で入る） */
@@ -109,8 +111,10 @@ export interface ConfirmSave {
 }
 
 export interface OkrMapRepository {
-  /** groupId の部署・krIds のKRについての記録を読む */
+  /** groupId の部署・krIds のKRについての記録を読む。値を返すだけで、保存に使う行IDの対応は変えない */
   load(args: OkrMapLoadArgs): Promise<OkrMapRecords>;
+  /** load が返した記録を採用する（呼び出し側が世代番号を確かめてから呼ぶ。保存に使う行IDの対応を差し替える） */
+  adopt?(rec: OkrMapRecords): void;
   /**
    * 本人の状態の変化を保存する（before → after の差分だけ書く）。
    * overrides は全員分を足し合わせたもの（つなぎ先は仕事1件1行なので、他の担当者の分を外した変化も拾う）
@@ -187,3 +191,21 @@ export const memoryRepository: OkrMapRepository = {
   saveLock: async () => {},
   saveKrDef: async () => {},
 };
+
+/** 本人の状態の保存で、いくつかの表が書けなかった（失敗した表の名前と最初の原因） */
+export class SaveUserError extends Error {
+  failed: string[];
+  cause: unknown;
+  constructor(failed: string[], cause: unknown) {
+    const why = cause && typeof cause === "object" && typeof (cause as { message?: unknown }).message === "string" ? `（${(cause as { message: string }).message}）` : "";
+    super(`${failed.join("・")}を保存できませんでした${why}`);
+    this.name = "SaveUserError";
+    this.failed = failed;
+    this.cause = cause;
+  }
+}
+
+/** PostgreSQL の一意制約違反（23505） */
+export function isUniqueViolation(e: unknown): boolean {
+  return !!e && typeof e === "object" && (e as { code?: unknown }).code === "23505";
+}

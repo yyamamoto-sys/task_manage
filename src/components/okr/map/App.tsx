@@ -213,11 +213,13 @@ export interface OkrMapAppProps {
   ai?: OkrMapAi | null;
   /** 「Kintone に合わせる」で O・KR・TF 本体を書く */
   applyKintone?: (plan: KintoneApplyPlan) => Promise<void>;
+  /** 記録を読み直してほしいとき（Kintone に合わせた後） */
+  onRecordsChanged?: () => void;
 }
 
-export default function App({ initial, data, embedded = false, headerPadRight, onOpenPersonalOkr, repository, ai, applyKintone }: OkrMapAppProps) {
+export default function App({ initial, data, embedded = false, headerPadRight, onOpenPersonalOkr, repository, ai, applyKintone, onRecordsChanged }: OkrMapAppProps) {
   return (
-    <MockProvider initial={initial} data={data} onOpenPersonalOkr={onOpenPersonalOkr} repository={repository} ai={ai} applyKintone={applyKintone}>
+    <MockProvider initial={initial} data={data} onOpenPersonalOkr={onOpenPersonalOkr} repository={repository} ai={ai} applyKintone={applyKintone} onRecordsChanged={onRecordsChanged}>
       <Shell embedded={embedded} headerPadRight={headerPadRight} />
     </MockProvider>
   );

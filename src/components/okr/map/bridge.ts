@@ -28,6 +28,9 @@ interface BridgeState {
   clear: () => void;
   setSidebarPx: (px: number) => void;
   setConsultPx: (px: number) => void;
+  /** ガイドから OKR のツアーを再生した（個人OKRの記録の画面を開き、そこでツアーを始める）。始めたら下ろす */
+  personalTourPending: boolean;
+  setPersonalTourPending: (v: boolean) => void;
 }
 
 export const useOkrMapBridge = create<BridgeState>((set) => ({
@@ -39,4 +42,6 @@ export const useOkrMapBridge = create<BridgeState>((set) => ({
   clear: () => set({ view: null, actions: null }),
   setSidebarPx: (px) => set((s) => (s.sidebarPx === px ? s : { sidebarPx: px })),
   setConsultPx: (px) => set((s) => (s.consultPx === px ? s : { consultPx: px })),
+  personalTourPending: false,
+  setPersonalTourPending: (v) => set((s) => (s.personalTourPending === v ? s : { personalTourPending: v })),
 }));

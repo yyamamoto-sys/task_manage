@@ -8,7 +8,7 @@ import { ConflictError, saveWithLock } from "../../../lib/supabase/store";
 import { readingOf } from "./checkinAi";
 import { answerKey, howKey } from "./logic";
 import type { History } from "./reach";
-import { emptyRecords, KrDefConflictError, type ConfirmSave, type HintDef, type OkrMapLoadArgs, type OkrMapRecords, type OkrMapRepository, type UserRecord } from "./repository";
+import { emptyRecords, isUniqueViolation, KrDefConflictError, SaveUserError, type ConfirmSave, type HintDef, type OkrMapLoadArgs, type OkrMapRecords, type OkrMapRepository, type UserRecord } from "./repository";
 import type {
   AssessEntry,
   BasisItem,
@@ -28,7 +28,7 @@ import type {
   Resource,
   Source,
 } from "./types";
-import { claimKey, type UserState } from "./userState";
+import { claimKey, USER_TABLE_LABEL, type UserState } from "./userState";
 
 // ---------- 行の型 ----------
 
@@ -365,7 +365,14 @@ export function buildRecords(rows: LoadedRows, args: Pick<OkrMapLoadArgs, "krIds
 
   // つなぎ先は仕事1件1行。最後に選び直した人の分として持つ（どの担当者の分に入っていても図は全員分を足して使う）
   const overrides: Record<string, Record<string, string[]>> = {};
-  for (const l of rows.links) (overrides[l.updated_by || viewerId] ??= {})[l.task_id] = (l.kr_ids ?? []).filter((k) => kr.has(k));
+  for (const l of rows.links) {
+    const all = l.kr_ids ?? [];
+    const now = all.filter((k) => kr.has(k));
+    // 選んだ KR がすべて今の地図に無い（前の期の KR 等）ときは「選んでいない」扱い＝既定のつなぎ先に戻す。
+    // 空のまま読むと「どの KR にもつながない」と選んだことになってしまう。最初から空（つながないを選んだ）はそのまま
+    if (all.length > 0 && now.length === 0) continue;
+    (overrides[l.updated_by || viewerId] ??= {})[l.task_id] = now;
+  }
   out.overrides = overrides;
   // 矢印の行が1つも無い個人OKR（外した行も含めて）は、個人OKR画面の紐づけ（key_result_id）を初期値として見せる。
   // 書き込みは本人が矢印を操作したときだけ（diffUser がその個人OKRの矢印をまとめて書く）
@@ -458,19 +465,6 @@ export function diffUser(b: UserState, a: UserState): UserDiff {
   return d;
 }
 
-/** 本人の状態の保存で、いくつかの表が書けなかった（失敗した表の名前と最初の原因） */
-export class SaveUserError extends Error {
-  failed: string[];
-  cause: unknown;
-  constructor(failed: string[], cause: unknown) {
-    const why = cause && typeof cause === "object" && typeof (cause as { message?: unknown }).message === "string" ? `（${(cause as { message: string }).message}）` : "";
-    super(`${failed.join("・")}を保存できませんでした${why}`);
-    this.name = "SaveUserError";
-    this.failed = failed;
-    this.cause = cause;
-  }
-}
-
 /** 確定の保存の RPC（okr_confirm_checkin）に渡す形 */
 export function confirmPayloadOf(c: ConfirmSave) {
   const hintKrs = Object.keys(c.hintValues);
@@ -503,6 +497,8 @@ export function confirmPayloadOf(c: ConfirmSave) {
 
 // ---------- 入出力 ----------
 
+export { isUniqueViolation, SaveUserError };
+
 async function must<T>(p: PromiseLike<{ data: T | null; error: unknown }>): Promise<T | null> {
   const { data, error } = await p;
   if (error) throw error;
@@ -515,10 +511,15 @@ async function rows<Row>(p: Promise<FetchAllRowsResult<Row>>): Promise<Row[]> {
   return data ?? [];
 }
 
-/** PostgreSQL の一意制約違反（23505） */
-export function isUniqueViolation(e: unknown): boolean {
-  return !!e && typeof e === "object" && (e as { code?: unknown }).code === "23505";
+/** `.in()` に渡す ID の1回分の上限（PostgREST の URL が長くなりすぎないように） */
+export const TASK_ID_CHUNK = 150;
+
+export function chunk<T>(list: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < list.length; i += size) out.push(list.slice(i, i + size));
+  return out;
 }
+
 
 const deletedCols = (on: boolean, by: string) => (on ? { is_deleted: true, deleted_at: new Date().toISOString(), deleted_by: by } : { is_deleted: false, deleted_at: null, deleted_by: null });
 
@@ -526,6 +527,7 @@ export function createSupabaseRepository(): OkrMapRepository {
   // 成果の記述の key → 行ID（claims を書くときに使う）。KR の定めの行ID と updated_at（楽観ロック）
   const noteIds = new Map<string, string>();
   const defMeta = new Map<string, { id: string; updatedAt: string }>();
+  const pending = new WeakMap<OkrMapRecords, { notes: [string, string][]; defs: [string, { id: string; updatedAt: string }][] }>();
 
   return {
     async load(args) {
@@ -538,7 +540,12 @@ export function createSupabaseRepository(): OkrMapRepository {
         rows(fetchAllRows<LearningRow>((o) => supabase.from("okr_learnings").select("id,checkin_id,kr_id,resource_id,kind,body,source", o).in("kr_id", krIds).eq("is_deleted", false), { label: "okr_learnings" })),
         rows(fetchAllRows<DecisionRow>((o) => supabase.from("okr_decisions").select("id,checkin_id,resource_id,kind,body,owner_member_id,kr_ids,source", o).eq("group_id", groupId).eq("is_deleted", false), { label: "okr_decisions" })),
         rows(fetchAllRows<NoteRow>((o) => supabase.from("okr_outcome_notes").select("id,kr_id,note_key,change_text,excerpt,sources,links", o).in("kr_id", krIds).eq("is_deleted", false), { label: "okr_outcome_notes" })),
-        rows(fetchAllRows<TaskLinkRow>((o) => supabase.from("okr_task_kr_links").select("id,task_id,kr_ids,updated_by", o).eq("is_deleted", false), { label: "okr_task_kr_links" })),
+        // つなぎ先は表示部署の仕事の分だけ読む（URL の長さの上限に掛からないよう、ID を区切って読む）
+        Promise.all(
+          chunk(args.taskIds ?? [], TASK_ID_CHUNK).map((ids) =>
+            rows(fetchAllRows<TaskLinkRow>((o) => supabase.from("okr_task_kr_links").select("id,task_id,kr_ids,updated_by", o).in("task_id", ids).eq("is_deleted", false), { label: "okr_task_kr_links" })),
+          ),
+        ).then((parts) => parts.flat()),
         rows(fetchAllRows<HowRow>((o) => supabase.from("okr_task_kr_how").select("id,task_id,kr_id,body", o).eq("member_id", viewerId).eq("is_deleted", false), { label: "okr_task_kr_how" })),
         rows(fetchAllRows<ProposalRow>((o) => supabase.from("okr_proposal_choices").select("id,task_id,kr_id,choice", o).eq("member_id", viewerId).eq("is_deleted", false), { label: "okr_proposal_choices" })),
         rows(fetchAllRows<PersonalLinkRow>((o) => supabase.from("okr_personal_kr_links").select("id,personal_kr_id,kr_id,is_deleted", o).eq("member_id", viewerId), { label: "okr_personal_kr_links" })),
@@ -551,11 +558,20 @@ export function createSupabaseRepository(): OkrMapRepository {
         fetchAllRows<ResourceRow>((o) => supabase.from("okr_resources").select("id,checkin_id,file_name,kind,reading", o).eq("group_id", groupId).eq("is_deleted", false), { label: "okr_resources" }),
       );
       const claims = notes.length === 0 ? [] : await rows(fetchAllRows<ClaimRow>((o) => supabase.from("okr_outcome_claims").select("id,note_id,task_id,member_id,status", o).in("note_id", notes.map((n) => n.id)), { label: "okr_outcome_claims" }));
+      const rec = buildRecords({ defs, checkins, assessments, learnings, decisions, notes, claims, links, how, proposals, personalLinks, answers, picks, lock, personalKrs, resources }, args);
+      // 行IDの対応はここでは反映しない。呼び出し側が世代番号を確かめてから adopt(rec) で反映する（古い応答で上書きしない）
+      pending.set(rec, { notes: notes.map((n) => [n.note_key, n.id]), defs: defs.map((d) => [d.kr_id, { id: d.id, updatedAt: d.updated_at }]) });
+      return rec;
+    },
+
+    adopt(rec) {
+      const p = pending.get(rec);
+      if (!p) return;
+      pending.delete(rec);
       noteIds.clear();
-      for (const n of notes) noteIds.set(n.note_key, n.id);
+      for (const [k, id] of p.notes) noteIds.set(k, id);
       defMeta.clear();
-      for (const d of defs) defMeta.set(d.kr_id, { id: d.id, updatedAt: d.updated_at });
-      return buildRecords({ defs, checkins, assessments, learnings, decisions, notes, claims, links, how, proposals, personalLinks, answers, picks, lock, personalKrs, resources }, args);
+      for (const [k, m] of p.defs) defMeta.set(k, m);
     },
 
     async saveUser(viewerId, before, after) {
@@ -573,7 +589,7 @@ export function createSupabaseRepository(): OkrMapRepository {
           cause ??= e;
         }
       };
-      await step("仕事のつなぎ先", d.links.length, () =>
+      await step(USER_TABLE_LABEL.overrides, d.links.length, () =>
         must(
           supabase.from("okr_task_kr_links").upsert(
             d.links.map((l) => ({ task_id: l.taskId, kr_ids: l.krIds ?? [], updated_by: by, ...deletedCols(l.krIds === null, by) })),
@@ -581,7 +597,7 @@ export function createSupabaseRepository(): OkrMapRepository {
           ),
         ),
       );
-      await step("提案の採否", d.proposals.length, () =>
+      await step(USER_TABLE_LABEL.proposals, d.proposals.length, () =>
         must(
           supabase.from("okr_proposal_choices").upsert(
             d.proposals.map((p) => ({ member_id: viewerId, task_id: p.taskId, kr_id: p.krId, choice: p.choice, updated_by: by, ...deletedCols(p.deleted, by) })),
@@ -589,7 +605,7 @@ export function createSupabaseRepository(): OkrMapRepository {
           ),
         ),
       );
-      await step("どう役立つか", d.how.length, () =>
+      await step(USER_TABLE_LABEL.how, d.how.length, () =>
         must(
           supabase.from("okr_task_kr_how").upsert(
             d.how.map((h) => ({ member_id: viewerId, task_id: h.taskId, kr_id: h.krId, body: h.body, updated_by: by, ...deletedCols(h.deleted, by) })),
@@ -597,7 +613,7 @@ export function createSupabaseRepository(): OkrMapRepository {
           ),
         ),
       );
-      await step("個人OKRの矢印", d.personalLinks.length, () =>
+      await step(USER_TABLE_LABEL.personalLinks, d.personalLinks.length, () =>
         must(
           supabase.from("okr_personal_kr_links").upsert(
             d.personalLinks.map((l) => ({ member_id: viewerId, personal_kr_id: l.personalId, kr_id: l.krId, updated_by: by, ...deletedCols(l.deleted, by) })),
@@ -605,7 +621,7 @@ export function createSupabaseRepository(): OkrMapRepository {
           ),
         ),
       );
-      await step("振り返りの答え", d.answers.length, () =>
+      await step(USER_TABLE_LABEL.answers, d.answers.length, () =>
         must(
           supabase.from("okr_weekly_answers").upsert(
             d.answers.map((a) => ({ member_id: viewerId, week_start: a.weekStart, kr_id: a.krId, effect: a.effect, match_answer: a.match, updated_by: by })),
@@ -613,7 +629,7 @@ export function createSupabaseRepository(): OkrMapRepository {
           ),
         ),
       );
-      await step("今週やる仕事", d.picks.length, () =>
+      await step(USER_TABLE_LABEL.picks, d.picks.length, () =>
         must(
           supabase.from("okr_weekly_picks").upsert(
             d.picks.map((p) => ({ member_id: viewerId, week_start: p.weekStart, task_id: p.taskId, updated_by: by, ...deletedCols(p.deleted, by) })),
@@ -621,7 +637,7 @@ export function createSupabaseRepository(): OkrMapRepository {
           ),
         ),
       );
-      await step("結びつきへの答え", d.claims.length, async () => {
+      await step(USER_TABLE_LABEL.claims, d.claims.length, async () => {
         for (const c of d.claims) {
           const noteId = noteIds.get(c.noteKey);
           // 黙って捨てない（本人の答えが失われるため）

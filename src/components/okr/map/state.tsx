@@ -3,14 +3,15 @@ import { useOkrMapBridge } from "./bridge";
 import { flowAllInit, setFlowAllFor, SIDEBAR_AUTO_COLLAPSE_PX, sidebarWidth, switchPage, type FlowAll } from "./nav";
 import { addOutcomeNotes, confirmSaveOf, detectConflicts, mergeAssessments, mergeDecisions, mergeDrafts, mergeLearnings, notesOfResources } from "./confirm";
 import { formatErrorForUser } from "../../../lib/errorMessage";
+import { confirmDiscardUnsavedEdits, hasUnsavedEditors } from "../../../lib/editing/unsavedEditorRegistry";
 import { activeData, krBands, PERSONAL_NAME, setActiveData, type OkrMapData } from "./dataset";
 import { applyConfirm, compareOkr, defaultKrIdsOfTask, howKey, importKintone, krIdsOfTask, PERSONAL_PJ, type LinkCtx } from "./logic";
 import { crossedStep, currentAssessment, deltaText, type CurrentAssessment } from "./steps";
-import { KrDefConflictError, memoryRepository, type HintDef, type OkrMapRepository } from "./repository";
+import { isUniqueViolation, KrDefConflictError, memoryRepository, SaveUserError, type HintDef, type OkrMapRepository } from "./repository";
 import type { AiCandidate, AssessEntry, Checkin, ClaimStatus, Decision, KintoneRow, KrAnswer, KrDef, KrRecord, Learning, OkrItem, OutcomeNote, Resource, Task } from "./types";
 import type { OkrMapAi } from "./aiClient";
 import { orderTasksForAi, resourceKindOf, withSplitHint, type CheckinAiContext } from "./checkinAi";
-import { planKintoneApply, readingFromImport, type KintoneApplyPlan, type KintoneReading } from "./kintone";
+import { krCountMismatch, planKintoneApply, readingFromImport, type KintoneApplyPlan, type KintoneKrChoice, type KintoneReading } from "./kintone";
 import type { SuggestKr } from "./suggestAi";
 import { addHistory, registeredTasks, type History, type Reach } from "./reach";
 import * as U from "./userState";
@@ -68,7 +69,7 @@ interface MockState {
   imported: boolean;
   setImported: (v: boolean) => void;
   /** Kintone（正式な内容）に合わせて確定する（本番は O・KR・TF・段の基準文を書いてからロック）。うまくいったら true */
-  importFromKintone: () => Promise<boolean>;
+  importFromKintone: (choice?: KintoneKrChoice) => Promise<boolean>;
   /** AI を使えるか（ゲスト・テストでは使わない。固定データのまま動く） */
   aiReady: boolean;
   /** Kintone の PDF・テキストを読む（AI）。失敗は例外 */
@@ -99,7 +100,7 @@ interface MockState {
   /** 回ごとに、最後に確定した人 */
   confirmedBy: Record<string, string>;
   /** 確定する（資料は複数選べる）。越えた節目を返す */
-  confirmImport: (resourceIds: string[], picks: Record<string, number>, values: Record<string, number>) => Celebration[];
+  confirmImport: (resourceIds: string[], picks: Record<string, number>, values: Record<string, number>) => Promise<Celebration[]>;
   linkCtx: LinkCtx;
   /** 利用の広がり（モックの確認用の切替）。成果は変わらず、アプリに登録された仕事の範囲だけが変わる */
   reach: Reach;
@@ -184,6 +185,7 @@ export function MockProvider({
   repository = memoryRepository,
   ai = null,
   applyKintone,
+  onRecordsChanged,
 }: {
   children: ReactNode;
   initial?: InitialView;
@@ -195,6 +197,8 @@ export function MockProvider({
   ai?: OkrMapAi | null;
   /** 「Kintone に合わせる」で O・KR・TF 本体を書く（本番は appStore の保存関数を通す） */
   applyKintone?: (plan: KintoneApplyPlan) => Promise<void>;
+  /** 記録を読み直してほしいとき（Kintone に合わせた後）。読み直した分は recordsGen が変わったときに足し込む */
+  onRecordsChanged?: () => void;
 }) {
   const loaded = dataProp ?? activeData();
   if (!loaded) throw new Error("地図のデータがありません");
@@ -216,18 +220,21 @@ export function MockProvider({
   const [mode, setModeState] = useState<ViewMode>(initial?.mode ?? "team");
   const [flowAll, setFlowAllState] = useState<FlowAll>(() => flowAllInit(initial?.flowAll));
   const setFlowAll = useCallback((page: ViewMode, on: boolean) => setFlowAllState((f) => setFlowAllFor(f, page, on)), []);
-  const [sel, setSel] = useState<Selection>(initial?.sel ?? null);
+  const [sel, setSelRaw] = useState<Selection>(initial?.sel ?? null);
+  // 詳細を閉じる・切り替える・ページを替えると、KR の段の基準文の書きかけ（KrDefEditor）が消えるので、未保存の確認を通す（Section 46・47）
+  const setSel = useCallback((s: Selection) => guardUnsaved(() => setSelRaw(s)), []);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     () => initial?.collapsed ?? (typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia(`(max-width: ${SIDEBAR_AUTO_COLLAPSE_PX}px)`).matches),
   );
   const pageAnchor = useRef<string | null>(null);
   const setMode = useCallback(
-    (m: ViewMode, anchor?: string) => {
-      pageAnchor.current = anchor ?? null;
-      const next = switchPage({ mode, sel }, m);
-      setModeState(next.mode);
-      setSel(next.sel);
-    },
+    (m: ViewMode, anchor?: string) =>
+      guardUnsaved(() => {
+        pageAnchor.current = anchor ?? null;
+        const next = switchPage({ mode, sel }, m);
+        setModeState(next.mode);
+        setSelRaw(next.sel);
+      }),
     [mode, sel],
   );
   const [guideOpen, setGuideOpen] = useState(true);
@@ -276,9 +283,32 @@ export function MockProvider({
     p.catch((e: unknown) => showToast(formatErrorForUser("保存できませんでした", e)));
   }, [showToast]);
 
-  // 人ごとの状態を変えて、本人の分の変化を保存する。つなぎ先は仕事1件1行なので全員分を足したもので差分を取る
+  // 人ごとの状態を変えて、本人の分の変化を保存する。つなぎ先は仕事1件1行なので全員分を足したもので差分を取る。
+  // 保存は1本ずつ直列に流し（着く順が入れ替わらないように）、毎回「保存済みの状態 → いまの状態」の差分を書く。
+  // 書けなかった表の分は保存済みの状態に戻して知らせる（画面に保存されていない状態を残さない・再送の取りこぼしを作らない）
   const usersRef = useRef(users);
   usersRef.current = users;
+  const savedUsersRef = useRef(users);
+  const saveQueue = useRef<Promise<void>>(Promise.resolve());
+  const flushUsers = useCallback(() => {
+    saveQueue.current = saveQueue.current.then(async () => {
+      const target = usersRef.current;
+      const saved = savedUsersRef.current;
+      if (target === saved) return;
+      const [before, after] = U.viewerChange(saved, target, viewerId);
+      try {
+        await repository.saveUser(viewerId, before, after);
+        savedUsersRef.current = target;
+      } catch (e) {
+        const fields = e instanceof SaveUserError ? U.fieldsOfLabels(e.failed) : U.USER_FIELDS;
+        // 書けた表は保存済みに進め、書けなかった表は保存済みに戻す（いまの画面の状態も同じく戻す）
+        savedUsersRef.current = U.revertUserFields(target, saved, fields, viewerId);
+        usersRef.current = U.revertUserFields(usersRef.current, saved, fields, viewerId);
+        setUsers(usersRef.current);
+        showToast(formatErrorForUser("保存できなかった分を元に戻しました", e));
+      }
+    });
+  }, [viewerId, repository, showToast]);
   const updateUsers = useCallback(
     (fn: (s: U.UserStates) => U.UserStates) => {
       const prev = usersRef.current;
@@ -286,11 +316,29 @@ export function MockProvider({
       if (next === prev) return;
       usersRef.current = next;
       setUsers(next);
-      const [before, after] = U.viewerChange(prev, next, viewerId);
-      persist(repository.saveUser(viewerId, before, after));
+      flushUsers();
     },
-    [viewerId, repository, persist],
+    [flushUsers],
   );
+
+  // 記録を読み直したら（KR の顔ぶれが変わった・Kintone に合わせた）、画面にまだ無い分だけを足し込む。
+  // 地図を作り直さないので、Kintone の読み取り結果・確定前の選択・書きかけは残る。画面の状態にある分は画面を優先する
+  const recordsGen = useRef(loaded.recordsGen);
+  useEffect(() => {
+    if (loaded.recordsGen === recordsGen.current) return;
+    recordsGen.current = loaded.recordsGen;
+    setKrDefs((p) => ({ ...loaded.krDefs, ...p }));
+    setRecords((p) => ({ ...loaded.records, ...p }));
+    setAssessHist((p) => ({ ...loaded.assess, ...p }));
+    setHistory((p) => ({ ...loaded.history, ...p }));
+    setLearnings((p) => addMissingById(p, loaded.learnings));
+    setDecisions((p) => addMissingById(p, loaded.decisions));
+    setCheckins((p) => addMissingById(p, loaded.checkins));
+    setOpenCheckins((p) => addMissingById(p, (loaded.openCheckins ?? []).filter((c) => !loaded.checkins.some((x) => x.id === c.id))));
+    setResources((p) => addMissingById(p, loaded.resources));
+    setOutcomeNotes((p) => addOutcomeNotes(p, loaded.outcomeNotes ?? []));
+    setLocked((l) => l || loaded.lock.locked);
+  }, [loaded]);
 
   // 増減の札：動きを減らす設定では静止表示にして、次の操作で消す。それ以外は少し経ったら消す
   const hasChanges = changes.length > 0;
@@ -351,7 +399,7 @@ export function MockProvider({
       lockedAt: data.lock.lockedAt ?? "",
       imported,
       setImported,
-      importFromKintone: async () => {
+      importFromKintone: async (choice) => {
         const rows = data.kintoneRows;
         if (!rows) return false;
         const next = importKintone(items, rows, data.currentQuarter.quarter);
@@ -363,7 +411,13 @@ export function MockProvider({
           persist(repository.saveLock(lock));
           return true;
         }
-        const plan = planKintoneApply(kintoneReading, items, krDefsState);
+        // KR は並び順で対応づけるので、件数が違えば合わせない（画面もボタンを押せなくしている）
+        const mismatch = krCountMismatch(kintoneReading, items);
+        if (mismatch) {
+          showToast(`KRの数が違うため合わせられません（Kintone ${mismatch.kintone}件・アプリ ${mismatch.app}件）`);
+          return false;
+        }
+        const plan = planKintoneApply(kintoneReading, items, krDefsState, choice);
         // アプリにだけあるTFは消さないので、確定の記録にも残す
         lock.snapshot = [...next, ...items.filter((i) => i.kind === "tf" && !rows.some((r) => r.id === i.id))];
         try {
@@ -384,6 +438,8 @@ export function MockProvider({
         // O・KR・TF は appStore に書いたので、地図はそちらから作り直される（画面の上での差し替えはしない）
         setItems(null);
         setLocked(true);
+        // 書き込みがすべて終わってから記録を読み直す（読み直した分は画面の状態に足し込む）
+        onRecordsChanged?.();
         return true;
       },
       aiReady: ai !== null,
@@ -466,7 +522,7 @@ export function MockProvider({
       checkins,
       decisions,
       confirmedBy,
-      confirmImport: (resourceIds, picks, values) => {
+      confirmImport: async (resourceIds, picks, values) => {
         const selected = resources.filter((r) => resourceIds.includes(r.id));
         if (selected.length === 0) return [];
         const ci =
@@ -474,7 +530,6 @@ export function MockProvider({
             ? nextCheckin
             : (checkins.find((c) => c.id === selected[0].checkinId) ?? openCheckins.find((c) => c.id === selected[0].checkinId));
         if (!ci) return [];
-        setOpenCheckins((p) => p.filter((c) => c.id !== ci.id));
         const conflicts = detectConflicts(selected, records, ci.date);
         const drafts = mergeDrafts(selected, conflicts, picks);
         const assessed = selected.flatMap((r) => r.assessments.map((a) => ({ krId: a.krId, source: a.source })));
@@ -498,7 +553,17 @@ export function MockProvider({
         const nextDecisions = mergeDecisions(decisions, selected, ci);
         const notes = notesOfResources(selected);
         const nextNotes = addOutcomeNotes(outcomeNotes, notes);
-        persist(repository.saveConfirm(confirmSaveOf({ groupId: data.groupId, viewerId, ci, selected, drafts, nextRecords: next, nextHist, nextLearnings, nextDecisions, notes, nextNotes, tasks: allTasks })));
+        // 先に保存し、うまくいったときだけ画面を確定後にする（失敗したら画面は変えず、呼び出し側が消えないエラーを出す）
+        try {
+          await repository.saveConfirm(confirmSaveOf({ groupId: data.groupId, viewerId, ci, selected, drafts, nextRecords: next, nextHist, nextLearnings, nextDecisions, notes, nextNotes, tasks: allTasks }));
+        } catch (e) {
+          throw new Error(
+            isUniqueViolation(e)
+              ? "ほかの人が先にこの回を確定しました。画面を開き直して最新を確かめてから、もう一度確定してください"
+              : formatErrorForUser("確定を保存できませんでした。画面は確定前のままです", e),
+          );
+        }
+        setOpenCheckins((p) => p.filter((c) => c.id !== ci.id));
         setRecords(next);
         setAssessHist(nextHist);
         setLearnings(nextLearnings);
@@ -509,6 +574,7 @@ export function MockProvider({
         setOutcomeNotes(nextNotes);
         // 届けた結びつき（pending）は saveConfirm が書く。ここでは画面の状態だけ変える
         usersRef.current = U.deliverClaims(usersRef.current, notes, allTasks);
+        savedUsersRef.current = U.deliverClaims(savedUsersRef.current, notes, allTasks);
         setUsers(usersRef.current);
         setNewDecisions(selected.reduce((s, r) => s + r.decisions.length, 0));
         setDecisionsOpen(true);
@@ -577,9 +643,27 @@ export function MockProvider({
       toast,
       showToast,
     }),
-    [data, onOpenPersonalOkr, repository, ai, applyKintone, kintoneReading, openCheckins, persist, updateUsers, krDefsState, allTasks, nextCheckin, resources, WEEK_START, viewerId, reach, regTasks, history, assessHist, assess, learnings, mode, setMode, flowAll, setFlowAll, sidebarCollapsed, sel, guideOpen, drawerOpen, modal, junctionOnly, celebrations, changes, decisionsOpen, newDecisions, items, locked, imported, records, checkins, decisions, confirmedBy, linkCtx, me, outcomeNotes, confirmedLinks, toast, showToast],
+    [data, onOpenPersonalOkr, onRecordsChanged, setSel, repository, ai, applyKintone, kintoneReading, openCheckins, persist, updateUsers, krDefsState, allTasks, nextCheckin, resources, WEEK_START, viewerId, reach, regTasks, history, assessHist, assess, learnings, mode, setMode, flowAll, setFlowAll, sidebarCollapsed, sel, guideOpen, drawerOpen, modal, junctionOnly, celebrations, changes, decisionsOpen, newDecisions, items, locked, imported, records, checkins, decisions, confirmedBy, linkCtx, me, outcomeNotes, confirmedLinks, toast, showToast],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+}
+
+/** prev に無い ID の要素だけを後ろに足す（画面の状態を優先する） */
+export function addMissingById<T extends { id: string }>(prev: T[], incoming: T[]): T[] {
+  const have = new Set(prev.map((x) => x.id));
+  const add = incoming.filter((x) => !have.has(x.id));
+  return add.length === 0 ? prev : [...prev, ...add];
+}
+
+/** 未保存の書きかけが無ければすぐ、あれば確認して「切り替える」を選んだときだけ run する（書きかけが無いときに遅らせない） */
+export function guardUnsaved(run: () => void): void {
+  if (!hasUnsavedEditors()) {
+    run();
+    return;
+  }
+  void confirmDiscardUnsavedEdits().then((ok) => {
+    if (ok) run();
+  });
 }
 
 function suggestKrs(items: OkrItem[], defs: Record<string, KrDef>): SuggestKr[] {

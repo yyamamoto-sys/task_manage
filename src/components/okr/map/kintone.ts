@@ -83,19 +83,45 @@ export interface KintoneApplyPlan {
 
 const sameBands = (a: KrBands, b: KrBands) => [60, 70, 80, 90, 100].every((k) => (a[k as 60] ?? "") === (b[k as 60] ?? ""));
 
-/** 「Kintone に合わせる」で書くもの。アプリといまの内容が同じものは書かない */
-export function planKintoneApply(r: KintoneReading, items: OkrItem[], krDefs: Record<string, KrDef>): KintoneApplyPlan {
+/** KR ごとに、何を Kintone に合わせるか（利用者が選ぶ）。未指定は「違うものはすべて合わせる」 */
+export interface KintoneKrChoice {
+  titles: string[];
+  bands: string[];
+}
+
+/** Kintone と アプリの KR の件数が違うか（並び順で対応づけるので、違うときは合わせない） */
+export function krCountMismatch(r: KintoneReading, items: OkrItem[]): { kintone: number; app: number } | null {
+  const app = items.filter((i) => i.kind === "kr").length;
+  return r.krs.length === app ? null : { kintone: r.krs.length, app };
+}
+
+/** KR ごとの題名と段の基準文の旧／新（画面で並べて見せ、合わせるものを選ばせる）。違うものだけ */
+export function krChanges(r: KintoneReading, items: OkrItem[], krDefs: Record<string, KrDef>) {
+  return r.krs.flatMap((k) => {
+    const cur = k.krId ? items.find((i) => i.id === k.krId) : undefined;
+    if (!k.krId || !cur) return [];
+    const titleChanged = !!k.title && cur.text !== k.title;
+    const oldBands = krDefs[k.krId]?.bands ?? null;
+    const bandsChanged = !!k.bands && !(oldBands && sameBands(oldBands, k.bands));
+    return titleChanged || bandsChanged ? [{ krId: k.krId, label: k.label, oldTitle: cur.text, newTitle: k.title, titleChanged, oldBands, newBands: k.bands, bandsChanged }] : [];
+  });
+}
+
+/** 「Kintone に合わせる」で書くもの。アプリといまの内容が同じものは書かない。KR の題名・段の基準文は選んだものだけ */
+export function planKintoneApply(r: KintoneReading, items: OkrItem[], krDefs: Record<string, KrDef>, choice?: KintoneKrChoice): KintoneApplyPlan {
   const byId = new Map(items.map((i) => [i.id, i]));
+  const pickTitle = (krId: string) => !choice || choice.titles.includes(krId);
+  const pickBands = (krId: string) => !choice || choice.bands.includes(krId);
   return {
     objective: r.objective,
-    krTitles: r.krs.flatMap((k) => (k.krId && k.title && byId.get(k.krId)?.text !== k.title ? [{ krId: k.krId, title: k.title }] : [])),
+    krTitles: r.krs.flatMap((k) => (k.krId && k.title && byId.get(k.krId)?.text !== k.title && pickTitle(k.krId) ? [{ krId: k.krId, title: k.title }] : [])),
     tfRenames: r.rows.flatMap((row) => {
       const cur = byId.get(row.id);
       return cur && cur.text !== row.text ? [{ tfId: row.id, name: row.text }] : [];
     }),
     tfCreates: r.rows.flatMap((row) => (r.newTfs[row.id] ? [r.newTfs[row.id]] : [])),
     bands: r.krs.flatMap((k) => {
-      if (!k.krId || !k.bands) return [];
+      if (!k.krId || !k.bands || !pickBands(k.krId)) return [];
       const cur = krDefs[k.krId];
       return cur && sameBands(cur.bands, k.bands) ? [] : [{ krId: k.krId, bands: k.bands }];
     }),

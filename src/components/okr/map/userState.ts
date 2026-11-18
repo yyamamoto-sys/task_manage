@@ -52,6 +52,47 @@ function patch(s: UserStates, id: string, fn: (u: UserState) => UserState): User
   return next === cur ? s : { ...s, [id]: next };
 }
 
+/** 本人の状態を保存するときの、項目 → 表の名前（保存に失敗した表を利用者に知らせる・戻すときの対応） */
+export const USER_TABLE_LABEL = {
+  overrides: "仕事のつなぎ先",
+  proposals: "提案の採否",
+  how: "どう役立つか",
+  personalLinks: "個人OKRの矢印",
+  answers: "振り返りの答え",
+  picks: "今週やる仕事",
+  claims: "結びつきへの答え",
+} as const satisfies Record<keyof UserState, string>;
+
+export type UserField = keyof typeof USER_TABLE_LABEL;
+export const USER_FIELDS = Object.keys(USER_TABLE_LABEL) as UserField[];
+
+/** 表の名前 → 項目（失敗した表の名前から、戻す項目を決める） */
+export function fieldsOfLabels(labels: string[]): UserField[] {
+  return USER_FIELDS.filter((f) => labels.includes(USER_TABLE_LABEL[f]));
+}
+
+/**
+ * 保存に失敗した項目を、保存済みの状態に戻す。つなぎ先は仕事1件1行で全員分に分かれているので全員分を戻し、
+ * それ以外は本人の分だけ戻す
+ */
+export function revertUserFields(cur: UserStates, saved: UserStates, fields: UserField[], viewerId: string): UserStates {
+  if (fields.length === 0) return cur;
+  let out = cur;
+  if (fields.includes("overrides")) {
+    for (const id of new Set([...Object.keys(cur), ...Object.keys(saved)])) out = patch(out, id, (u) => ({ ...u, overrides: { ...userOf(saved, id).overrides } }));
+  }
+  const own = fields.filter((f) => f !== "overrides");
+  if (own.length > 0) {
+    const from = userOf(saved, viewerId);
+    out = patch(out, viewerId, (u) => {
+      const next: UserState = { ...u };
+      for (const f of own) (next as Record<UserField, unknown>)[f] = from[f];
+      return next;
+    });
+  }
+  return out;
+}
+
 /** 全員分のつなぎ先の変更をまとめたもの（図は全員の仕事を描くので、全員分を使う） */
 export function mergedOverrides(s: UserStates): Record<string, string[]> {
   return Object.assign({}, ...Object.values(s).map((u) => u.overrides));

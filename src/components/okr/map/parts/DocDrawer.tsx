@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CONSULT_ATTACHMENT_ACCEPT } from "../../../../lib/ai/consultationAttachmentLoader";
 import { LONG_RESOURCE_CHARS } from "../checkinAi";
+import { formatErrorForUser } from "../../../../lib/errorMessage";
 import { detectConflicts, mergeAssessments, mergeDrafts, notesOfResources, unresolved } from "../confirm";
 import { DEMO, krBands, nextCheckin, TODAY } from "../dataset";
 import { formatMd } from "../logic";
@@ -36,6 +37,8 @@ export function DocDrawer() {
   const [busy, setBusy] = useState<{ done: number; total: number } | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
   const [notices, setNotices] = useState<string[]>([]);
+  const [confirming, setConfirming] = useState(false);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const selected = useMemo(() => listed.filter((r) => resIds.includes(r.id)), [listed, resIds]);
@@ -403,17 +406,31 @@ export function DocDrawer() {
               <button
                 type="button"
                 className="mk-btn mk-btn-primary"
-                disabled={open.length > 0}
-                onClick={() => {
-                  const found = confirmImport(resIds, picks, values);
-                  setDrawerOpen(false);
-                  showToast(found.length > 0 ? `地図に反映しました。${found.map((c) => `${krLabel(c.krId)}が${c.step} の段に届きました`).join("、")}` : "地図に反映し、決定事項と宿題の欄に加えました");
+                disabled={open.length > 0 || confirming}
+                onClick={async () => {
+                  setConfirmError(null);
+                  setConfirming(true);
+                  try {
+                    const found = await confirmImport(resIds, picks, values);
+                    setDrawerOpen(false);
+                    showToast(found.length > 0 ? `地図に反映しました。${found.map((c) => `${krLabel(c.krId)}が${c.step} の段に届きました`).join("、")}` : "地図に反映し、決定事項と宿題の欄に加えました");
+                  } catch (e) {
+                    // 保存に失敗したら画面は確定前のまま。消えないエラーで知らせる（Section 15）
+                    setConfirmError(e instanceof Error ? e.message : formatErrorForUser("確定を保存できませんでした", e));
+                  } finally {
+                    setConfirming(false);
+                  }
                 }}
               >
-                まとめて確定
+                {confirming ? "保存しています…" : "まとめて確定"}
               </button>
               <span className="mk-muted">{open.length > 0 ? "食い違いのすべてで、採る値を選ぶと押せます。" : "確定すると、地図と「チームはいま、どの段にいるか」の欄が新しい見立てになります。"}</span>
             </div>
+            {confirmError && (
+              <div className="mk-card mk-note" role="alert" style={{ whiteSpace: "pre-wrap", marginTop: 8 }}>
+                {confirmError}
+              </div>
+            )}
           </>
         )}
       </div>

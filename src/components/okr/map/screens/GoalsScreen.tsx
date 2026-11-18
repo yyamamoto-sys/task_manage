@@ -1,7 +1,7 @@
-import { useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { formatErrorForUser } from "../../../../lib/errorMessage";
 import { CURRENT_QUARTER, DEMO, PERIOD_NAME, PREV_QUARTER } from "../dataset";
-import { headDiffs } from "../kintone";
+import { headDiffs, krChanges, krCountMismatch } from "../kintone";
 import { diffCount, formatFull, type RowStatus } from "../logic";
 import { useCompareRows, useMock } from "../state";
 import type { Quarter } from "../types";
@@ -23,6 +23,16 @@ export function GoalsScreen() {
   const rows = useCompareRows();
   const heads = kintoneReading ? headDiffs(kintoneReading, items) : [];
   const diffs = diffCount(rows) + heads.length;
+  const mismatch = kintoneReading ? krCountMismatch(kintoneReading, items) : null;
+  const objectiveDiff = heads.find((h) => h.label === "O") ?? null;
+  // KR ごとの題名・段の基準文の旧／新。最初は違うものをすべて選んだ状態にし、利用者が外したものは書かない
+  const krRows = useMemo(() => (kintoneReading ? krChanges(kintoneReading, items, data.krDefs) : []), [kintoneReading, items, data.krDefs]);
+  const [pickTitles, setPickTitles] = useState<string[]>([]);
+  const [pickBands, setPickBands] = useState<string[]>([]);
+  useEffect(() => {
+    setPickTitles(krRows.filter((k) => k.titleChanged).map((k) => k.krId));
+    setPickBands(krRows.filter((k) => k.bandsChanged).map((k) => k.krId));
+  }, [kintoneReading]); // eslint-disable-line react-hooks/exhaustive-deps
   const half = items.filter((i) => i.kind !== "tf");
   const tabs = [...(prev ? [prev.info] : []), cur];
   // 読み込みの操作は、AI を使えるとき（本番）か、テストの架空データがあるときだけ出す（ゲストは出さない）
@@ -30,7 +40,6 @@ export function GoalsScreen() {
   const [busy, setBusy] = useState<"read" | "apply" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const bandKrs = kintoneReading ? kintoneReading.krs.filter((k) => k.krId && k.bands) : [];
 
   const onFile = async (file: File | undefined) => {
     if (!file) return;
@@ -199,27 +208,55 @@ export function GoalsScreen() {
                   </tbody>
                 </table>
               </div>
-              {heads.length > 0 && (
+              {mismatch && (
+                <div className="mk-card mk-note" role="alert">
+                  KRの数が違います（Kintone {mismatch.kintone}件・アプリ {mismatch.app}件）。KR は並び順で対応づけるので、このままでは合わせられません。アプリの KR をそろえてから、もう一度読み込んでください。
+                </div>
+              )}
+              {objectiveDiff && (
                 <>
-                  <h3 className="mk-h3">O・KRの文言の違い</h3>
+                  <h3 className="mk-h3">Oの文言の違い</h3>
                   <table className="mk-diff-table">
                     <tbody>
-                      {heads.map((h) => (
-                        <tr key={h.label}>
-                          <th style={{ width: 70 }}>{h.label}</th>
-                          <td>{h.app || <span className="mk-muted">（アプリにはありません。合わせても追加しません）</span>}</td>
-                          <td>{h.kintone}</td>
-                        </tr>
-                      ))}
+                      <tr>
+                        <th style={{ width: 70 }}>O</th>
+                        <td>{objectiveDiff.app}</td>
+                        <td>{objectiveDiff.kintone}</td>
+                      </tr>
                     </tbody>
                   </table>
                 </>
               )}
-              {kintoneReading && (
-                <p className="mk-muted">
-                  {bandKrs.length > 0 ? `段の基準文を読み取ったKR：${bandKrs.map((k) => k.label).join("、")}（合わせると、KRの段の基準文になります）` : "段の基準文は読み取れませんでした（KRの詳細から手で入れられます）。"}
-                </p>
+              {!mismatch && krRows.length > 0 && (
+                <>
+                  <h3 className="mk-h3">KRの題名と段の基準文の違い（合わせるものを選んでください）</h3>
+                  {krRows.map((k) => (
+                    <fieldset key={k.krId} className="mk-fieldset mk-card" style={{ marginBottom: 8 }}>
+                      <legend className="mk-small">
+                        <strong>{k.label}</strong>
+                      </legend>
+                      {k.titleChanged && (
+                        <label className={`mk-opt${pickTitles.includes(k.krId) ? " is-on" : ""}`}>
+                          <input type="checkbox" checked={pickTitles.includes(k.krId)} onChange={() => setPickTitles((p) => toggleId(p, k.krId))} /> 題名を合わせる
+                          <div className="mk-small">いま：{k.oldTitle}</div>
+                          <div className="mk-small">Kintone：{k.newTitle}</div>
+                        </label>
+                      )}
+                      {k.bandsChanged && k.newBands && (
+                        <label className={`mk-opt${pickBands.includes(k.krId) ? " is-on" : ""}`}>
+                          <input type="checkbox" checked={pickBands.includes(k.krId)} onChange={() => setPickBands((p) => toggleId(p, k.krId))} /> 段の基準文を合わせる
+                          {BAND_STEPS.filter((s) => (k.newBands?.[s] ?? "") !== "" || (k.oldBands?.[s] ?? "") !== "").map((s) => (
+                            <div key={s} className="mk-small">
+                              {s}：いま「{k.oldBands?.[s] || "（なし）"}」→ Kintone「{k.newBands?.[s] || "（なし）"}」
+                            </div>
+                          ))}
+                        </label>
+                      )}
+                    </fieldset>
+                  ))}
+                </>
               )}
+              {kintoneReading && !kintoneReading.krs.some((k) => k.bands) && <p className="mk-muted">段の基準文は読み取れませんでした（KRの詳細から手で入れられます）。</p>}
               {kintoneReading && kintoneReading.skipped.length > 0 && (
                 <p className="mk-muted">アプリに対応するKRが無いため取り込めないTF：{kintoneReading.skipped.join("、")}</p>
               )}
@@ -227,10 +264,10 @@ export function GoalsScreen() {
                 <button
                   type="button"
                   className="mk-btn mk-btn-primary"
-                  disabled={busy !== null}
+                  disabled={busy !== null || mismatch !== null}
                   onClick={async () => {
                     setBusy("apply");
-                    const ok = await importFromKintone();
+                    const ok = await importFromKintone(kintoneReading ? { titles: pickTitles, bands: pickBands } : undefined);
                     setBusy(null);
                     if (ok) showToast(`Kintoneの内容に合わせ、${cur.quarter}のTFをロックしました`);
                   }}
@@ -239,7 +276,7 @@ export function GoalsScreen() {
                 </button>
                 <span className="mk-muted">
                   {kintoneReading
-                    ? "Kintoneの内容が正式です。押すと、アプリの O・KR・TF の文言と段の基準文を Kintone に合わせ、TF をロックします。"
+                    ? "Kintoneの内容が正式です。押すと、TF と O の文言、選んだ KR の題名・段の基準文を Kintone に合わせ、TF をロックします。アプリにだけある TF は消さず、アプリに無い KR は作りません。"
                     : "Kintoneの内容が正式です。アプリ側に合わせる操作はありません。"}
                 </span>
               </div>
@@ -277,3 +314,6 @@ function TfTable() {
     </table>
   );
 }
+
+const BAND_STEPS = [60, 70, 80, 90, 100] as const;
+const toggleId = (list: string[], id: string) => (list.includes(id) ? list.filter((x) => x !== id) : [...list, id]);

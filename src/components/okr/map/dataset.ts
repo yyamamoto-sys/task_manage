@@ -45,6 +45,8 @@ export interface OkrMapData extends OkrMapCore, OkrMapRecords {
   demo?: boolean;
   /** 利用の広がりを確かめるテストで「一部のPJだけ登録」に使うPJ */
   reachPjIds?: string[];
+  /** 記録を読み直した回数（本番）。変わったら、読み直した記録を画面の状態に足し込む（地図を作り直さない） */
+  recordsGen?: number;
 }
 
 /** 図に出すPJの名前（PJに属さない個人の仕事は1つのまとまりにする） */

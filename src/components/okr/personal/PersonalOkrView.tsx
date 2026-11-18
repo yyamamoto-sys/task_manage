@@ -36,6 +36,7 @@ import { shouldInjectOkrTourPreviewSample } from "../../../lib/personalOkr/tourP
 import { confirmDiscardUnsavedEdits } from "../../../lib/editing/unsavedEditorRegistry";
 import { useTour } from "../../tour/TourProvider";
 import { OKR_TOUR_ID } from "../../tour/tours";
+import { useOkrMapBridge } from "../map/bridge";
 import { CustomSelect } from "../../common/CustomSelect";
 import { PersonalKrFormModal } from "./PersonalKrFormModal";
 import { PersonalKrPanel } from "./PersonalKrPanel";
@@ -150,10 +151,17 @@ export function PersonalOkrView({ currentUser }: Props) {
   // ゲストの直接入室のどちらでも、appModeが"okr"になった結果としてここへ到達するため、
   // 起動口を1箇所に集約できる）。他のツアーが進行中のときは横取りしない。
   const tour = useTour();
+  // ガイドから再生したとき（地図の画面から個人OKRの記録を開いて来た）は、完了済みでも最初から始める（91-6 C9）
+  const tourPending = useOkrMapBridge((s) => s.personalTourPending);
   useEffect(() => {
+    if (tourPending) {
+      useOkrMapBridge.getState().setPersonalTourPending(false);
+      tour.start(OKR_TOUR_ID);
+      return;
+    }
     if (!tour.isRunning && !tour.isCompleted(OKR_TOUR_ID)) tour.start(OKR_TOUR_ID);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [tourPending]);
   const isOkrTourRunning = tour.activeTourId === OKR_TOUR_ID;
 
   // ===== AIパネル（Phase 3後半・計画モードと同じ右パネルの型を流用） =====

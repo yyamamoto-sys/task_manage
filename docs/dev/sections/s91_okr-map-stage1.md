@@ -324,3 +324,24 @@ SELECT tgname FROM pg_trigger WHERE tgrelid = 'public.key_results'::regclass AND
 | 10 | 結びつきの仕事を付け替える | denied |
 | 11 | okr_task_assignee_ids（他部署の仕事） | ok:1/true（NULL） |
 | 12 | 取り消し済みの回を確定 | error 55000 |
+
+### 画面・AI（C1〜C10）
+
+| # | 指摘 | 対応 |
+|---|---|---|
+| C1 | KR の段の基準文の書きかけ（KrDefEditor）が確認なしで消える | 地図の `setSel`・`setMode`（サイドバーの KR を開く・ページ切替もこれを通る）を `guardUnsaved`（書きかけが無ければすぐ、あれば `confirmDiscardUnsavedEdits()`）で包んだ。「個人OKRの記録を開く」（OkrDashboardView）も確認を通す。地図の作り直しは C4 で部署・本人・週・四半期の変化だけになった（部署の切替は MainLayout の guardedNavigate が確認する） |
+| C2 | 確定の RPC が失敗しても画面は確定後のまま・成功トーストが先 | `confirmImport` を async にし、`saveConfirm` を await してから画面を確定後にする。失敗したら画面は変えず、引き出しの中に消えないエラー（`formatErrorForUser`）を出す。一意制約（23505）は「ほかの人が先にこの回を確定しました」 |
+| C3 | 本人の状態の保存失敗が画面に残り、再送もされない | 保存は1本ずつ直列（`saveQueue`）にし、毎回「保存済みの状態 → いまの状態」の差分を書く。書けなかった表の分は `revertUserFields` で保存済みの状態に戻して知らせる（`SaveUserError.failed` → `fieldsOfLabels`）。確定で届けた結びつき（pending）は保存済みの状態にも反映する |
+| C4 | KR の顔ぶれが変わると地図が作り直され、Kintone の読み取り結果・確定前の選択・書きかけが消える | `App` の key は「部署・本人・週・四半期」だけ。KR の顔ぶれの変化と「Kintone に合わせる」の完了後（`onRecordsChanged`）は記録だけ読み直し、`recordsGen` が変わったら画面にまだ無い分だけ足し込む（`addMissingById` 等。画面の状態を優先）。読み直しの最中も前の記録で描き続ける |
+| C5 | `repository.load` の副作用（noteIds／defMeta）が世代番号で守られていない | load は値を返すだけ。行IDの対応は `adopt(rec)` で反映し、呼び出し側（OkrMapView）が世代番号を確かめてから呼ぶ |
+| C6 | 「Kintone に合わせる」の KR の対応が並び順だけ | KR の件数が違えば止める（画面に件数を出しボタンを押せなくする。state でも止める）。KR ごとに題名と段の基準文の旧／新を並べ、チェックした KR の分だけ書く（最初は違うものすべてにチェック） |
+| C7 | つなぎ先の kr_ids を今の KR に絞って空になると「つながない」になる | 元が空でない行が絞って空になったら「選んでいない」扱い（既定のつなぎ先）。最初から空の行はそのまま |
+| C8 | Kintone 読み取りに effort が無い | `extractOkrImportData` に `effort` を足し、地図からは `"low"`（管理画面の取込は送らない＝従来どおり） |
+| C9 | ガイドから OKR ツアーを再生しても対象の画面が無い | MainLayout の `startTourFromGuide`：OKR のツアーは bridge の `personalTourPending` を立て、OKR モードへ切り替える（初回の紹介があればそれを通る）。OkrDashboardView は立っていれば個人OKRの記録を開き、PersonalOkrView がツアーを最初から始めて下ろす（tour-guidelines.md §9「再生は最初のステップから・完了フラグに関わらず」） |
+| C10 | つなぎ先を全件読んでいる | 表示部署の仕事の ID（`OkrMapLoadArgs.taskIds`）で `.in("task_id", …)` に絞り、150件ずつ区切って `fetchAllRows` で読む |
+
+### 残った懸念
+
+- 煙試験・RPC・トリガーは実際の DB で流していない（dev で適用→煙試験の順に山本さんが行う）。
+- C9：初回の紹介で「承認しない」を選ぶと `personalTourPending` が立ったまま残り、次に OKR モードへ入ったときに個人OKRの記録とツアーが開く。
+- C5 の `adopt` は単体のテストが無い（読み込みの経路をモックするのが重いため。世代の確認は OkrMapView の1か所）。

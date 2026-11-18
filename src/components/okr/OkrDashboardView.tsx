@@ -7,13 +7,14 @@
 // 「個人OKRの記録を開く」から開く。見た目は段階4で地図に寄せた（s91 91-4）。
 // 【2026-08-10・アーカイブ】旧グループ側の機能は src/components/okr/ARCHIVED.md 参照。
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import type { Member } from "../../lib/localData/types";
 import { lazyWithRetry } from "../../lib/lazyWithRetry";
 import { withChunkDownloadGate } from "../common/ChunkDownloadGate";
 import { withBellReserve } from "../../lib/layout/topRightBell";
 import { confirmDiscardUnsavedEdits } from "../../lib/editing/unsavedEditorRegistry";
 import { OkrMapView } from "./map/OkrMapView";
+import { useOkrMapBridge } from "./map/bridge";
 import { OkrLogo } from "./okrTheme";
 import "./okrTheme.css";
 
@@ -29,12 +30,22 @@ interface Props {
 }
 
 export function OkrDashboardView({ currentUser }: Props) {
-  const [personalOpen, setPersonalOpen] = useState(false);
+  // ガイドから OKR のツアーを再生するときは、ツアーの対象がある個人OKRの記録の画面から始める（91-6 C9）
+  const tourPending = useOkrMapBridge((s) => s.personalTourPending);
+  const [personalOpen, setPersonalOpen] = useState(tourPending);
+  useEffect(() => {
+    if (tourPending) setPersonalOpen(true);
+  }, [tourPending]);
 
   if (!personalOpen) {
     return (
       <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        <OkrMapView currentUser={currentUser} headerPadRight={withBellReserve(24)} onOpenPersonalOkr={() => setPersonalOpen(true)} />
+        <OkrMapView
+          currentUser={currentUser}
+          headerPadRight={withBellReserve(24)}
+          // 地図の KR の段の基準文の書きかけ（明示保存）が消えるので、未保存の確認を通す（Section 46・47）
+          onOpenPersonalOkr={() => { void confirmDiscardUnsavedEdits().then(ok => { if (ok) setPersonalOpen(true); }); }}
+        />
       </div>
     );
   }

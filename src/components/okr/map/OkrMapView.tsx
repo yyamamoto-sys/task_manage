@@ -68,33 +68,45 @@ export function OkrMapView({ currentUser, headerPadRight, onOpenPersonalOkr, rep
     [objectives, keyResults, taskForces, projectTaskForces, taskTaskForces, projects, tasks, members, groupId, currentUser.id, today, quarter],
   );
   const krIds = useMemo(() => core.items.filter((i) => i.kind === "kr").map((i) => i.id), [core.items]);
-  const loadKey = `${groupId ?? ""}|${currentUser.id}|${core.weekStart}|${quarter}|${krIds.join(",")}`;
+  // 地図を作り直すのは「部署・本人・週・四半期」が変わったときだけ（baseKey）。KR の顔ぶれの変化と「Kintone に合わせた」後は
+  // 記録だけ読み直して足し込む（作り直すと Kintone の読み取り結果・確定前の選択・書きかけが消えるため）
+  const baseKey = `${groupId ?? ""}|${currentUser.id}|${core.weekStart}|${quarter}`;
+  const [reloadSeq, setReloadSeq] = useState(0);
+  const loadKey = `${baseKey}|${krIds.join(",")}|${reloadSeq}`;
 
-  // 記録は「部署・本人・週・KRの顔ぶれ」が変わったときだけ読み直す。古い応答は世代番号で捨てる
-  const [loaded, setLoaded] = useState<{ key: string; rec: OkrMapRecords | null; error: string | null } | null>(null);
+  // 古い応答は世代番号で捨てる。保存に使う行IDの対応（repository.adopt）も、世代を確かめてから反映する
+  const [loaded, setLoaded] = useState<{ key: string; baseKey: string; gen: number; rec: OkrMapRecords | null; error: string | null } | null>(null);
   const gen = useRef(0);
-  const argsRef = useRef({ groupId, krIds, viewerId: currentUser.id, year: Number(today.slice(0, 4)), quarter, weekStart: core.weekStart });
-  argsRef.current = { groupId, krIds, viewerId: currentUser.id, year: Number(today.slice(0, 4)), quarter, weekStart: core.weekStart };
+  const taskIds = useMemo(() => core.tasks.map((t) => t.id), [core.tasks]);
+  const argsRef = useRef({ groupId, krIds, viewerId: currentUser.id, year: Number(today.slice(0, 4)), quarter, weekStart: core.weekStart, taskIds });
+  argsRef.current = { groupId, krIds, viewerId: currentUser.id, year: Number(today.slice(0, 4)), quarter, weekStart: core.weekStart, taskIds };
   useEffect(() => {
     const my = ++gen.current;
+    const base = baseKey;
     repository.load(argsRef.current).then(
       (rec) => {
-        if (gen.current === my) setLoaded({ key: loadKey, rec, error: null });
+        if (gen.current !== my) return;
+        repository.adopt?.(rec);
+        setLoaded({ key: loadKey, baseKey: base, gen: my, rec, error: null });
       },
       (e: unknown) => {
-        if (gen.current === my) setLoaded({ key: loadKey, rec: null, error: formatErrorForUser("OKRの記録を読み込めませんでした", e) });
+        if (gen.current === my) setLoaded((p) => ({ key: loadKey, baseKey: base, gen: my, rec: p?.baseKey === base ? p.rec : null, error: formatErrorForUser("OKRの記録を読み込めませんでした", e) }));
       },
     );
+    // baseKey は loadKey に含まれる
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [repository, loadKey]);
+  const reloadRecords = useCallback(() => setReloadSeq((n) => n + 1), []);
 
   // 次に資料を確定したときに加わる回。保存するので行IDとして使える形（uuid）にする。画面を開き直すまで同じもの
   const [nextCheckinId] = useState(() => (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `next-${today}`));
   const data = useMemo<OkrMapData | null>(() => {
-    if (!loaded || loaded.key !== loadKey || !loaded.rec) return null;
-    return { ...core, ...fillRecords(loaded.rec, krIds), nextCheckin: { id: nextCheckinId, date: today, title: `${formatMd(today)}のチェックイン` } };
-  }, [core, loaded, loadKey, krIds, today, nextCheckinId]);
+    // 同じ baseKey の間は、読み直しの最中も前の記録で描き続ける
+    if (!loaded || loaded.baseKey !== baseKey || !loaded.rec) return null;
+    return { ...core, ...fillRecords(loaded.rec, krIds), nextCheckin: { id: nextCheckinId, date: today, title: `${formatMd(today)}のチェックイン` }, recordsGen: loaded.gen };
+  }, [core, loaded, baseKey, krIds, today, nextCheckinId]);
 
-  if (loaded?.key === loadKey && loaded.error) {
+  if (loaded?.key === loadKey && loaded.error && !data) {
     return (
       <div role="alert" style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--color-text-secondary)", fontSize: "12px", padding: "24px", whiteSpace: "pre-wrap" }}>
         {loaded.error}
@@ -104,10 +116,20 @@ export function OkrMapView({ currentUser, headerPadRight, onOpenPersonalOkr, rep
   if (!data) {
     return <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--color-text-tertiary)", fontSize: "12px" }}>読み込み中…</div>;
   }
-  // 部署やKRの顔ぶれが変わったら、記録の状態を作り直す（記録は MockProvider の中で初期値として持つため）
+  // 部署・本人・週・四半期が変わったら、記録の状態を作り直す（記録は MockProvider の中で初期値として持つため）
   return (
     <div style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-      <App key={loadKey} data={data} embedded headerPadRight={headerPadRight} onOpenPersonalOkr={onOpenPersonalOkr} repository={repository} ai={ai} applyKintone={ai ? applyKintone : undefined} />
+      <App
+        key={baseKey}
+        data={data}
+        embedded
+        headerPadRight={headerPadRight}
+        onOpenPersonalOkr={onOpenPersonalOkr}
+        repository={repository}
+        ai={ai}
+        applyKintone={ai ? applyKintone : undefined}
+        onRecordsChanged={reloadRecords}
+      />
     </div>
   );
 }

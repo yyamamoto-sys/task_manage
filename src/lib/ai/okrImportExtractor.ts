@@ -120,6 +120,8 @@ export interface ExtractOkrImportParams {
   withBands?: boolean;
   /** 未指定は Edge Function の既定モデル */
   model?: string;
+  /** 思考の量（Sonnet 5.5 等）。未指定は送らない（管理画面の取込は従来どおり） */
+  effort?: "low" | "medium" | "high";
 }
 
 // 地図の取り込みでは、評価基準バンドを「抽出しない」から「抽出する」に差し替える
@@ -217,7 +219,7 @@ export async function extractOkrImportData(params: ExtractOkrImportParams): Prom
   const content = buildMessageContent(userMessage, params.attachment ?? null);
   // OKRは大きく引用符が多いため、出力切れを避けるため max_tokens を広めに取る
   const system = okrImportSystemPrompt(params.withBands === true);
-  const res = await invokeAI(system, [{ role: "user", content }], 8192, "okr-import", params.model);
+  const res = await invokeAI(system, [{ role: "user", content }], 8192, "okr-import", params.model, params.effort ? { effort: params.effort } : undefined);
   assertNotTruncated(res, TRUNCATED_OKR_IMPORT_MESSAGE);
   const text = res.content[0].text;
 
@@ -239,7 +241,7 @@ export async function extractOkrImportData(params: ExtractOkrImportParams): Prom
           `コードブロックや説明文は一切付けないこと。`,
       },
     ];
-    const retry = await invokeAI(system, repairMessages, 8192, "okr-import", params.model);
+    const retry = await invokeAI(system, repairMessages, 8192, "okr-import", params.model, params.effort ? { effort: params.effort } : undefined);
     assertNotTruncated(retry, TRUNCATED_OKR_IMPORT_MESSAGE);
     return validateOkrImportAnalysis(parseJsonSafe<unknown>(retry.content[0].text));
   }

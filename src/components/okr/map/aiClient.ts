@@ -62,7 +62,7 @@ export function createOkrMapAi(): OkrMapAi {
     async readKintone(file) {
       const att = await loadFile(file);
       if (att.isText && !att.data.trim()) throw new Error(`${file.name}：文字を読み取れませんでした。`);
-      return extractOkrImportData({ transcript: att.isText ? att.data : "", attachment: att.isText ? null : att, withBands: true, model: OKR_MAP_MODEL });
+      return extractOkrImportData({ transcript: att.isText ? att.data : "", attachment: att.isText ? null : att, withBands: true, model: OKR_MAP_MODEL, effort: "low" });
     },
   };
 }
