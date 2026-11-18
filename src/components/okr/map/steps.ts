@@ -5,11 +5,13 @@ import type { AssessEntry, Assessment, BasisItem, Checkin, KrBands, Learning } f
 export const ALL_STEPS = [60, 70, 80, 90, 100] as const;
 
 /** そのKRが持つ段（昇順）。60は必ずある */
-export function stepsOf(bands: KrBands): number[] {
+export function stepsOf(bands: KrBands | undefined): number[] {
+  // 段の定めがまだ届いていない KR（undefined）は 60〜80 の既定として扱い、画面を止めない
+  if (!bands) return [60, 70, 80];
   return [...ALL_STEPS].filter((s) => s === 60 || bands[s] !== undefined);
 }
 
-export function maxStep(bands: KrBands): number {
+export function maxStep(bands: KrBands | undefined): number {
   const s = stepsOf(bands);
   return s[s.length - 1];
 }
@@ -32,7 +34,8 @@ export function stepBelow(value: number, bands: KrBands): number {
 }
 
 /** 90・100 の段を持つKR（これまでのやり方を超える目標を置いている） */
-export function hasStretch(bands: KrBands): boolean {
+export function hasStretch(bands: KrBands | undefined): boolean {
+  if (!bands) return false;
   return bands[90] !== undefined || bands[100] !== undefined;
 }
 

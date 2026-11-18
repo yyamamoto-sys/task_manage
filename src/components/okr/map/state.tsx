@@ -210,7 +210,9 @@ export function MockProvider({
   const [kintoneReading, setKintoneReading] = useState<KintoneReading | null>(null);
   const data = useMemo(() => {
     if (krDefsState === loaded.krDefs && resources === loaded.resources && aiCands === loaded.aiCandidates && howOpts === loaded.howOptions && !kintoneReading) return loaded;
-    return { ...loaded, krDefs: krDefsState, resources, aiCandidates: aiCands, howOptions: howOpts, kintoneRows: kintoneReading ? kintoneReading.rows : loaded.kintoneRows };
+    // 地図を開いたまま KR の顔ぶれが変わると、読み直し（下の useEffect）より先に新しい KR が描かれる。
+    // 画面の状態に無い KR は読んだ記録（fillRecords 済み）で補い、undefined を引かないようにする
+    return { ...loaded, krDefs: { ...loaded.krDefs, ...krDefsState }, resources, aiCandidates: aiCands, howOptions: howOpts, kintoneRows: kintoneReading ? kintoneReading.rows : loaded.kintoneRows };
   }, [loaded, krDefsState, resources, aiCands, howOpts, kintoneReading]);
   // 子の部品は dataset.ts から読む。子より先に描画されるここで、いまのデータに差し替える
   setActiveData(data);
@@ -249,7 +251,9 @@ export function MockProvider({
   const items = itemsOverride ?? data.items;
   const [locked, setLocked] = useState(data.lock.locked);
   const [imported, setImported] = useState(data.kintoneRows !== null);
-  const [records, setRecords] = useState<Record<string, KrRecord>>(data.records);
+  const [recordsState, setRecords] = useState<Record<string, KrRecord>>(data.records);
+  // KR の顔ぶれが変わった直後の描画でも、新しい KR の欄が引けるように読んだ記録で補う（画面の状態を優先）
+  const records = useMemo(() => ({ ...data.records, ...recordsState }), [data.records, recordsState]);
   const [history, setHistory] = useState<History>(data.history);
   const [assessHist, setAssessHist] = useState<Record<string, AssessEntry[]>>(data.assess);
   const [learnings, setLearnings] = useState<Learning[]>(initial?.learnings ?? data.learnings);
