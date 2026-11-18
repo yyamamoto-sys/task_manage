@@ -39,6 +39,14 @@ export interface ReleaseNoteEntry {
 
 export const RELEASE_NOTES: ReleaseNoteEntry[] = [
   {
+    version: "v3.219",
+    date: "2026-11-18",
+    title: "OKRモードを開くとエラーで表示できないことがある不具合を直しました",
+    highlights: [
+      "OKRモードを開いたままKRが増えたとき、エラーで地図が表示できなくなることがある不具合を直しました。",
+    ],
+  },
+  {
     version: "v3.218",
     date: "2026-11-18",
     title: "前の期のKRが並ぶ問題と、地図の「仕事の登録なし」を直しました",

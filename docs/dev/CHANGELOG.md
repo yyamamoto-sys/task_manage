@@ -8787,3 +8787,9 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 * OKR取込：「既存の Objective に追記」へ切り替えたとき、同名の既存 KR があれば紐づけ先の既定をそのKRにする（`matchExistingKrId`・無ければ new）。
 * 地図：KR の段（TF と KR の間）に出ていた「仕事の登録なし」を廃止。KR–TF の間で見るのは「今期の TF があるか」（`krHasTf`／`krTfNote`・無いときだけ「今期のTFなし」）。仕事の有無は TF・PJ の段で見る。KR 詳細の文言も同趣旨に。
 * `MIN_CLIENT_VERSION` は据え置き。DB・Edge の変更なし。
+
+# v3.219（2026-11-18）：OKR地図が開けない不具合の修正（KRが増えた直後の描画）
+
+* 原因：MockProvider の krDefs・records は useState の初期値のままで、KR の顔ぶれが変わっても足し込みは描画後の useEffect（recordsGen）。KR が増えた直後の描画で krBands／records が undefined を引き TypeError。
+* 修正（2152ca7）：data.krDefs を `{ ...loaded.krDefs, ...krDefsState }`、records を useMemo で `{ ...data.records, ...recordsState }` にして描画時点で補う。steps.ts の stepsOf／maxStep／hasStretch は undefined を許容。history・assessHist は参照側が `?? []` で既に安全、他の KR id 引き部品も krDefs／records 経由で補われるため追加修正なし。
+* テスト：map/__tests__/krAddedRerender.test.tsx（2本→3本で再描画しても例外にならない。2152ca7^ の state.tsx では落ちることを確認済み）。`MIN_CLIENT_VERSION` は据え置き。DB・Edge の変更なし。
