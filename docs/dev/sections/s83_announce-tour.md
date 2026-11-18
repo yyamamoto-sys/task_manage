@@ -33,3 +33,5 @@
 `announcements.test.ts`（登録表の整合・公開範囲3通り・自動開始の判定・feedback-intro の進み方と閉じたときの扱い）・`tourLinks.test.ts`（記法・添付・ディープリンク）・`announcementWiring.test.ts`（ソース走査・コメント除去＝Section 59。TourProvider の判定と gated、定義が指す data-tour-id の実在、MainLayout の公開範囲・自動開始・再生口。**audience を "all" に・gated の `if (gated) return` を外す・`isSuperAdmin: tourIsSuperAdmin` を true にする、の3か所をわざと壊して赤くなること、戻して緑になることを確認済み**）。描画テスト基盤が無いため、実際のクリック・暗幕の穴・PC／モバイルの見え方は実機確認が要る（`miniDom` は `document.querySelector`・`getBoundingClientRect`・`ResizeObserver` を持たず TourProvider を描画できない）。
 
 ---
+
+**追記（v3.216）**：お知らせツアーを2本目 `okr-map-intro`（OKRモードの地図の紹介・画面中央の3段・`audience: "all"`・`autoStart: true`）として足した。

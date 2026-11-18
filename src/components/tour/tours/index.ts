@@ -10,6 +10,7 @@ import type { Tour, TourStep } from "./types";
 import { firstTimeTour } from "./first-time";
 import { okrIntroTour } from "./okr-intro";
 import { feedbackIntroTour } from "./feedback-intro";
+import { okrMapIntroTour } from "./okr-map-intro";
 import { ANNOUNCEMENT_TOURS, canSeeAnnouncement, visibleAnnouncementEntries, type AnnouncementViewer } from "./announcements";
 
 export const ALL_TOURS: Record<string, Tour> = {
@@ -17,6 +18,7 @@ export const ALL_TOURS: Record<string, Tour> = {
   [okrIntroTour.id]: okrIntroTour,
   // お知らせツアー（新機能の紹介）。公開範囲は announcements.ts の audience。buildTours が見えない人の分を外す
   [feedbackIntroTour.id]: feedbackIntroTour,
+  [okrMapIntroTour.id]: okrMapIntroTour,
 };
 
 /** ガイドのツアー一覧に表示する順序（重要度の高い順） */

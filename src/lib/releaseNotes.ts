@@ -39,6 +39,16 @@ export interface ReleaseNoteEntry {
 
 export const RELEASE_NOTES: ReleaseNoteEntry[] = [
   {
+    version: "v3.216",
+    date: "2026-11-18",
+    title: "OKRモードが、日々の仕事とOKRをつなぐ「地図」になりました",
+    highlights: [
+      "OKRモードを開くと、KR・Task Force・プロジェクト・日々の仕事のつながりを一目で見渡せる地図が出ます。チームがいまどの段にいるか、どの仕事がどのKRに役立っているかが分かります。",
+      "サイドバーの「資料を読ませる」で、チェックインの資料（PowerPoint・PDF・Word・テキスト）を読ませると、KRの見立てと決定事項・宿題の下書きが出ます。内容を確かめて「まとめて確定」を押すと地図に反映されます。",
+      "これまでの個人OKRの記録（月の計画・実施記録・振り返り）は、地図の「わたし」から「個人OKRの記録を開く」で開けます。",
+    ],
+  },
+  {
     version: "v3.215",
     date: "2026-11-11",
     title: "ダッシュボードのKR枠から、古い信号の丸印を外しました",

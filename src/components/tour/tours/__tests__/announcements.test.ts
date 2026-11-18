@@ -51,8 +51,8 @@ describe("公開範囲（audience）", () => {
     expect(canSeeAnnouncement(all, guest)).toBe(false);
   });
 
-  it("一般アカウントのガイド一覧（announcementTourList）は空・管理者には feedback-intro が並ぶ", () => {
-    expect(announcementTourList(general)).toEqual([]);
+  it("一般アカウントのガイド一覧（announcementTourList）に feedback-intro は無く（OKR地図の紹介だけ）・管理者には並ぶ", () => {
+    expect(announcementTourList(general).map(x => x.tour.id)).toEqual(["okr-map-intro"]);
     expect(announcementTourList(guest)).toEqual([]);
     const list = announcementTourList(admin);
     expect(list.map(x => x.tour.id)).toContain(FEEDBACK_INTRO_TOUR_ID);
@@ -83,8 +83,8 @@ describe("自動開始の判定（pickAutoStartAnnouncement）", () => {
   });
 
   it("一般アカウント・ゲストには自動開始しない（試作の公開範囲）", () => {
-    expect(pickAutoStartAnnouncement(baseCtx({ viewer: general }))).toBeNull();
-    expect(pickAutoStartAnnouncement(baseCtx({ viewer: guest }))).toBeNull();
+    expect(pickAutoStartAnnouncement(baseCtx({ viewer: general }), [ENTRY])).toBeNull();
+    expect(pickAutoStartAnnouncement(baseCtx({ viewer: guest }), [ENTRY])).toBeNull();
   });
 
   it("メンバーIDが未確定（ログイン前）・初回ツアー未了・他のツアー中・モーダル等がある間は始めない", () => {
@@ -95,7 +95,7 @@ describe("自動開始の判定（pickAutoStartAnnouncement）", () => {
   });
 
   it("既読（「あとで」を含む）なら始めない＝自動では何度も出ない", () => {
-    expect(pickAutoStartAnnouncement(baseCtx({ isCompleted: id => id === FEEDBACK_INTRO_TOUR_ID }))).toBeNull();
+    expect(pickAutoStartAnnouncement(baseCtx({ isCompleted: id => id === FEEDBACK_INTRO_TOUR_ID }), [ENTRY])).toBeNull();
   });
 
   it("autoStart: false のお知らせは自動では始めない（ボタン・一覧からは再生できる）", () => {

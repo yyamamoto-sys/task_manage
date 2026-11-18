@@ -9,6 +9,7 @@
 // ゲスト（サンプル閲覧）には、audience に関わらず出さない（ご意見・ベルなど対象の機能がゲストには無いため）。
 
 import { FEEDBACK_INTRO_TOUR_ID } from "./feedback-intro";
+import { OKR_MAP_INTRO_TOUR_ID } from "./okr-map-intro";
 
 export type AnnouncementAudience = "super_admin" | "all";
 
@@ -25,6 +26,7 @@ export interface AnnouncementTour {
 export const ANNOUNCEMENT_TOURS: readonly AnnouncementTour[] = [
   // v3.159：まず管理者（super_admin）だけで確認する。全員へ広げるときは audience を "all" にする（これ1行）
   { tourId: FEEDBACK_INTRO_TOUR_ID, sinceVersion: "3.159", audience: "super_admin", autoStart: true },
+  { tourId: OKR_MAP_INTRO_TOUR_ID, sinceVersion: "3.216", audience: "all", autoStart: true },
 ];
 
 export interface AnnouncementViewer {

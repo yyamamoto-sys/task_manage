@@ -61,3 +61,8 @@
 
 - **クォーター計画（`KrQuarterPlanPanel`）に「サイドバーのラボからの独立導線（standalone）」は元から存在しなかった。** 実装前の想定では inline（OKRモードの「計画」タブ）とstandaloneの2経路があるとされていたが、コードを確認した限り`KrQuarterPlanPanel`の呼び出し元は旧`OkrDashboardView.tsx`の inline 1箇所のみで、`MainLayout.tsx`の`LabViewId`にもクォーター計画用のidは存在しなかった。よって今回撤去したのは inline 経路のみ（=当初想定の「両方」を満たしている。standalone経路自体が無かったため何もしていない、が正しい経緯）。
 - **サイドバーのPC版ラボサブメニュー（`labOpen`ブロック）には、そもそも KRセッション記録／KRレポート生成／KRなぜなぜ分析の3項目が無かった。** これら3機能への導線は「モバイルのラボボトムシート」にしか存在しなかった（PC側は`labOverlay`のswitchケース自体は持っていたが、開くボタンがどこにも配線されていなかった＝到達不能コードだった可能性が高い）。今回はモバイル側の3項目とPC/モバイル共通の`labOverlay`switchケースの両方を削除した。
+
+
+## 追記（2026-11-18・v3.216）
+
+OKRモードは `src/components/okr/map/` の「日々の仕事とOKRをつなぐ地図」に置き換えた（`docs/dev/sections/s91_okr-map-stage1.md`）。上のグループ側のアーカイブは引き続きどこからも描画されない。`PersonalOkrView` は地図の「わたし」→「個人OKRの記録を開く」から開く。

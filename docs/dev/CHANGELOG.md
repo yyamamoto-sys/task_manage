@@ -8764,3 +8764,11 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 * 事実：`DashboardView.tsx` のKR枠にある最新4週の 🟢🟡🔴 ドットは `kr_sessions` を読んでいたが、入力画面は 2026-08-10 にアーカイブ済みで新しいデータは入らず、古い値が出続けていた。
 * 修正：ドット表示と、そのためだけの `fetchKrSessions` 読み込み（effect・state・import）を削除。テーブル・データ・`krSessionStore.ts` は残す（他の利用箇所：`components/lab/*`（KrJointSessionFlow・KrReportPanel・KrWhyPanel・KrQuarterPlanPanel）、`components/okr/*`（アーカイブ済み画面・OkrKrAnalysisPanel））。
 * `uiGuide.ts` に当該ドットの説明は無く、変更なし。マイグレーションなし。
+
+# v3.216（2026-11-18）：OKRモードを「日々の仕事とOKRをつなぐ地図」に作り直し（段階1〜4＋独立レビュー2回）
+* 記録＝`docs/dev/sections/s91_okr-map-stage1.md`（91-1〜91-6）。作業ブランチ `feature/okr-v2` の4段階を一度に出す。本番の OKR モード（個人OKRの画面だけ）を、`src/components/okr/map/` の地図に置き換えた。
+* 段階1：モックの地図を本番へ移設（`buildOkrMapCore`・`dataset` の差し替え・`OkrMapRepository`・サイドバーは `bridge` 経由）。段階2：記録の表15本と `supabaseRepository`。段階3：資料を AI に読ませる（intent `okr-checkin-extract`／`okr-map-suggest`・RPC `okr_confirm_checkin` で確定・Kintone の取り込みと「Kintone に合わせる」）。段階4：個人OKRの記録の見た目を地図に寄せ、「わたし」の「個人OKRの記録を開く」から開く入口にした（`PersonalOkrView` は残す）。
+* 独立レビュー2回：段階3後の指摘11件（91-4）、最終点検のマイグレーション M1〜M10・画面／AI C1〜C10（91-6）。いずれも未適用のまま同じマイグレーションを修正。煙試験 `docs/dev/verify_20261117_okr_map_smoke.sql` を用意。
+* マイグレーション `supabase/migrations/20261117_okr_map_records.sql`（新しい表15本・RLS・トリガー・RPC・GRANT。`schemaChecks.ts` に3項目）。**山本さんが本番へ適用してから main へ合流する**（適用前に 91-2 の確認クエリ3本を流す）。
+* `MIN_CLIENT_VERSION` は据え置き：新しい表・関数の追加だけで、既存の表・列・RLS・Edge の入出力は変えておらず、旧版の画面は壊れないため。
+* `uiGuide.ts` の OKR モードの記述を地図に書き直し（Section 17）。お知らせツアー `okr-map-intro` を1本追加（目標対象なしの3段・Section 83）。ガイド（`docs/guides`）・`okr/ARCHIVED.md` に置き換えを1〜2行反映。
