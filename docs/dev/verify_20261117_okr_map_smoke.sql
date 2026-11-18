@@ -27,7 +27,10 @@ DECLARE
   v_me      text;
   v_groups  text[];
   v_kr      text;   -- 自分の部署の KR
-  v_kr_x    text;   -- 他部署の KR
+  v_kr_x    text;   -- 他部署の KR（自分の所属しない部署）
+  v_g       text;   -- 試す回の部署＝v_kr の部署（複数部署に所属する人でも KR と回の部署をそろえる）
+  v_kr_y    text;   -- v_g 以外の部署の KR（自分が所属していてもよい。部署の一致のトリガーを試す）
+  v_task_y  text;   -- v_task 以外の仕事（付け替え禁止のトリガーを試す）
   v_task    text;   -- 自分が担当する、自分の部署の仕事
   v_task_x  text;   -- 他部署の仕事
   v_other   text;   -- 自分以外のメンバー
@@ -58,14 +61,17 @@ BEGIN
      AND (t2.assignee_member_id = v_me OR v_me = ANY (coalesce(t2.assignee_member_ids, ARRAY[]::text[]))) LIMIT 1;
   SELECT t2.id INTO v_task_x FROM public.tasks t2 WHERE t2.is_deleted = false AND NOT (t2.group_ids && v_groups) LIMIT 1;
   SELECT m.id INTO v_other FROM public.members m WHERE m.id <> v_me AND m.is_deleted = false LIMIT 1;
+  v_g := coalesce((SELECT kr.group_id FROM public.key_results kr WHERE kr.id = v_kr), v_groups[1]);
+  SELECT kr.id INTO v_kr_y FROM public.key_results kr WHERE kr.group_id IS DISTINCT FROM v_g AND kr.is_deleted = false LIMIT 1;
+  SELECT t2.id INTO v_task_y FROM public.tasks t2 WHERE t2.is_deleted = false AND t2.id IS DISTINCT FROM v_task LIMIT 1;
 
   v_confirm := format('SELECT public.okr_confirm_checkin(jsonb_build_object(''checkin'', jsonb_build_object(''id'', %L, ''group_id'', %L, ''date'', current_date, ''title'', ''smoke'')))',
-                      v_ci, v_groups[1]);
+                      v_ci, v_g);
   v_note := CASE WHEN v_kr IS NOT NULL AND v_task IS NOT NULL THEN format(
     'SELECT public.okr_confirm_checkin(jsonb_build_object(''checkin'', jsonb_build_object(''id'', %L, ''group_id'', %L, ''date'', current_date, ''title'', ''smoke''),'
     ' ''notes'', jsonb_build_array(jsonb_build_object(''kr_id'', %L, ''note_key'', ''smoke-note'', ''sources'', ''[]''::jsonb, ''links'', ''[]''::jsonb)),'
     ' ''claims'', jsonb_build_array(jsonb_build_object(''kr_id'', %L, ''note_key'', ''smoke-note'', ''task_id'', %L, ''member_id'', %L))))',
-    v_ci, v_groups[1], v_kr, v_kr, v_task, v_me) END;
+    v_ci, v_g, v_kr, v_kr, v_task, v_me) END;
 
   -- 試験の表：no・name・expected・sql（NULL なら skip）・check（読み戻し）・pre（準備の文の配列）
   v_tests := ARRAY[
@@ -93,15 +99,15 @@ BEGIN
     jsonb_build_object('no', 4, 'name', '確定で学びを1件（自分の部署の KR）', 'expected', 'ok:1/1',
       'sql', CASE WHEN v_kr IS NOT NULL THEN format(
         'SELECT public.okr_confirm_checkin(jsonb_build_object(''checkin'', jsonb_build_object(''id'', %L, ''group_id'', %L, ''date'', current_date, ''title'', ''smoke''),'
-        ' ''learnings'', jsonb_build_array(jsonb_build_object(''kr_id'', %L, ''kind'', ''分かったこと'', ''body'', ''smoke''))))', v_ci, v_groups[1], v_kr) END,
+        ' ''learnings'', jsonb_build_array(jsonb_build_object(''kr_id'', %L, ''kind'', ''分かったこと'', ''body'', ''smoke''))))', v_ci, v_g, v_kr) END,
       'check', format('SELECT count(*)::text FROM public.okr_learnings WHERE checkin_id = %L AND is_deleted = false', v_ci),
       'pre', '[]'::jsonb),
 
     -- 5) 確定の RPC：他部署の KR の学びは拒否（部署の一致のトリガー）。全体が取り消され、回も残らない
     jsonb_build_object('no', 5, 'name', '確定で他部署の KR の学び（拒否）', 'expected', 'error 23514',
-      'sql', CASE WHEN v_kr_x IS NOT NULL THEN format(
+      'sql', CASE WHEN v_kr_y IS NOT NULL THEN format(
         'SELECT public.okr_confirm_checkin(jsonb_build_object(''checkin'', jsonb_build_object(''id'', %L, ''group_id'', %L, ''date'', current_date, ''title'', ''smoke''),'
-        ' ''learnings'', jsonb_build_array(jsonb_build_object(''kr_id'', %L, ''kind'', ''分かったこと'', ''body'', ''smoke''))))', v_ci, v_groups[1], v_kr_x) END,
+        ' ''learnings'', jsonb_build_array(jsonb_build_object(''kr_id'', %L, ''kind'', ''分かったこと'', ''body'', ''smoke''))))', v_ci, v_g, v_kr_y) END,
       'check', NULL,
       'pre', '[]'::jsonb),
 
@@ -136,9 +142,9 @@ BEGIN
 
     -- 10) 結びつき：付け替える（拒否）
     jsonb_build_object('no', 10, 'name', '結びつきの仕事を付け替える（拒否）', 'expected', 'denied',
-      'sql', CASE WHEN v_note IS NOT NULL AND v_task_x IS NOT NULL THEN format(
+      'sql', CASE WHEN v_note IS NOT NULL AND v_task_y IS NOT NULL THEN format(
         'UPDATE public.okr_outcome_claims SET task_id = %L WHERE member_id = %L AND task_id = %L'
-        ' AND note_id = (SELECT id FROM public.okr_outcome_notes WHERE kr_id = %L AND note_key = ''smoke-note'')', v_task_x, v_me, v_task, v_kr) END,
+        ' AND note_id = (SELECT id FROM public.okr_outcome_notes WHERE kr_id = %L AND note_key = ''smoke-note'')', v_task_y, v_me, v_task, v_kr) END,
       'check', NULL,
       'pre', CASE WHEN v_note IS NOT NULL THEN to_jsonb(ARRAY[v_note]) ELSE '[]'::jsonb END),
 
@@ -150,10 +156,10 @@ BEGIN
 
     -- 12) 取り消し済みの回は確定し直せない
     jsonb_build_object('no', 12, 'name', '取り消し済みの回の確定（拒否）', 'expected', 'error 55000',
-      'sql', format('SELECT public.okr_confirm_checkin(jsonb_build_object(''checkin'', jsonb_build_object(''id'', %L, ''group_id'', %L, ''date'', current_date, ''title'', ''smoke'')))', v_ci2, v_groups[1]),
+      'sql', format('SELECT public.okr_confirm_checkin(jsonb_build_object(''checkin'', jsonb_build_object(''id'', %L, ''group_id'', %L, ''date'', current_date, ''title'', ''smoke'')))', v_ci2, v_g),
       'check', NULL,
       'pre', to_jsonb(ARRAY[
-        format('SELECT public.okr_confirm_checkin(jsonb_build_object(''checkin'', jsonb_build_object(''id'', %L, ''group_id'', %L, ''date'', current_date, ''title'', ''smoke'')))', v_ci2, v_groups[1]),
+        format('SELECT public.okr_confirm_checkin(jsonb_build_object(''checkin'', jsonb_build_object(''id'', %L, ''group_id'', %L, ''date'', current_date, ''title'', ''smoke'')))', v_ci2, v_g),
         format('UPDATE public.okr_checkins SET is_deleted = true, deleted_at = now() WHERE id = %L', v_ci2)
       ]))
   ];
