@@ -9,6 +9,7 @@
 
 import { useState, useMemo, useRef, useEffect } from "react";
 import { useAppStore, selectScopedTasks, selectScopedProjects, selectScopedMembers } from "../../stores/appStore";
+import { useCurrentOkr } from "../../hooks/useCurrentOkr";
 import type { Member } from "../../lib/localData/types";
 import { LS_KEY, active } from "../../lib/localData/localStore";
 import { callWhyDialogue, callWhySummary, type WhyMessage } from "../../lib/ai/krWhyClient";
@@ -69,7 +70,6 @@ function loadSavedSummary(krId: string): SavedSummary | null {
 // currentUser は Props に残すが未使用（KrQuarterPlanPanel と同じ扱い＝サマリーは
 // localStorage のみに保存され誰の生成かは記録しない設計のため。将来Supabase移行時に使う）
 export function KrWhyPanel({ onClose, inline = false, initialKrId, currentUser: _currentUser }: Props) {
-  const keyResults              = useAppStore(s => s.keyResults);
   const taskForces              = useAppStore(s => s.taskForces);
   const objective               = useAppStore(s => s.objective);
   const todos                   = useAppStore(s => s.todos);
@@ -77,10 +77,7 @@ export function KrWhyPanel({ onClose, inline = false, initialKrId, currentUser: 
   const members                 = useAppStore(selectScopedMembers);
   const projects                = useAppStore(selectScopedProjects);
 
-  const activeKrs = useMemo(
-    () => active(keyResults),
-    [keyResults],
-  );
+  const { keyResults: activeKrs } = useCurrentOkr(initialKrId ? [initialKrId] : []);
 
   const [selectedKrId, setSelectedKrId] = useState(initialKrId ?? activeKrs[0]?.id ?? "");
   const [selectedTfIds, setSelectedTfIds] = useState<string[]>([]);

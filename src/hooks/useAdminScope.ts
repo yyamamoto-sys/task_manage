@@ -15,7 +15,7 @@ import { active } from "../lib/localData/localStore";
 import { filterInviteGroupsForSidebar } from "../lib/projectInvite/sidebarGroupVisibility";
 import { resolveAdminGroupId } from "../lib/admin/resolveAdminGroupId";
 import { memberInGroup, projectInGroup } from "../lib/admin/adminGroupScope";
-import { keyResultsInGroup, taskForcesInGroup } from "../lib/okr/deptScope";
+import { currentKeyResultsInGroup, currentTaskForcesInGroup } from "../lib/okr/deptScope";
 import type { SettingsCountKey } from "../lib/settings/settingsPages";
 
 export function useAdminScope(currentUser: Member) {
@@ -52,8 +52,8 @@ export function useAdminCounts(selectedGroupId: string | null): Record<SettingsC
   const rawTags = useAppStore(s => s.memberTags);
   const allMembers = useAppStore(s => s.members);
   return useMemo(() => ({
-    okr: keyResultsInGroup(active(krs), rawObjectives, selectedGroupId).length,
-    tf: taskForcesInGroup(active(rawTfs), active(krs), rawObjectives, selectedGroupId).length,
+    okr: currentKeyResultsInGroup(active(krs), rawObjectives, selectedGroupId).length,
+    tf: currentTaskForcesInGroup(active(rawTfs), active(krs), rawObjectives, selectedGroupId).length,
     pj: active(rawProjects).filter(p => projectInGroup(p, selectedGroupId)).length,
     // MembersSection の scopedMembers.length と一致させる（招待受諾者は別枠カードで数える設計のため含めない）
     members: active(allMembers).filter(m => memberInGroup(m, selectedGroupId)).length,

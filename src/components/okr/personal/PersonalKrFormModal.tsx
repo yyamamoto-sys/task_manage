@@ -13,7 +13,7 @@ import { v4 as uuidv4 } from "uuid";
 import type {
   KeyResult, Objective, PersonalKr, PersonalKrKind, PersonalKrMonth, TaskForce, Quarter,
 } from "../../../lib/localData/types";
-import { keyResultsInGroup, taskForcesInGroup, DEFAULT_OKR_GROUP_ID } from "../../../lib/okr/deptScope";
+import { currentKeyResultsInGroup, taskForcesInGroup, DEFAULT_OKR_GROUP_ID } from "../../../lib/okr/deptScope";
 import { modalOverlayStyle, modalBoxStyle, MODAL_BODY_STYLE, MODAL_FOOTER_STYLE } from "../../common/modalStyles";
 import { CustomSelect } from "../../common/CustomSelect";
 import { isWeightTotalWarning } from "../../../lib/personalOkr/weightCheck";
@@ -111,9 +111,11 @@ export function PersonalKrFormModal({
     onClose,
   });
 
+  // 選択肢は今の期の KR だけ。既に前の期の KR に紐づいている行は、その KR を残して表示を壊さない
+  const initialKeyResultId = initial?.key_result_id ?? "";
   const krsInGroup = useMemo(
-    () => keyResultsInGroup(keyResults, objectives, currentGroupId),
-    [keyResults, objectives, currentGroupId],
+    () => currentKeyResultsInGroup(keyResults, objectives, currentGroupId, initialKeyResultId ? [initialKeyResultId] : []),
+    [keyResults, objectives, currentGroupId, initialKeyResultId],
   );
   const tfsForSelectedKr = useMemo(() => {
     if (!keyResultId) return [];

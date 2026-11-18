@@ -7,7 +7,7 @@ import { proposalKey } from "../userState";
 import { aiCandidates, krBands, krStyle, PERIOD_START, personalOkrs, PERSONAL_NAME, MINE_COLOR, pjsInit } from "../dataset";
 import { isAssignee, krIdsOfTask, PERSONAL_PJ } from "../logic";
 import { hasStretch } from "../steps";
-import { krRegistration, reachCounts, reachNote, workPhrase } from "../reach";
+import { krTfNote, reachCounts, reachNote, workPhrase } from "../reach";
 import { useMock } from "../state";
 import { Burst, hintLine, JunctionGlyph, JunctionMark, krLabel, krListText, krText, memberOf, StepScaleG, SvgButton, surnameOf, trunc, wrapLines } from "../ui";
 
@@ -155,7 +155,7 @@ export function FlowDiagram() {
     };
   }, [dragging, dragPid, personalLinks, togglePersonalLink]);
 
-  const krReg = useMemo(() => Object.fromEntries(krIds.map((k) => [k, krRegistration(k, tasks, linkCtx, PERIOD_START)])), [krIds, tasks, linkCtx]);
+  const krTfNotes = useMemo(() => Object.fromEntries(krIds.map((k) => [k, krTfNote(k, linkCtx)])), [krIds, linkCtx]);
   const note = reachNote(reachCounts(tasks, linkCtx, PERIOD_START));
   const objText = items.find((i) => i.kind === "objective")?.text ?? "";
   const H = Math.max(layout.height, otherLayout.height) + TOP;
@@ -620,11 +620,11 @@ export function FlowDiagram() {
                     </text>
                   )}
                   <StepScaleG krId={n.krId} value={value} bands={krBands[n.krId]} geo={{ x: n.x + 28, y: n.y + 100, w: n.w - 56 }} fontSize={9.5} />
-                  {krReg[n.krId] === "none" && (
+                  {krTfNotes[n.krId] && (
                     <g className="mk-noreg" aria-hidden="true">
                       <rect x={n.x - 128} y={n.y + n.h / 2 - 17} width={116} height={34} rx={17} className="mk-noreg-box" />
                       <text x={n.x - 70} y={n.y + n.h / 2 + 4} textAnchor="middle" fontSize={11.5} className="mk-svgtext-muted">
-                        仕事の登録なし
+                        {krTfNotes[n.krId]}
                       </text>
                     </g>
                   )}
@@ -705,7 +705,7 @@ export function FlowDiagram() {
       {isAll && <MineLine />}
       {/* 地図が見えない環境でも、数字を読めるように */}
       <p className="mk-sr">
-        {krIds.map((k) => (krReg[k] === "none" ? `${krLabel(k)}：仕事の登録なし` : `${krLabel(k)}：${workPhrase(krNode(k).done, krNode(k).open)}`)).join("。")}
+        {krIds.map((k) => (krTfNotes[k] ? `${krLabel(k)}：${krTfNotes[k]}` : `${krLabel(k)}：${workPhrase(krNode(k).done, krNode(k).open)}`)).join("。")}
       </p>
     </section>
   );

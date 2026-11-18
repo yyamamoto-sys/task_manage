@@ -62,6 +62,62 @@ export function taskForcesInGroup(
   return taskForces.filter(tf => krIds.has(tf.kr_id));
 }
 
+// ---------- 「今の期」の KR・TF（v3.218） ----------
+// 部署の今の期＝is_current の Objective（pickCurrentObjectiveForGroup）を唯一の基準にする。
+// 一覧・選択肢はここの関数を通す（コンポーネントごとに判定を書かない）。前の期は消さず、
+// 履歴の画面は previous* で別見出しにする。keepIds は「既にその行に紐づいている KR／TF」で、
+// 前の期でも選択肢・ラベルから消さないために渡す（紐づけを壊さない）。
+
+/** 今の期の Objective の KR だけ（keepKrIds に含まれる KR は前の期でも残す） */
+export function currentKeyResultsInGroup(
+  keyResults: KeyResult[], objectives: Objective[], groupId: string | null, keepKrIds: Iterable<string> = [],
+): KeyResult[] {
+  const cur = pickCurrentObjectiveForGroup(objectives, groupId);
+  const keep = new Set(keepKrIds);
+  return keyResults.filter(kr => (cur !== null && kr.objective_id === cur.id) || keep.has(kr.id));
+}
+
+/** 今の期の KR の下の TF だけ（keepTfIds に含まれる TF は前の期でも残す） */
+export function currentTaskForcesInGroup(
+  taskForces: TaskForce[], keyResults: KeyResult[], objectives: Objective[], groupId: string | null,
+  keepTfIds: Iterable<string> = [],
+): TaskForce[] {
+  const krIds = new Set(currentKeyResultsInGroup(keyResults, objectives, groupId).map(k => k.id));
+  const keep = new Set(keepTfIds);
+  return taskForces.filter(tf => krIds.has(tf.kr_id) || keep.has(tf.id));
+}
+
+/** 同じ部署の、今の期ではない Objective の KR（履歴の見出し用） */
+export function previousKeyResultsInGroup(
+  keyResults: KeyResult[], objectives: Objective[], groupId: string | null,
+): KeyResult[] {
+  const cur = pickCurrentObjectiveForGroup(objectives, groupId);
+  const prevIds = new Set(objectivesInGroup(objectives, groupId).filter(o => o.id !== cur?.id).map(o => o.id));
+  return keyResults.filter(kr => prevIds.has(kr.objective_id));
+}
+
+/** 同じ部署の、前の期の KR の下の TF（履歴の見出し用） */
+export function previousTaskForcesInGroup(
+  taskForces: TaskForce[], keyResults: KeyResult[], objectives: Objective[], groupId: string | null,
+): TaskForce[] {
+  const krIds = new Set(previousKeyResultsInGroup(keyResults, objectives, groupId).map(k => k.id));
+  return taskForces.filter(tf => krIds.has(tf.kr_id));
+}
+
+/** 前の期の Objective（新しいものが先。作成日の降順） */
+export function previousObjectivesInGroup(objectives: Objective[], groupId: string | null): Objective[] {
+  const cur = pickCurrentObjectiveForGroup(objectives, groupId);
+  return objectivesInGroup(objectives, groupId)
+    .filter(o => o.id !== cur?.id)
+    .slice()
+    .sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""));
+}
+
+/** KR の ID から表示ラベル用の KR を引く（前の期の KR に紐づいた行でもラベルが消えない） */
+export function findKeyResultForLabel(keyResults: KeyResult[], krId: string | null | undefined): KeyResult | null {
+  return krId ? keyResults.find(k => k.id === krId) ?? null : null;
+}
+
 function quarterlyObjectiveGroupId(qo: QuarterlyObjective): string {
   return qo.group_id ?? DEFAULT_OKR_GROUP_ID;
 }

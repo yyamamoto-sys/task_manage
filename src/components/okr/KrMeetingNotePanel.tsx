@@ -12,6 +12,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useAppStore, selectScopedTasks } from "../../stores/appStore";
+import { useCurrentOkr } from "../../hooks/useCurrentOkr";
 import type { Member, Quarter } from "../../lib/localData/types";
 import { active } from "../../lib/localData/localStore";
 import { formatMD, currentQuarter } from "../../lib/date";
@@ -55,11 +56,10 @@ interface Props {
 }
 
 export function KrMeetingNotePanel({ onClose, currentUser, initialKrId, onKrChange }: Props) {
-  const rawKrs   = useAppStore(s => s.keyResults);
   const rawTfs   = useAppStore(s => s.taskForces);
   const rawTasks = useAppStore(selectScopedTasks);
   const rawTodos = useAppStore(s => s.todos);
-  const krs = useMemo(() => active(rawKrs), [rawKrs]);
+  const { keyResults: krs } = useCurrentOkr(initialKrId ? [initialKrId] : []);
 
   // 既定では KR は空。親から initialKrId が渡されている場合のみその KR を選択。
   const [krId, setKrId] = useState<string>(initialKrId && krs.some(k => k.id === initialKrId) ? initialKrId : "");

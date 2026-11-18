@@ -13,6 +13,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useAppStore, selectScopedTasks, selectScopedMembers } from "../../stores/appStore";
+import { useCurrentOkr } from "../../hooks/useCurrentOkr";
 import type { Member, Quarter } from "../../lib/localData/types";
 import { active } from "../../lib/localData/localStore";
 import { currentQuarter } from "../../lib/date";
@@ -65,7 +66,6 @@ interface Props {
 }
 
 export function OkrKrAnalysisPanel({ onClose, currentUser, initialKrId }: Props) {
-  const rawKrs   = useAppStore(s => s.keyResults);
   const rawTfs   = useAppStore(s => s.taskForces);
   const rawTasks = useAppStore(selectScopedTasks);
   const rawTodos = useAppStore(s => s.todos);
@@ -73,7 +73,7 @@ export function OkrKrAnalysisPanel({ onClose, currentUser, initialKrId }: Props)
   const rawMembers = useAppStore(selectScopedMembers);
   const objective = useAppStore(s => s.objective);
 
-  const krs = useMemo(() => active(rawKrs), [rawKrs]);
+  const { keyResults: krs } = useCurrentOkr(initialKrId ? [initialKrId] : []);
   const memberById = useMemo(() => new Map(active(rawMembers).map(m => [m.id, m])), [rawMembers]);
   const shortName = useCallback((id: string) => memberById.get(id)?.short_name ?? "", [memberById]);
 

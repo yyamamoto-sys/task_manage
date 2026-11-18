@@ -28,6 +28,19 @@ export function pjsOfKr(krId: string, ctx: LinkCtx): string[] {
   return ctx.pjs.filter((p) => p.tfIds.some((id) => tfIds.includes(id))).map((p) => p.id);
 }
 
+/**
+ * KR と TF の間で見るのは「そのKRに今期のTFがあるか」。タスクは TF・PJ より下にしか付かないので、
+ * KR–TF の間では仕事の有無を判定しない（仕事の登録の有無は TF・PJ の段で見る）
+ */
+export function krHasTf(krId: string, ctx: LinkCtx): boolean {
+  return ctx.items.some((i) => i.kind === "tf" && i.parentId === krId);
+}
+
+/** KRの段の注記。今期のTFが無いときだけ出す。それ以外は null（KR–TF の間に仕事の話は出さない） */
+export function krTfNote(krId: string, ctx: LinkCtx): string | null {
+  return krHasTf(krId, ctx) ? null : "今期のTFなし";
+}
+
 const level = (total: number, registered: number): Registration => (registered === 0 ? "none" : registered === total ? "full" : "partial");
 
 export function pjHasRegistration(pjId: string, tasks: Task[], periodStart: string): boolean {

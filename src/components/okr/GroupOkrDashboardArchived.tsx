@@ -12,6 +12,7 @@
 
 import { useState, useMemo, useEffect, useCallback, Suspense } from "react";
 import { useAppStore, selectScopedTasks } from "../../stores/appStore";
+import { useCurrentOkr } from "../../hooks/useCurrentOkr";
 import type { Member } from "../../lib/localData/types";
 import { active } from "../../lib/localData/localStore";
 import { formatMD } from "../../lib/date";
@@ -91,16 +92,12 @@ export function GroupOkrDashboardArchived({
   currentUser, selectedKrId, onSelectKr, activeTool, onSetActiveTool,
 }: Props) {
   const objective  = useAppStore(s => s.objective);
-  const keyResults = useAppStore(s => s.keyResults);
   const taskForces = useAppStore(s => s.taskForces);
   const tasks      = useAppStore(selectScopedTasks);
   const todos      = useAppStore(s => s.todos);
   const members    = useAppStore(s => s.members);
 
-  const activeKrs = useMemo(
-    () => active(keyResults),
-    [keyResults],
-  );
+  const { keyResults: activeKrs } = useCurrentOkr();
   const activeTfs = useMemo(
     () => active(taskForces),
     [taskForces],

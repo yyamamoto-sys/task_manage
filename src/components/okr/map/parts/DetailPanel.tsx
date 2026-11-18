@@ -18,7 +18,7 @@ import {
   tasksOfKr,
   workDigest,
 } from "../logic";
-import { krRegistration, workPhrase } from "../reach";
+import { krRegistration, krTfNote, workPhrase } from "../reach";
 import { useMock } from "../state";
 import { hasStretch, learningsOfKr, moveText, nextLine, nextRequirements, stepMove, stepsOf } from "../steps";
 import { proposalKey } from "../userState";
@@ -144,7 +144,7 @@ function KrPanel({ krId }: { krId: string }) {
         ))
       )}
       {reg === "none" ? (
-        <p className="mk-muted mk-noreg-line">この KR につながる仕事は、アプリに登録されていません。見立てと学びはチェックイン資料から出ています。</p>
+        <p className="mk-muted mk-noreg-line">{krTfNote(krId, linkCtx) ? "この KR には、今期の TF がありません。" : "この KR の下の TF・PJ に、登録された仕事がまだありません。"}見立てと学びはチェックイン資料から出ています。</p>
       ) : (
         <>
           <h4 className="mk-panel-sub">見立てと仕事の対比{scopeNote}</h4>

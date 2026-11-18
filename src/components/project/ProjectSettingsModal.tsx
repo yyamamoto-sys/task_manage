@@ -28,7 +28,7 @@ import { getAssigneeIds } from "../../lib/taskMeta";
 import { computeProjectMembers, type ProjectMemberRole } from "../../lib/project/projectMembers";
 import { canEditProjectBasicInfo } from "../../lib/project/projectEditPermission";
 import { applyProjectTaskForceLinks, buildCurrentQuarterKrTfGroups } from "../../lib/project/projectTaskForceLinks";
-import { keyResultsInGroup, taskForcesInGroup } from "../../lib/okr/deptScope";
+import { currentKeyResultsInGroup, currentTaskForcesInGroup } from "../../lib/okr/deptScope";
 import { CustomSelect } from "../common/CustomSelect";
 import { Avatar } from "../auth/UserSelectScreen";
 import { modalOverlayStyle, modalBoxStyle, MODAL_BODY_STYLE, MODAL_FOOTER_STYLE } from "../common/modalStyles";
@@ -150,8 +150,8 @@ export function ProjectSettingsModal({ project, currentUser, onClose }: Props) {
   );
   const tfGroupId = project.group_id ?? currentGroupId;
   const krTfGroups = useMemo(() => {
-    const krs = keyResultsInGroup(active(rawKeyResults), rawObjectives, tfGroupId);
-    const tfs = taskForcesInGroup(active(rawTaskForces), krs, rawObjectives, tfGroupId);
+    const krs = currentKeyResultsInGroup(active(rawKeyResults), rawObjectives, tfGroupId);
+    const tfs = currentTaskForcesInGroup(active(rawTaskForces), krs, rawObjectives, tfGroupId);
     return buildCurrentQuarterKrTfGroups(krs, tfs);
   }, [rawKeyResults, rawTaskForces, rawObjectives, tfGroupId]);
   const managedTfIds = useMemo(

@@ -29,7 +29,10 @@ import { canAdministerGroup, canChangeHomeGroup, canDeleteMember, canEditMemberR
 import { isGuestOnlyMember, withGuestOnlyMembers, isGuestMemberOf, withGuestLabel, inviteGroupIdsInScope } from "../../lib/admin/guestMembers";
 import { effectiveTfQuarter } from "../../lib/okr/tfQuarter";
 import { applyProjectTaskForceLinks } from "../../lib/project/projectTaskForceLinks";
-import { keyResultsInGroup, taskForcesInGroup, pickCurrentObjectiveForGroup } from "../../lib/okr/deptScope";
+import {
+  currentKeyResultsInGroup, currentTaskForcesInGroup, previousKeyResultsInGroup,
+  previousTaskForcesInGroup, previousObjectivesInGroup, pickCurrentObjectiveForGroup,
+} from "../../lib/okr/deptScope";
 import { currentQuarter } from "../../lib/date";
 import { getErrorMessage, formatErrorForUser } from "../../lib/errorMessage";
 import { active } from "../../lib/localData/localStore";
@@ -206,10 +209,18 @@ function OKRSection({ currentUser, onDirtyChange, selectedGroupId }: {
     () => pickCurrentObjectiveForGroup(rawObjectives, selectedGroupId || null),
     [rawObjectives, selectedGroupId],
   );
+  // 一覧は今の期の KR だけ。前の期は下の「前の期」で折りたたんで読み取り専用に出す
   const krs = useMemo(
-    () => keyResultsInGroup(active(rawKrs), rawObjectives, selectedGroupId || null),
+    () => currentKeyResultsInGroup(active(rawKrs), rawObjectives, selectedGroupId || null),
     [rawKrs, rawObjectives, selectedGroupId],
   );
+  const prevGroups = useMemo(() => {
+    const gid = selectedGroupId || null;
+    const prevKrs = previousKeyResultsInGroup(active(rawKrs), rawObjectives, gid);
+    return previousObjectivesInGroup(rawObjectives, gid)
+      .map(o => ({ objective: o, krs: prevKrs.filter(k => k.objective_id === o.id), tfs: [] as TaskForce[] }))
+      .filter(g => g.krs.length > 0);
+  }, [rawKrs, rawObjectives, selectedGroupId]);
 
   const [editingKrId, setEditingKrId] = useState<string | null>(null);
   const [krDangerId, setKrDangerId] = useState<string | null>(null);
@@ -418,7 +429,42 @@ function OKRSection({ currentUser, onDirtyChange, selectedGroupId }: {
         </div>
         <div style={{ marginTop: "8px" }}><SaveErrorBand message={krAddSave.error || krEditSave.error} /></div>
       </Card>
+
+      {/* 前の期（履歴・読み取りのみ。既定は折りたたみ） */}
+      <PreviousOkrFold groups={prevGroups} />
     </div>
+  );
+}
+
+/** 前の期の Objective・KR（・TF）。履歴として残すだけで、編集・紐づけの対象にはしない */
+function PreviousOkrFold({ groups }: { groups: { objective: Objective; krs: KeyResult[]; tfs: TaskForce[] }[] }) {
+  if (groups.length === 0) return null;
+  const total = groups.reduce((n, g) => n + g.krs.length, 0);
+  return (
+    <details style={{ marginTop: "20px" }}>
+      <summary style={{ cursor: "pointer", fontSize: "13px", fontWeight: 600, color: "var(--color-text-secondary)" }}>
+        前の期（{total}件・履歴）
+      </summary>
+      <div style={{ marginTop: "8px", display: "flex", flexDirection: "column", gap: "12px" }}>
+        {groups.map(g => (
+          <div key={g.objective.id}>
+            <div style={{ fontSize: "12px", fontWeight: 600, color: "var(--color-text-tertiary)", marginBottom: "4px" }}>
+              {g.objective.period || g.objective.title}
+            </div>
+            <ul style={{ margin: 0, paddingLeft: "18px", fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
+              {g.krs.map((kr, i) => (
+                <li key={kr.id}>
+                  KR{i + 1}：{kr.title}
+                  {g.tfs.filter(tf => tf.kr_id === kr.id).map(tf => (
+                    <div key={tf.id} style={{ paddingLeft: "10px" }}>TF{tf.tf_number || "?"}：{tf.name}</div>
+                  ))}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </details>
   );
 }
 
@@ -452,13 +498,21 @@ function TFSection({ currentUser, onDirtyChange, selectedGroupId }: {
     [rawObjectives, selectedGroupId],
   );
   const krs = useMemo(
-    () => keyResultsInGroup(active(rawKrs), rawObjectives, selectedGroupId || null),
+    () => currentKeyResultsInGroup(active(rawKrs), rawObjectives, selectedGroupId || null),
     [rawKrs, rawObjectives, selectedGroupId],
   );
   const tfs = useMemo(
-    () => taskForcesInGroup(active(rawTfs), active(rawKrs), rawObjectives, selectedGroupId || null),
+    () => currentTaskForcesInGroup(active(rawTfs), active(rawKrs), rawObjectives, selectedGroupId || null),
     [rawTfs, rawKrs, rawObjectives, selectedGroupId],
   );
+  const prevGroups = useMemo(() => {
+    const gid = selectedGroupId || null;
+    const prevKrs = previousKeyResultsInGroup(active(rawKrs), rawObjectives, gid);
+    const prevTfs = previousTaskForcesInGroup(active(rawTfs), active(rawKrs), rawObjectives, gid);
+    return previousObjectivesInGroup(rawObjectives, gid)
+      .map(o => ({ objective: o, krs: prevKrs.filter(k => k.objective_id === o.id), tfs: prevTfs }))
+      .filter(g => g.krs.length > 0);
+  }, [rawKrs, rawTfs, rawObjectives, selectedGroupId]);
   const members = useMemo(() => active(rawMembers), [rawMembers]);
   const todos   = useMemo(() => active(rawTodos), [rawTodos]);
   const allTasks = useMemo(() => active(rawTasks), [rawTasks]);
@@ -759,6 +813,7 @@ function TFSection({ currentUser, onDirtyChange, selectedGroupId }: {
           </AdminFormModal>
         );
       })()}
+      <PreviousOkrFold groups={prevGroups} />
     </div>
   );
 }
@@ -1351,12 +1406,13 @@ function PJSection({ currentUser, onDirtyChange, selectedGroupId }: { currentUse
   // 「紐づける TF」ピッカーは、このセクションの他の絞り込み（projects/members）と同じく
   // サイドバーの「表示部署」に追従するselectedGroupIdでスコープする（v3.02からの継続。
   // v2.94時点では未対応だった穴を埋める）。
+  // 選択肢は今の期の KR・TF だけ。前の期に既に紐づいているものは下の taskForcesForPicker が補う
   const keyResults = useMemo(
-    () => keyResultsInGroup(activeKeyResults, rawObjectives, selectedGroupId),
+    () => currentKeyResultsInGroup(activeKeyResults, rawObjectives, selectedGroupId),
     [activeKeyResults, rawObjectives, selectedGroupId],
   );
   const taskForces = useMemo(
-    () => taskForcesInGroup(activeTaskForces, activeKeyResults, rawObjectives, selectedGroupId),
+    () => currentTaskForcesInGroup(activeTaskForces, activeKeyResults, rawObjectives, selectedGroupId),
     [activeTaskForces, activeKeyResults, rawObjectives, selectedGroupId],
   );
 

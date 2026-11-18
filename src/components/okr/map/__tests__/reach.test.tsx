@@ -179,18 +179,17 @@ describe("3つの利用の広がり：地図と詳細", () => {
     expect(h).not.toContain("登録された分");
     for (const k of ["KR1", "KR2", "KR3"]) expect(h).toContain(`からKR${k.slice(2)}へ：`);
   });
-  it("一部のPJだけ：登録の無いKR1は帯と「仕事 完了／残り」が無く、点線の枠で「仕事の登録なし」。成果は出ている。注記は1行", () => {
+  it("一部のPJだけ：登録の無いKR1は帯と「仕事 完了／残り」が無い。KRとTFの間には「仕事の登録なし」を出さない（タスクはTF以降）。成果は出ている。注記は1行", () => {
     const h = html({ reach: "pjs" });
     expect(h).not.toContain("からKR1へ：");
     expect(h).toContain("からKR2へ：");
     expect(h).toContain("からKR3へ：");
-    expect((h.match(/class="mk-noreg-box"/g) ?? []).length).toBe(1); // KR1の枠（TFの枠は別の印）
-    expect((h.match(/KR1：仕事の登録なし/g) ?? []).length).toBe(1); // 読み上げ用の一文
+    expect((h.match(/class="mk-noreg-box"/g) ?? []).length).toBe(0); // KRの段には出ない（KR1には今期のTFがある。TFの枠は別の印）
+    expect(h).not.toContain("KR1：仕事の登録なし");
     expect((h.match(/mk-tf-empty/g) ?? []).length).toBe(4); // 仕事の無いTF（TF1-1・TF1-2・TF3-1・TF3-3）は点線の枠
     expect((h.match(/仕事はアプリに登録された分です（8PJ中2PJ）/g) ?? []).length).toBe(1);
     expect(h).toContain("手がかり 18社／30社");
     expect(h).toContain("KR1 共創パートナー企業を30社にする：AIの見立て 66");
-    expect(h).toContain("KR1：仕事の登録なし");
   });
   it("注記は地図の凡例の近く（見出しの下・凡例の1行の前）。利用状況を大きな数字やゲージでは出さない", () => {
     const h = html({ reach: "pjs" });
@@ -198,9 +197,9 @@ describe("3つの利用の広がり：地図と詳細", () => {
     expect(h.indexOf("仕事はアプリに登録された分です")).toBeLessThan(h.indexOf("段の目盛りはAIの見立て"));
     expect(h).not.toMatch(/利用率|利用状況/);
   });
-  it("登録なしのKRの詳細：対比・仕事の一覧・重なる仕事を出さず、1行だけ", () => {
+  it("登録なしのKRの詳細：対比・仕事の一覧・重なる仕事を出さず、1行だけ（KRに仕事は付かない。TF・PJの下を指す）", () => {
     const h = html({ reach: "pjs", sel: { type: "kr", id: "kr1" } });
-    expect(h).toContain("この KR につながる仕事は、アプリに登録されていません。見立てと学びはチェックイン資料から出ています。");
+    expect(h).toContain("この KR の下の TF・PJ に、登録された仕事がまだありません。見立てと学びはチェックイン資料から出ています。");
     expect(h).toContain("いまの段（AIの見立て）");
     expect(h).toContain("展示会で会った相手は、お礼の連絡が早いほど反応が良い");
     expect(h).toContain("mk-stepscale");

@@ -16,6 +16,7 @@
 
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useAppStore, selectScopedTasks, selectScopedMembers } from "../../stores/appStore";
+import { useCurrentOkr } from "../../hooks/useCurrentOkr";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { isGuestMember } from "../../lib/guestMode";
 import type {
@@ -72,8 +73,6 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
   const rawMembers = useAppStore(selectScopedMembers);
   // 名前の解決（オーナー・担当者・更新者）は表示部署で絞らない全件。AIに渡す部署メンバー一覧（members_short_names）だけ表示部署（v3.139）
   const rawAllMembers = useAppStore(s => s.members);
-  const rawKrs     = useAppStore(s => s.keyResults);
-  const rawTfs     = useAppStore(s => s.taskForces);
   const rawPtfs    = useAppStore(s => s.projectTaskForces);
   const rawTodos   = useAppStore(s => s.todos);
   const rawMs      = useAppStore(s => s.milestones);
@@ -109,8 +108,8 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
   const allTasks = useMemo(() => active(rawTasks), [rawTasks]);
   const members  = useMemo(() => active(rawMembers), [rawMembers]);
   const allMembers = useMemo(() => active(rawAllMembers), [rawAllMembers]);
-  const krs      = useMemo(() => active(rawKrs), [rawKrs]);
-  const tfs      = useMemo(() => active(rawTfs), [rawTfs]);
+  // 表示部署の今の期の KR・TF だけ（前の期の KR が並んで「同じ OKR が2回」にならない）
+  const { keyResults: krs, taskForces: tfs } = useCurrentOkr();
   const todos      = useMemo(() => (rawTodos ?? []).filter((td: ToDo) => !td.is_deleted), [rawTodos]);
   const milestones = useMemo(() => (rawMs ?? []).filter(m => !m.is_deleted), [rawMs]);
   const projectTaskForces = rawPtfs;

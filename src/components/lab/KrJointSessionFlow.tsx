@@ -13,6 +13,7 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useAppStore } from "../../stores/appStore";
+import { useCurrentOkr } from "../../hooks/useCurrentOkr";
 import type { Member } from "../../lib/localData/types";
 import { active } from "../../lib/localData/localStore";
 import { formatErrorForUser } from "../../lib/errorMessage";
@@ -119,10 +120,9 @@ interface Props {
 }
 
 export function KrJointSessionFlow({ currentUser, initialKrId, onSaved, onClose }: Props) {
-  const rawKrs = useAppStore(s => s.keyResults);
   const rawMembers = useAppStore(s => s.members);
   const objective = useAppStore(s => s.objective);
-  const activeKrs = useMemo(() => active(rawKrs), [rawKrs]);
+  const { keyResults: activeKrs } = useCurrentOkr(initialKrId ? [initialKrId] : []);
   const memberById = useMemo(() => new Map(active(rawMembers).map(m => [m.id, m])), [rawMembers]);
   const memberShortNames = useMemo(() => [...memberById.values()].map(m => m.short_name), [memberById]);
 

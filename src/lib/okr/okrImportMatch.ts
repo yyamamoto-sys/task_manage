@@ -34,3 +34,22 @@ export function matchMemberByName<T extends MatchableMember>(
 
   return null;
 }
+
+/** KR の題名から先頭の「KR1」「KR1：」等の番号を除き、空白・全角半角・大小文字をそろえる */
+function normalizeKrTitle(title: string): string {
+  return title
+    .normalize("NFKC")
+    .replace(/^\s*KR\s*\d+\s*[:：.\-、)）]?\s*/i, "")
+    .replace(/\s+/g, "")
+    .toLowerCase();
+}
+
+/**
+ * 「既存の Objective に追記」で、取込の KR と同じ KR が既にあるか。同名（番号の違い・空白の違いは無視）の
+ * 既存 KR の id を返す。無ければ null（＝新規 KR として追加）。同じ Objective への重複追加を防ぐ。
+ */
+export function matchExistingKrId(draftTitle: string, existing: { id: string; title: string }[]): string | null {
+  const key = normalizeKrTitle(draftTitle);
+  if (!key) return null;
+  return existing.find(k => normalizeKrTitle(k.title) === key)?.id ?? null;
+}

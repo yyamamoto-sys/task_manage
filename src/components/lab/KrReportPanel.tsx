@@ -10,8 +10,8 @@
 
 import { useState, useRef, useMemo, useEffect } from "react";
 import { useAppStore, selectScopedTasks, selectScopedMembers } from "../../stores/appStore";
+import { useCurrentOkr } from "../../hooks/useCurrentOkr";
 import type { Member } from "../../lib/localData/types";
-import { active } from "../../lib/localData/localStore";
 import { buildKrReportContext, type KrReportMode } from "../../lib/ai/krReportPrompt";
 import { callKrReportAI } from "../../lib/ai/krReportClient";
 import { fetchKrSessions, type KrSession } from "../../lib/supabase/krSessionStore";
@@ -66,16 +66,12 @@ const barBtn: React.CSSProperties = {
 };
 
 export function KrReportPanel({ onClose, inline = false, initialKrId, currentUser }: Props) {
-  const keyResults = useAppStore(s => s.keyResults);
   const taskForces = useAppStore(s => s.taskForces);
   const todos      = useAppStore(s => s.todos);
   const tasks      = useAppStore(selectScopedTasks);
   const members    = useAppStore(selectScopedMembers);
 
-  const activeKrs = useMemo(
-    () => active(keyResults),
-    [keyResults],
-  );
+  const { keyResults: activeKrs } = useCurrentOkr(initialKrId ? [initialKrId] : []);
 
   const [selectedKrId, setSelectedKrId] = useState<string>(initialKrId ?? activeKrs[0]?.id ?? "");
   const [mode, setMode] = useState<KrReportMode>("checkin");

@@ -266,15 +266,15 @@ describe("「遅れ」などの語は、詳細を開いていない画面に出�
 });
 
 describe("登録なしのKRでも、段の目盛り・見立て・学びが出る", () => {
-  it("一部のPJだけ登録：KR1は仕事の登録なし。地図に段の目盛りと見立て、詳細に見立て・学び", () => {
+  it("一部のPJだけ登録：KR1は仕事が登録されていない。地図に段の目盛りと見立て、詳細に見立て・学び", () => {
     const h = html({ reach: "pjs" });
-    expect(h).toContain("KR1：仕事の登録なし");
+    expect(h).not.toContain("KR1：仕事の登録なし");
     expect(h).toMatch(/KR1 共創パートナー企業を30社にする：AIの見立て 66/);
     const d = html({ reach: "pjs", sel: { type: "kr", id: "kr1" } });
     expect(d).toContain("いまの段（AIの見立て）");
     expect(d).toContain("mk-stepscale");
     expect(d).toContain("展示会で会った相手は、お礼の連絡が早いほど反応が良い");
-    expect(d).toContain("この KR につながる仕事は、アプリに登録されていません。");
+    expect(d).toContain("この KR の下の TF・PJ に、登録された仕事がまだありません。");
   });
   it("1人だけ：登録の無いKRにも段の目盛りが出る", () => {
     const h = html({ reach: "solo", viewerId: "m3" });

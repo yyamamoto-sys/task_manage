@@ -22,7 +22,7 @@ import {
   extractOkrImportData,
   type OkrImportAnalysis,
 } from "../../lib/ai/okrImportExtractor";
-import { matchMemberByName } from "../../lib/okr/okrImportMatch";
+import { matchMemberByName, matchExistingKrId } from "../../lib/okr/okrImportMatch";
 import { pickCurrentObjectiveForGroup } from "../../lib/okr/deptScope";
 import type { FileAttachment } from "../../lib/ai/invokeAI";
 import { extractDocxText, isDocxFile } from "../../lib/docxText";
@@ -383,6 +383,16 @@ export function OkrImportModal({ onClose, currentUser, targetGroupId }: Props) {
     setApplyResults(null);
   };
 
+  // 「既存に追記」へ切り替えたとき、同名の既存KRがあるものは紐づけ先の既定をそのKRにする（無ければ new）。
+  // 新規作成に戻すときは全て new。同じ Objective への重複追加を防ぐ。
+  const changeTargetMode = (m: TargetMode) => {
+    setTargetMode(m);
+    setKrDrafts(prev => prev.map(d => ({
+      ...d,
+      linkTo: m === "existing" ? (matchExistingKrId(d.title, existingKrs) ?? "new") : "new",
+    })));
+  };
+
   const updateKr = (tempId: string, patch: Partial<KrDraft>) =>
     setKrDrafts(prev => prev.map(d => d.tempId === tempId ? { ...d, ...patch } : d));
   const updateTf = (krTempId: string, tfTempId: string, patch: Partial<TfDraft>) =>
@@ -541,7 +551,7 @@ export function OkrImportModal({ onClose, currentUser, targetGroupId }: Props) {
               docType={docType}
               importQuarter={importQuarter}
               targetMode={targetMode}
-              setTargetMode={setTargetMode}
+              setTargetMode={changeTargetMode}
               objTitle={objTitle} setObjTitle={setObjTitle}
               objPurpose={objPurpose} setObjPurpose={setObjPurpose}
               objBackground={objBackground} setObjBackground={setObjBackground}

@@ -7,6 +7,7 @@
 
 import { useEffect, useRef, useCallback, useMemo, useState } from "react";
 import { useAppStore, selectScopedTasks, selectScopedProjects } from "../../stores/appStore";
+import { useCurrentOkr } from "../../hooks/useCurrentOkr";
 import type { Member } from "../../lib/localData/types";
 import { active } from "../../lib/localData/localStore";
 import { withBellReserve } from "../../lib/layout/topRightBell";
@@ -89,8 +90,7 @@ export function GraphView({ onClose, currentUser: _currentUser, onOpenTask }: Pr
   }>();
 
   const objective         = useAppStore(s => s.objective);
-  const rawKrs            = useAppStore(s => s.keyResults);
-  const rawTfs            = useAppStore(s => s.taskForces);
+  const { keyResults: curKrs, taskForces: curTfs } = useCurrentOkr();
   const rawTodos          = useAppStore(s => s.todos);
   const rawTasks          = useAppStore(selectScopedTasks);
   const rawProjects       = useAppStore(selectScopedProjects);
@@ -105,8 +105,8 @@ export function GraphView({ onClose, currentUser: _currentUser, onOpenTask }: Pr
 
   // グラフデータ構築
   const { nodes, edges } = useMemo(() => {
-    const krs      = active(rawKrs);
-    const tfs      = active(rawTfs);
+    const krs      = curKrs;
+    const tfs      = curTfs;
     const todos    = active(rawTodos);
     const tasks    = active(rawTasks);
     const projects = active(rawProjects);
@@ -162,7 +162,7 @@ export function GraphView({ onClose, currentUser: _currentUser, onOpenTask }: Pr
     });
 
     return { nodes, edges };
-  }, [objective, rawKrs, rawTfs, rawTodos, rawTasks, rawProjects, projectTaskForces]);
+  }, [objective, curKrs, curTfs, rawTodos, rawTasks, rawProjects, projectTaskForces]);
 
   // テーマ判定
   const isDark = () => document.documentElement.hasAttribute("data-theme");

@@ -12,6 +12,7 @@
 
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useAppStore, selectScopedTasks, selectScopedMembers } from "../../stores/appStore";
+import { useCurrentOkr } from "../../hooks/useCurrentOkr";
 import type { Member } from "../../lib/localData/types";
 import { active } from "../../lib/localData/localStore";
 import { fetchKrSessions, fetchKrDeclarations } from "../../lib/supabase/krSessionStore";
@@ -295,17 +296,13 @@ interface Props {
 }
 
 export function KrQuarterPlanPanel({ onClose, currentUser, inline = false, initialKrId }: Props) {
-  const keyResults = useAppStore(s => s.keyResults);
   const taskForces = useAppStore(s => s.taskForces);
   const todos      = useAppStore(s => s.todos);
   const tasks      = useAppStore(selectScopedTasks);
   const members    = useAppStore(selectScopedMembers);
   const objective  = useAppStore(s => s.objective);
 
-  const activeKrs = useMemo(
-    () => active(keyResults),
-    [keyResults],
-  );
+  const { keyResults: activeKrs } = useCurrentOkr(initialKrId ? [initialKrId] : []);
   const activeMembers = useMemo(
     () => active(members),
     [members],

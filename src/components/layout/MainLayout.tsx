@@ -31,7 +31,7 @@ import { CustomSelect } from "../common/CustomSelect";
 import { LangToggle } from "../common/LangToggle";
 import { VersionBadge } from "../common/VersionBadge";
 import { KEYS, active } from "../../lib/localData/localStore";
-import { keyResultsInGroup } from "../../lib/okr/deptScope";
+import { currentKeyResultsInGroup } from "../../lib/okr/deptScope";
 import { TaskEditModal } from "../task/TaskEditModal";
 import { isAssignedTo } from "../../lib/taskMeta";
 import { Avatar } from "../auth/UserSelectScreen";
@@ -747,7 +747,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   // 「OKRタスク」KR一覧は表示中の部署（currentGroupId）でスコープする（CLAUDE.md Section 1.6参照。
   // OKR系はRLS非対応のため全員が全部署分を手元に持っており、Objective.group_id経由で絞り込む）。
   const keyResults = useMemo(
-    () => keyResultsInGroup((rawKrs ?? []).filter((kr: KeyResult) => !kr.is_deleted), rawObjectives, currentGroupId),
+    () => currentKeyResultsInGroup((rawKrs ?? []).filter((kr: KeyResult) => !kr.is_deleted), rawObjectives, currentGroupId),
     [rawKrs, rawObjectives, currentGroupId],
   );
 

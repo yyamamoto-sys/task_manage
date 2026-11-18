@@ -33,7 +33,7 @@ import { buildImportApplyPlan, unloadedKrIds, lockDisplayOrderStart, type Displa
 import { usePersonalOkrUiStore } from "../../../stores/personalOkrUiStore";
 import { useConfirmClose } from "../../../hooks/useConfirmClose";
 import { confirmDialog } from "../../../lib/dialog";
-import { keyResultsInGroup, taskForcesInGroup, DEFAULT_OKR_GROUP_ID } from "../../../lib/okr/deptScope";
+import { currentKeyResultsInGroup, currentTaskForcesInGroup, DEFAULT_OKR_GROUP_ID } from "../../../lib/okr/deptScope";
 import { BAND_VALUES, BAND_LABELS, isBandDisabled } from "../../../lib/personalOkr/bandOptions";
 import { isPersonalOkrImportTextTooLong } from "../../../lib/personalOkr/importCharWarning";
 import { describeKintoneImportSource, type KintoneImportEngineSource } from "../../../lib/personalOkr/kintoneTextParse";
@@ -172,8 +172,8 @@ export function PersonalOkrImportModal({
   const [saveProgress, setSaveProgress] = useState<{ current: number; total: number; label: string }>({ current: 0, total: 1, label: "" });
   const [applyResults, setApplyResults] = useState<{ krCount: number; monthCount: number } | null>(null);
 
-  const krsInGroup = useMemo(() => keyResultsInGroup(keyResults, objectives, currentGroupId), [keyResults, objectives, currentGroupId]);
-  const tfsInGroup = useMemo(() => taskForcesInGroup(taskForces, keyResults, objectives, currentGroupId), [taskForces, keyResults, objectives, currentGroupId]);
+  const krsInGroup = useMemo(() => currentKeyResultsInGroup(keyResults, objectives, currentGroupId), [keyResults, objectives, currentGroupId]);
+  const tfsInGroup = useMemo(() => currentTaskForcesInGroup(taskForces, keyResults, objectives, currentGroupId), [taskForces, keyResults, objectives, currentGroupId]);
 
   // 対応づけ候補の母集団：本人の全personal_krのうち、選択中の年度・四半期に属するもの
   const existingKrsInPeriod = useMemo(

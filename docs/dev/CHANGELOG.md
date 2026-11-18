@@ -8779,3 +8779,11 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 * 旧 `okr-intro` は「個人OKRの記録 ガイドツアー」へ改題（起動は従来どおり PersonalOkrView・`personalTourPending`）。
 * お知らせツアー `okr-map-intro` との重なり：自動起動は他のツアー実行中は動かない（既存）。加えて、お知らせを見終えた人には地図ツアーを自動で出さず、地図ツアーを自動で出すときはお知らせを既読にする（どちらか1本）。
 * `uiGuide.ts` に地図ツアーの1行。テスト：okrMapTour.test.ts 新設・buildTours.test.ts 追記。`MIN_CLIENT_VERSION` は据え置き。DB・Edge の変更なし。
+
+# v3.218（2026-11-18）：KR・TF の一覧は「部署の今の期」だけ／地図の KR–TF の間に仕事の話を出さない
+
+* 前の期の KR が今の期と並ぶ問題：「部署の今の期＝is_current の Objective（`pickCurrentObjectiveForGroup`）」を唯一の基準にした。`lib/okr/deptScope.ts` に `currentKeyResultsInGroup`／`currentTaskForcesInGroup`（keep の ID は前の期でも残す）・`previous*InGroup`・`findKeyResultForLabel`、`hooks/useCurrentOkr.ts` を新設。
+* 直した画面：管理画面（Objective・KR／TF の一覧／PJ の紐づける TF）・ダッシュボード・グラフ・KR レポート／四半期計画／なぜなぜ／共同セッション・KR 議事録・KR 分析・旧OKRダッシュボード・サイドバー（OKRタスク）・PJ設定の TF・個人OKRの KR 選択（既存の紐づけ先は残す）・個人OKR取込・設定トップの件数。管理画面の KR／TF は「前の期」を読み取り専用の折りたたみで別見出しにした。
+* OKR取込：「既存の Objective に追記」へ切り替えたとき、同名の既存 KR があれば紐づけ先の既定をそのKRにする（`matchExistingKrId`・無ければ new）。
+* 地図：KR の段（TF と KR の間）に出ていた「仕事の登録なし」を廃止。KR–TF の間で見るのは「今期の TF があるか」（`krHasTf`／`krTfNote`・無いときだけ「今期のTFなし」）。仕事の有無は TF・PJ の段で見る。KR 詳細の文言も同趣旨に。
+* `MIN_CLIENT_VERSION` は据え置き。DB・Edge の変更なし。
