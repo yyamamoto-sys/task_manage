@@ -54,11 +54,18 @@ BEGIN
   IF v_me IS NULL THEN
     RAISE EXCEPTION '★ のメールアドレスのメンバーが見つかりません（members に登録済み・削除されていない人にしてください）';
   END IF;
-  SELECT kr.id INTO v_kr FROM public.key_results kr WHERE kr.group_id = ANY (v_groups) AND kr.is_deleted = false LIMIT 1;
-  SELECT kr.id INTO v_kr_x FROM public.key_results kr WHERE NOT (kr.group_id = ANY (v_groups)) AND kr.is_deleted = false LIMIT 1;
+  -- 自分が担当する仕事を先に選び、KR はその仕事の部署のものを優先する
+  -- （結びつきは「成果の記述の部署＝KR の部署」に属する仕事にしか作れないため。複数部署に所属する人でもそろうように）
   SELECT t2.id INTO v_task FROM public.tasks t2
    WHERE t2.is_deleted = false AND t2.group_ids && v_groups
-     AND (t2.assignee_member_id = v_me OR v_me = ANY (coalesce(t2.assignee_member_ids, ARRAY[]::text[]))) LIMIT 1;
+     AND (t2.assignee_member_id = v_me OR v_me = ANY (coalesce(t2.assignee_member_ids, ARRAY[]::text[])))
+     AND EXISTS (SELECT 1 FROM public.key_results k2 WHERE k2.is_deleted = false AND k2.group_id = ANY (t2.group_ids) AND k2.group_id = ANY (v_groups))
+   LIMIT 1;
+  SELECT kr.id INTO v_kr FROM public.key_results kr
+   WHERE kr.group_id = ANY (v_groups) AND kr.is_deleted = false
+   ORDER BY (kr.group_id = ANY (coalesce((SELECT t3.group_ids FROM public.tasks t3 WHERE t3.id = v_task), ARRAY[]::text[]))) DESC
+   LIMIT 1;
+  SELECT kr.id INTO v_kr_x FROM public.key_results kr WHERE NOT (kr.group_id = ANY (v_groups)) AND kr.is_deleted = false LIMIT 1;
   SELECT t2.id INTO v_task_x FROM public.tasks t2 WHERE t2.is_deleted = false AND NOT (t2.group_ids && v_groups) LIMIT 1;
   SELECT m.id INTO v_other FROM public.members m WHERE m.id <> v_me AND m.is_deleted = false LIMIT 1;
   v_g := coalesce((SELECT kr.group_id FROM public.key_results kr WHERE kr.id = v_kr), v_groups[1]);
